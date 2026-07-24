@@ -51,6 +51,9 @@ export function Farm({
   const slow = slowMultiplier(me, now);
   const lost = brokenRate(me);
   const bill = totalRepairCost(me);
+  // Under "biggest pile" scoring the bank *is* the score, so showing it twice
+  // would just be the same number in two sizes.
+  const bankIsScore = state.config.scoring === "on_hand";
 
   return (
     <section className="panel farm">
@@ -58,18 +61,23 @@ export function Farm({
         <h2>Your farm</h2>
       </header>
 
-      <div className="score">
-        <div className="score-main">{format(score)}</div>
-        <div className="score-label">
-          {state.config.scoring === "on_hand" ? "potatoes on hand" : "potatoes harvested"}
+      {/* The bank leads. It's the number every decision is made against — what
+          you can spend right now — so it gets the space, and the score you're
+          being judged on rides underneath it. */}
+      <div className="tally">
+        <div className="bank">
+          <div className="bank-value">{format(onHand)}</div>
+          <div className="bank-label">in the barn{bankIsScore && " — and that's your score"}</div>
         </div>
+        {!bankIsScore && (
+          <div className="tally-score">
+            <span className="tally-score-value">{format(score)}</span>
+            <span className="tally-score-label">harvested — your score</span>
+          </div>
+        )}
       </div>
 
       <dl className="stats">
-        <div>
-          <dt>On hand</dt>
-          <dd>{format(onHand)}</dd>
-        </div>
         <div>
           <dt>Per second</dt>
           <dd className={slow < 1 ? "hurt" : undefined}>
@@ -78,7 +86,7 @@ export function Farm({
           </dd>
         </div>
         <div>
-          <dt>Per click</dt>
+          <dt>Per dig</dt>
           <dd>{format(perClick)}</dd>
         </div>
       </dl>
@@ -100,7 +108,9 @@ export function Farm({
         </div>
       )}
 
-      <div className="effects">
+      {/* Flagged when empty so a phone can drop it — "nothing is wrong" is
+          worth a line on a desktop panel and not worth a screenful on a phone. */}
+      <div className={`effects ${me.effects.length === 0 ? "effects-empty" : ""}`}>
         <h3>Conditions</h3>
         {me.effects.length === 0 ? (
           <p className="muted">Clear skies.</p>

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  P,
+  clickYield,
   format,
   formatDuration,
   seconds,
@@ -123,12 +125,20 @@ function Match({ setup, onExit }: { setup: MatchSetup; onExit: () => void }) {
   const table = standings(state, now);
   const opponentIds = state.order.filter((id) => id !== YOU);
   const opponents = opponentIds.map((id) => state.players[id]!);
-  const budget = useMemo(() => me.potatoes, [me]);
+  // Clicks you've made but that haven't been flushed into the sim yet still
+  // count — `dispatch` banks them before it spends, so this is honest.
+  const budget = useMemo(
+    () => P.add(me.potatoes, P.mul(clickYield(me), pendingClicks)),
+    [me, pendingClicks],
+  );
   const yourScore = table.find((s) => s.player.id === YOU)?.score ?? 0;
   const timeLeft = state.startedAt + state.config.durationMs - now;
 
   return (
     <div className="app">
+      {/* Pinned, because the two numbers you actually play against — the clock
+          and what's in the bank — are otherwise scrolled off the moment you go
+          shopping, which is exactly when you need them. */}
       <header className="topbar">
         <div className="brand">
           Battle <span>Clicker</span>
@@ -136,8 +146,12 @@ function Match({ setup, onExit }: { setup: MatchSetup; onExit: () => void }) {
         <div className={`clock ${timeLeft < seconds(30) ? "urgent" : ""}`}>
           {formatDuration(timeLeft)}
         </div>
+        <div className="topbar-bank">
+          <span className="topbar-bank-value">{format(budget)}</span>
+          <span className="topbar-bank-label">to spend</span>
+        </div>
         <div className="topbar-right">
-          <span className="muted">
+          <span className="muted rule">
             {state.config.scoring === "on_hand" ? "biggest pile wins" : "most harvested wins"}
           </span>
           <button className="ghost" onClick={onExit}>

@@ -26,7 +26,11 @@ body {
     radial-gradient(1200px 600px at 50% -10%, #2a2419 0%, transparent 60%),
     var(--bg);
   color: var(--text);
-  min-height: 100vh;
+  min-height: 100dvh;
+  /* Rapid tapping on a phone otherwise reads as a double-tap zoom, which makes
+     the dig button feel broken exactly when you're using it hardest. */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
 }
 
 button {
@@ -38,6 +42,8 @@ button {
   border-radius: 8px;
   padding: 6px 12px;
   transition: border-color 0.12s, background 0.12s, transform 0.06s;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 button:hover:not(:disabled) {
   border-color: var(--gold);
@@ -113,6 +119,8 @@ button.ghost {
   border-radius: 8px;
   color: var(--text);
   font: inherit;
+  /* Anything under 16px makes iOS zoom the page on focus and never zoom back. */
+  font-size: 16px;
 }
 .choices {
   display: flex;
@@ -137,9 +145,12 @@ button.ghost {
   padding: 16px;
 }
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
   padding: 12px 16px;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -150,7 +161,6 @@ button.ghost {
   font-size: 1.2rem;
 }
 .clock {
-  margin-left: auto;
   font-variant-numeric: tabular-nums;
   font-size: 1.8rem;
   font-weight: 700;
@@ -158,8 +168,26 @@ button.ghost {
 .clock.urgent {
   color: var(--blood);
 }
-.topbar-right {
+.topbar-bank {
   margin-left: auto;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.topbar-bank-value {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.topbar-bank-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.topbar-right {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -179,14 +207,33 @@ button.ghost {
   gap: 16px;
   align-items: start;
 }
+.sidebar {
+  display: grid;
+  gap: 16px;
+}
+
+/* One column, but not in source order. Stacked naively you'd scroll past the
+   whole shop to find out whether you're winning, so the scoreboard comes up to
+   sit right under your own numbers and the field report drops to the bottom. */
 @media (max-width: 1100px) {
   .grid {
     grid-template-columns: 1fr;
   }
-}
-.sidebar {
-  display: grid;
-  gap: 16px;
+  .sidebar {
+    display: contents;
+  }
+  .farm {
+    order: 1;
+  }
+  .opponents {
+    order: 2;
+  }
+  .shop {
+    order: 3;
+  }
+  .feed {
+    order: 4;
+  }
 }
 
 .panel {
@@ -211,23 +258,48 @@ button.ghost {
 
 /* ---------- Farm ---------- */
 
-.score {
+/* The bank is the headline. Everything you do in a match is a decision about
+   this number, so it gets the type size and the score rides underneath it. */
+.tally {
   text-align: center;
-  padding: 12px 0 4px;
+  padding: 14px 12px 12px;
+  background: linear-gradient(180deg, rgba(232, 182, 76, 0.12), transparent);
+  border: 1px solid rgba(232, 182, 76, 0.25);
+  border-radius: 12px;
 }
-.score-main {
-  font-size: 2.8rem;
+.bank-value {
+  font-size: 3.4rem;
   font-weight: 800;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   color: var(--gold);
 }
-.score-label {
+.bank-label {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
-  margin-top: 6px;
+  margin-top: 8px;
+}
+.tally-score {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.tally-score-value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.tally-score-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
 }
 .stats {
   display: grid;
@@ -445,6 +517,7 @@ button.ghost {
   text-align: right;
   display: grid;
   gap: 2px;
+  white-space: nowrap;
 }
 .row-cost {
   font-weight: 700;
@@ -546,8 +619,12 @@ button.ghost {
 .overlay {
   position: fixed;
   inset: 0;
+  /* Above the pinned topbar and the pinned dig bar, both of which are still in
+     the layout when the buzzer goes. */
+  z-index: 50;
   display: grid;
   place-items: center;
+  padding: 16px;
   background: rgba(10, 9, 7, 0.82);
   backdrop-filter: blur(3px);
 }
@@ -584,4 +661,114 @@ button.ghost {
 .result-actions {
   display: grid;
   gap: 8px;
+}
+
+/* ---------- Phones ----------
+   Two things drive this: your thumb can't reach the middle of a scrolled page,
+   and tap targets that are fine with a mouse are a coin flip with a thumb. */
+
+@media (max-width: 760px) {
+  .app {
+    padding: 10px;
+    /* Room for the pinned dig bar, so the last shop row isn't stuck under it. */
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  }
+  .topbar {
+    gap: 10px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+  /* The brand and the rules reminder are the first things to go — you already
+     know what game you opened. */
+  .brand,
+  .topbar-right .rule {
+    display: none;
+  }
+  .clock {
+    font-size: 1.5rem;
+  }
+  .topbar-bank-value {
+    font-size: 1.4rem;
+  }
+  .grid {
+    gap: 10px;
+  }
+  .panel {
+    padding: 12px;
+  }
+  .bank-value {
+    font-size: 3rem;
+  }
+  .tally-score-label {
+    font-size: 0.68rem;
+  }
+  /* Trim the panels above the shop. Every line here is a line between you and
+     the thing you came to tap. */
+  .effects-empty,
+  .opponents .fog {
+    display: none;
+  }
+  .stats {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 16px;
+    margin: 12px 0 0;
+  }
+
+  /* Dig follows you down the page. Otherwise every purchase costs you a scroll
+     back to the top, which is most of what playing on a phone would be. */
+  .dig {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    z-index: 30;
+    width: auto;
+    padding: 14px;
+    grid-auto-flow: column;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  }
+  .dig-emoji {
+    font-size: 2rem;
+  }
+
+  /* Switching tabs shouldn't mean scrolling back up the shop to find them. */
+  .shop .tabs {
+    position: sticky;
+    /* Just clear of the pinned topbar, which measures 54px at this size. */
+    top: 56px;
+    z-index: 10;
+    margin: -12px -12px 12px;
+    padding: 12px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+  }
+  .tabs button,
+  .qty-toggle button,
+  .choices button {
+    min-height: 44px;
+    padding: 8px 14px;
+  }
+  .row {
+    padding: 12px;
+    min-height: 56px;
+  }
+  .feed-list {
+    max-height: 240px;
+  }
+  .result {
+    min-width: 0;
+    width: calc(100vw - 32px);
+    padding: 24px 20px;
+  }
+  .lobby {
+    margin: 16px auto;
+    padding: 20px;
+    border-radius: 12px;
+  }
+  .lobby h1 {
+    font-size: 2rem;
+  }
 }

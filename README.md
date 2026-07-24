@@ -60,42 +60,67 @@ either way the shield spends what it soaked. Stacked slows floor at 15% of clean
 rate and no single producer type can be more than 60% broken, so nobody gets
 knocked out.
 
+**Sabotage is priced against its target.** A swing costs `costPerRate` potatoes
+per point of the target's production rate, with the flat `baseCost` as a floor
+while they're still small. This is what keeps the second axis honest: breakage
+does damage proportional to the size of the farm it lands on, so at a flat price
+hitting the leader returned many times what growing did, and "spend on yourself
+vs. spend against them" wasn't a choice. The price is computed from their
+*clean* rate — what they'd be making undamaged — so stacking damage never makes
+the next hit cheaper, which would snowball toward the knockout VISION.md rules
+out.
+
 Opponent info goes through `opponentView()` — count and production rate, nothing
 else — so the fog rule lives in one place instead of relying on the UI to be careful.
 
 ## Balance harness
 
-`packages/sim/src/balance.ts` runs whole matches headlessly with bots on every
-seat. This is the tuning loop: change a cost curve, run `npm test`, see whether
-matches still go the distance.
+`packages/sim/src/balance.ts` runs whole matches headlessly. This is the tuning
+loop: change a cost curve, run `npm test`, see whether matches still go the
+distance.
 
 It's load-bearing. The first run showed sabotage and defense firing *zero* times
 in a five-minute match, and a follow-up showed pure growth beating sabotage on
-every seed — the second axis the design rests on didn't exist. The fix was mostly
-bot policy (it froze its economy while saving for an attack, so swinging was
-strictly worse than never swinging) plus re-scaling the tree onto the range a
-short match actually reaches.
+every seed — the second axis the design rests on didn't exist.
 
-The guard rail is `leaves neither pure growth nor sabotage dominant`. It's not a
-claim the game is balanced for humans — these are crude bots — but strict
-dominance either way would collapse this back into a solo idle clicker, and that
-test fails loudly if it happens.
+**Bots on every seat can't answer the question the lobby actually asks.** They
+tell you the economy isn't degenerate; they can't tell you whether `nasty` is
+beatable, and every rung of the ladder turned out to be crushable by an ordinary
+person. So one seat can now be a *reference human* (`reference.ts`), modelled on
+how the game gets played rather than optimally: dig while digging is the only
+income, then follow the shop's "best value" badge and keep adding capacity.
+`human.test.ts` grades the ladder against it —
 
-The third, `makes sabotage worth considering early, and still best late`, is
-what drove the move to persistent damage: with timed effects, attacking in the
-first hundred seconds won 2 seeds out of 15, and the optimal line collapsed into
-"ignore sabotage, then dump everything at the buzzer". It's now 7/15 early and
-15/15 late — late is still the stronger window, which is fine, but early is a
-real option rather than a self-own.
+```
+builder vs chill      1.76x   comfortable
+builder vs scrappy    1.12x   a real fight
+builder vs nasty      0.75x   loses, stays in sight
+scrapper vs nasty     0.85x   sabotage closes some of the gap
+```
 
-The second test, `orders the difficulty ladder the way the lobby claims`, exists
-because difficulty kept coming out **backwards**. In an exponential economy,
-acting *less* often means a bigger pile between purchases, and a bigger pile buys
-better tiers — so slowing a bot down made it stronger. Difficulty is therefore a
-single `skill` knob (how often it holds out for the best rate-per-potato rather
-than dumping the pile into whatever's cheapest), with decision cadence held
-uniform. Scores are noisy enough across seeds that the ladder has to be checked
-on a median, not a single match.
+`leaves neither pure growth nor sabotage dominant` is the guard rail on the
+second axis, run as `nasty` against `greedy` — the same bot with sabotage
+switched off, so nothing else varies. Strict dominance either way would collapse
+this back into a solo idle clicker.
+
+`makes sabotage a wash early and a good buy later` grades *when* to swing:
+currently 1.00x early, 1.20x mid, 1.42x late. A swing costs roughly what the
+damage is worth whenever you throw it, so what moves is the other side of the
+trade — potatoes spent in the first minute would have compounded for four more.
+That should be a gradient, never a cliff and never an outright self-own.
+
+Both of those moved from counting wins to measuring margins. At `skill: 1` the
+bots are deterministic — the seed only jitters how many units an attack knocks
+out — so a win count collapses to 0-10 or 10-0 however close the two lines
+actually are. The margin is what those tests always meant.
+
+`orders the difficulty ladder the way the lobby claims` exists because difficulty
+kept coming out **backwards**. In an exponential economy, acting *less* often
+means a bigger pile between purchases, and a bigger pile buys better tiers — so
+slowing a bot down made it stronger. That was a symptom of the bot taking one
+action per decision tick: it sat on potatoes that earned nothing. Now that a turn
+spends the pile down, cadence is a legitimate difficulty knob alongside `skill`
+and click rate.
 
 ## Open questions this raised
 
@@ -114,3 +139,12 @@ on a median, not a single match.
   single click at 75% of rebuild cost. That makes damage a pure tax. If we want
   getting hit to feel worse, repair wanting *time* (or a queue) is the obvious
   next lever.
+- **Wrist speed is still worth more than it should be.** The reference human has
+  a `masher` variant that never looks away from the dig button, and it beats
+  `builder` by 4-9x against the same bot. Nobody has hit this in practice — the
+  ladder is graded against `builder`, which is how the game actually gets played
+  — but it means an autoclicker beats strategy, and it quietly penalises playing
+  on a phone, where you can't tap that fast. Capping the dig rate or flattening
+  the click multipliers would both fix it; both change how the game feels, so
+  neither is a decision to make from a spreadsheet. `human.test.ts` prints the
+  current multiple on every run so it can't drift unnoticed.

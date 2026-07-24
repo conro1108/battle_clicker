@@ -92,25 +92,6 @@ export function useMatch(setup: MatchSetup): MatchRuntime {
     setStateRaw(next);
   }, []);
 
-  const dispatch = useCallback(
-    (cmd: Command) => {
-      const res = applyCommand(stateRef.current, cmd, nowMs());
-      if (!res.ok) {
-        setError(res.reason);
-        return;
-      }
-      setError(null);
-      setState(res.state);
-    },
-    [setState],
-  );
-
-  const click = useCallback(() => {
-    if (isOver(stateRef.current, nowMs())) return;
-    pendingRef.current += 1;
-    setPendingClicks(pendingRef.current);
-  }, []);
-
   const flushClicks = useCallback(() => {
     const count = pendingRef.current;
     if (count === 0) return;
@@ -119,6 +100,29 @@ export function useMatch(setup: MatchSetup): MatchRuntime {
     const res = applyCommand(stateRef.current, { type: "click", player: YOU, count }, nowMs());
     if (res.ok) setState(res.state);
   }, [setState]);
+
+  const dispatch = useCallback(
+    (cmd: Command) => {
+      // Bank the clicks you've already made before spending. Without this the
+      // pile you can see is up to a flush ahead of the pile you can spend, and
+      // the shop tells you that you can't afford something you're looking at.
+      flushClicks();
+      const res = applyCommand(stateRef.current, cmd, nowMs());
+      if (!res.ok) {
+        setError(res.reason);
+        return;
+      }
+      setError(null);
+      setState(res.state);
+    },
+    [flushClicks, setState],
+  );
+
+  const click = useCallback(() => {
+    if (isOver(stateRef.current, nowMs())) return;
+    pendingRef.current += 1;
+    setPendingClicks(pendingRef.current);
+  }, []);
 
   // Display clock.
   useEffect(() => {

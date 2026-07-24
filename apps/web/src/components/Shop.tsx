@@ -9,7 +9,6 @@ import {
   attackCost,
   cleanRate,
   format,
-  potatoesAt,
   brokenRate,
   producerCost,
   producerMultiplier,
@@ -204,9 +203,8 @@ export function Shop({
             </div>
           )}
           <p className="hint">
-            Sabotage is priced against the farm you're aiming at — the bigger they get, the more a
-            swing costs. Power is weighed against whatever shield they have left, and enough of a
-            shield eats the attack whole.
+            Priced against the size of the farm you're hitting. A big enough shield eats an attack
+            whole.
           </p>
           <div className="rows">
             {ATTACKS.map((a) => {
@@ -287,8 +285,8 @@ export function Shop({
       )}
 
       <footer className="shop-foot">
-        <span className="muted">Spendable</span>
-        <strong>{format(potatoesAt(me, now))}</strong>
+        <span className="muted">In the barn</span>
+        <strong>{format(budget)}</strong>
       </footer>
     </section>
   );
