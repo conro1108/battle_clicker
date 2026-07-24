@@ -103,6 +103,17 @@ paths.
     instead of needing an invented justification the way an abstract
     "factory" would.
 
+## Parked ideas
+
+- **Spoilage.** Potatoes rot — stored resource decays over time unless you
+  spend on storage. Appealing because it pushes against hoarding: you stay
+  engaged, keep buying, keep ramping instead of sitting on a pile. Fits the
+  farming skin without inventing anything. Not for now.
+  - Worth knowing: this is the one mechanic that couples production rate to
+    stockpile size, which costs us the cheap "rate is a sum of terms"
+    checkpoint model in STACK.md. Still doable, just a deliberate trade
+    rather than something to stumble into.
+
 ## Non-goals (for now)
 
 - Not aiming for deep base-building complexity — the upgrade tree should stay
