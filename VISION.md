@@ -31,11 +31,25 @@ themselves.
 ## The loop
 
 - Everyone starts from zero, same rules, at the same time.
-- A match runs for a fixed window (minutes, not hours — this isn't idle-game-
-  leave-it-running-overnight, it's a sit-down session).
 - Whoever has the most of the target resource when the clock hits zero wins.
 - Clicking/producing is the baseline action; upgrades are the strategic layer
   on top.
+
+Two match-length shapes both feel interesting and worth keeping alive rather
+than picking one now:
+
+- **Sit-down session** — a fixed window of minutes, everyone actively playing
+  at once. Tight, tactical, sabotage lands and matters immediately.
+- **Slow burn** — a match that runs in the background over hours/days, more
+  like the classic idle-game shape but contested. You check in, spend
+  resources, queue up an attack or a defense, close the tab, come back later
+  to see what happened. Sabotage here is more about long-game positioning
+  than a reflex fight.
+
+These probably want different pacing for costs and cooldowns, but the same
+three upgrade categories and the same core tension (spend on yourself vs.
+spend against others) should work for both. Worth prototyping both shapes
+before betting on one.
 
 ## Upgrades, three flavors
 
@@ -60,12 +74,11 @@ paths.
   wrecked and taken out of a match?
 - Does defense ever fully counter offense, or is it always partial mitigation?
 - Real-time simultaneous, or does turn structure / cooldowns matter?
+- Sit-down or slow-burn — or both, as genuinely different modes?
 - What's the resource, thematically? Cookies is the reference point but not
   necessarily the skin.
 
 ## Non-goals (for now)
 
-- Not an idle/incremental game you leave running for hours — matches are a
-  sit-down session.
 - Not aiming for deep base-building complexity — the upgrade tree should stay
-  legible enough to reason about mid-match under a clock.
+  legible enough to reason about mid-match, whichever length wins out.
