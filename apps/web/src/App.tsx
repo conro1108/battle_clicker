@@ -25,7 +25,7 @@ const LENGTHS = [
 function Lobby({ onStart }: { onStart: (setup: MatchSetup) => void }) {
   const [playerName, setPlayerName] = useState("");
   const [durationMs, setDurationMs] = useState(seconds(300));
-  const [botProfile, setBotProfile] = useState<MatchSetup["botProfile"]>("scrappy");
+  const [botProfile, setBotProfile] = useState<MatchSetup["botProfile"]>("chill");
   const [scoring, setScoring] = useState<ScoringRule>("total_harvested");
 
   return (

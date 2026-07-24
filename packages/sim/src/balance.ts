@@ -63,6 +63,9 @@ export function simulateMatch(opts: {
       clickCarry.set(p.id, carry - clicks);
       if (clicks > 0) state = apply(state, { type: "click", player: p.id, count: clicks }, t);
 
+      // Each profile acts on its own cadence, so these runs measure the same
+      // opponent the app actually puts in front of a player.
+      if ((t - startedAt) % profile.decisionMs >= step) continue;
       const decision = botDecide(state, p.id, profile, t);
       if (decision) state = apply(state, decision, t);
     }

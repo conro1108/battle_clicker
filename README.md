@@ -69,6 +69,15 @@ claim the game is balanced for humans — these are crude bots — but strict
 dominance either way would collapse this back into a solo idle clicker, and that
 test fails loudly if it happens.
 
+The second test, `orders the difficulty ladder the way the lobby claims`, exists
+because difficulty kept coming out **backwards**. In an exponential economy,
+acting *less* often means a bigger pile between purchases, and a bigger pile buys
+better tiers — so slowing a bot down made it stronger. Difficulty is therefore a
+single `skill` knob (how often it holds out for the best rate-per-potato rather
+than dumping the pile into whatever's cheapest), with decision cadence held
+uniform. Scores are noisy enough across seeds that the ladder has to be checked
+on a median, not a single match.
+
 ## Open questions this raised
 
 - **What does the winner actually win on?** VISION.md says "has the most of the

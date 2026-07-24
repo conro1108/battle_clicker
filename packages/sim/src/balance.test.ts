@@ -88,6 +88,42 @@ describe("match pacing", () => {
     expect(wins.length - greedyWins).toBeGreaterThan(0);
   });
 
+  /**
+   * Difficulty has to be monotonic, and it has not been by default. Both
+   * decision cadence and "buy the best thing you can afford right now" made
+   * *slower or lazier* bots stronger, because acting less often means a bigger
+   * pile and a bigger pile buys better tiers. Scores are noisy enough that this
+   * has to be a median over many seeds.
+   */
+  it("orders the difficulty ladder the way the lobby claims", () => {
+    const seeds = Array.from({ length: 21 }, (_, i) => `ladder-${i}`);
+    const medianFor = (profile: "chill" | "scrappy" | "nasty") => {
+      const scores = seeds
+        .map(
+          (seed) =>
+            simulateMatch({
+              seed,
+              durationMs: seconds(300),
+              players: [
+                { id: "bot", name: "Bot", profile },
+                { id: "foil", name: "Foil", profile: "chill" },
+              ],
+            }).finalScores.bot!,
+        )
+        .sort((a, b) => a - b);
+      return scores[Math.floor(scores.length / 2)]!;
+    };
+
+    const chill = medianFor("chill");
+    const scrappy = medianFor("scrappy");
+    const nasty = medianFor("nasty");
+    console.log(
+      `difficulty ladder: chill=${format(chill)} scrappy=${format(scrappy)} nasty=${format(nasty)}`,
+    );
+    expect(scrappy).toBeGreaterThan(chill);
+    expect(nasty).toBeGreaterThan(scrappy);
+  });
+
   it("reports the shape of a match", () => {
     const r = fiveMinuteMatch("s1");
     const rows = r.samples
