@@ -91,6 +91,12 @@ paths.
 - Sit-down or slow-burn — or both, as genuinely different modes?
 - What's the resource, thematically? Cookies is the reference point but not
   necessarily the skin.
+  - **Answer: potatoes.** Farming has a built-in physical world (soil,
+    weather, pests, storage) that production/sabotage/defense upgrades can
+    hang off naturally — fences, GMO seed, harvesters, storage on the
+    production side; blight, moles, ruined soil on the sabotage side —
+    instead of needing an invented justification the way an abstract
+    "factory" would.
 
 ## Non-goals (for now)
 
