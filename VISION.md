@@ -79,6 +79,10 @@ paths.
     but not eliminated from the match. Maybe one giga/mega/ultra-rare exception
     exists somewhere down the line, but that's not the core vibe.
 - Does defense ever fully counter offense, or is it always partial mitigation?
+  - **Answer (loosely):** probably, sometimes. Attacks and defenses both come
+    in a range of strengths rather than a flat yes/no — a strong-enough
+    defense fully blocking a weak attack is fine and expected, it's just not
+    guaranteed to work against a stronger one.
 - Real-time simultaneous, or does turn structure / cooldowns matter?
   - **Answer:** real-time, not turn-based. No top-level cooldown construct
     either — pacing comes implicitly from resource contention (you can't
