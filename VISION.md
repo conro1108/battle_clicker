@@ -103,6 +103,17 @@ paths.
     instead of needing an invented justification the way an abstract
     "factory" would.
 
+- What exactly is the winner measured on — potatoes *held* at the buzzer, or
+  potatoes *ever harvested*?
+  - **Answer: not yet.** The pitch says both ("race to produce the most",
+    "has the most when the clock hits zero") and they play differently. Scoring
+    on the pile you're holding makes every late purchase cost you the game, so
+    the endgame flattens into "stop buying" — which is the opposite of the
+    tension we're after. Scoring on lifetime harvested keeps spending free and
+    keeps sabotage relevant (denying rate still denies score). Both are
+    implemented and switchable; harvested is the working default until we've
+    played both.
+
 ## Parked ideas
 
 - **Spoilage.** Potatoes rot — stored resource decays over time unless you

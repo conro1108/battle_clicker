@@ -6,6 +6,7 @@ import {
   DEFENSE_BY_ID,
   MAX_STEAL_PCT,
   MIN_RATE_MULTIPLIER,
+  PRODUCER_BY_ID,
 } from "./content.js";
 import { checkpoint, harvestedAt, potatoesAt, producerCost, rateAt, slowMultiplier } from "./economy.js";
 import { P, ms, seconds, type Millis } from "./numbers.js";
@@ -13,6 +14,12 @@ import { applyCommand, createMatch, mustApply, opponentView, standings } from ".
 import type { ActiveEffect, Command, MatchState, PlayerState } from "./state.js";
 
 const T0 = ms(1_000_000);
+
+// Derived from content so retuning the economy doesn't invalidate these tests.
+const HAND = PRODUCER_BY_ID.hand.baseRate;
+const TRACTOR = PRODUCER_BY_ID.tractor.baseRate;
+/** Rate of the ten-farmhand farm most of these tests use. */
+const R = 10 * HAND;
 
 function newMatch(scoring: "total_harvested" | "on_hand" = "total_harvested"): MatchState {
   return createMatch({
@@ -41,9 +48,8 @@ describe("production integration", () => {
   it("accrues at a constant rate when nothing is happening", () => {
     const s = withFarm(newMatch(), "a", { hand: 10 });
     const p = s.players.a!;
-    // 10 farmhands * 1.5/s = 15/s
-    expect(rateAt(p, T0)).toBe(15);
-    expect(potatoesAt(p, at(60))).toBeCloseTo(900, 6);
+    expect(rateAt(p, T0)).toBe(R);
+    expect(potatoesAt(p, at(60))).toBeCloseTo(R * 60, 6);
   });
 
   it("integrates piecewise across an effect expiry rather than through it", () => {
@@ -59,10 +65,10 @@ describe("production integration", () => {
     };
     const p = { ...base.players.a!, effects: [slow] };
 
-    // 30s at 7.5/s, then 30s at 15/s.
-    expect(potatoesAt(p, at(60))).toBeCloseTo(225 + 450, 6);
+    // 30s at half rate, then 30s clean.
+    expect(potatoesAt(p, at(60))).toBeCloseTo(R * 0.5 * 30 + R * 30, 6);
     // Mid-effect the slow is still fully applied.
-    expect(potatoesAt(p, at(10))).toBeCloseTo(75, 6);
+    expect(potatoesAt(p, at(10))).toBeCloseTo(R * 0.5 * 10, 6);
   });
 
   it("is unchanged by checkpointing partway through", () => {
@@ -98,8 +104,8 @@ describe("production integration", () => {
       expiresAt: at(20),
     };
     const p: PlayerState = { ...base.players.a!, effects: [disable] };
-    expect(rateAt(p, at(10))).toBe(15);
-    expect(rateAt(p, at(25))).toBe(15 + 110);
+    expect(rateAt(p, at(10))).toBe(R);
+    expect(rateAt(p, at(25))).toBe(R + 2 * TRACTOR);
   });
 });
 
@@ -212,7 +218,7 @@ describe("no knockouts", () => {
     }));
     const p = { ...base.players.a!, effects: slows };
     expect(slowMultiplier(p, T0)).toBe(MIN_RATE_MULTIPLIER);
-    expect(rateAt(p, T0)).toBeCloseTo(15 * MIN_RATE_MULTIPLIER, 6);
+    expect(rateAt(p, T0)).toBeCloseTo(R * MIN_RATE_MULTIPLIER, 6);
   });
 
   it("caps a single steal and never claws back lifetime harvested", () => {
@@ -307,6 +313,6 @@ describe("visibility", () => {
   it("stops the clock at match end", () => {
     const state = withFarm(newMatch(), "a", { hand: 10 });
     const final = standings(state, at(10_000))[0]!.score;
-    expect(final).toBeCloseTo(15 * 300, 6);
+    expect(final).toBeCloseTo(R * 300, 6);
   });
 });
