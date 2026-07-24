@@ -46,10 +46,10 @@ than picking one now:
   to see what happened. Sabotage here is more about long-game positioning
   than a reflex fight.
 
-These probably want different pacing for costs and cooldowns, but the same
-three upgrade categories and the same core tension (spend on yourself vs.
-spend against others) should work for both. Worth prototyping both shapes
-before betting on one.
+These probably want different cost pacing, but the same three upgrade
+categories and the same core tension (spend on yourself vs. spend against
+others) should work for both. Worth prototyping both shapes before betting on
+one.
 
 ## Upgrades, three flavors
 
@@ -77,6 +77,10 @@ paths.
     exists somewhere down the line, but that's not the core vibe.
 - Does defense ever fully counter offense, or is it always partial mitigation?
 - Real-time simultaneous, or does turn structure / cooldowns matter?
+  - **Answer:** real-time, not turn-based. No top-level cooldown construct
+    either — pacing comes implicitly from resource contention (you can't
+    afford to spam an action because spending it means not spending on
+    something else), not from a timer gating the action itself.
 - Sit-down or slow-burn — or both, as genuinely different modes?
 - What's the resource, thematically? Cookies is the reference point but not
   necessarily the skin.
