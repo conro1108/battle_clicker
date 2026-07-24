@@ -124,6 +124,43 @@ describe("match pacing", () => {
     expect(nasty).toBeGreaterThan(scrappy);
   });
 
+  /**
+   * Sabotage has to be worth considering at any point in the match, not just
+   * in the last minute.
+   *
+   * When attacks were timed effects the victim recovered for free, so attacking
+   * early meant paying compounding costs to deny forty-five seconds of output —
+   * it won 2/15 seeds, and the whole strategy collapsed into "ignore sabotage,
+   * then dump everything at the buzzer". Persistent breakage is what fixes
+   * that: damage stays until they spend on repairs, so hitting them early costs
+   * them for the rest of the match either way.
+   *
+   * Late should still be the stronger window — there's no compounding left to
+   * lose by then — but early has to be a real option rather than a blunder.
+   */
+  it("makes sabotage worth considering early, and still best late", () => {
+    const seeds = Array.from({ length: 15 }, (_, i) => `window-${i}`);
+    const winsFor = (attackWindow: [number, number]) =>
+      seeds.filter((seed) => {
+        const r = simulateMatch({
+          seed,
+          durationMs: seconds(300),
+          players: [
+            { id: "econ", name: "Econ", profile: "greedy" },
+            { id: "sab", name: "Sab", profile: "greedy", tweak: { aggression: 0.7 }, attackWindow },
+          ],
+        });
+        return r.finalScores.sab! > r.finalScores.econ!;
+      }).length;
+
+    const early = winsFor([0, 100]);
+    const late = winsFor([200, 300]);
+    console.log(`sabotage window: early wins ${early}/15, late wins ${late}/15`);
+    // Early sabotage should be roughly a coin flip, not a self-own.
+    expect(early).toBeGreaterThanOrEqual(4);
+    expect(late).toBeGreaterThanOrEqual(early);
+  });
+
   it("reports the shape of a match", () => {
     const r = fiveMinuteMatch("s1");
     const rows = r.samples

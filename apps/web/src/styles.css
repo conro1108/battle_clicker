@@ -305,8 +305,7 @@ button.ghost {
   border-left: 3px solid var(--line);
   background: var(--panel-2);
 }
-.chip-slow,
-.chip-disable {
+.chip-slow {
   border-left-color: var(--blood);
 }
 .chip-shield {
@@ -335,6 +334,15 @@ button.ghost {
 
 .tabs {
   gap: 6px;
+}
+.tab-alert {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--blood);
+  vertical-align: middle;
 }
 .qty-toggle {
   display: flex;
@@ -395,6 +403,27 @@ button.ghost {
 }
 .row-defend {
   border-left-color: var(--sky);
+}
+.row-repair {
+  border-left-color: var(--blood);
+  background: rgba(201, 85, 61, 0.1);
+}
+.damage {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(201, 85, 61, 0.12);
+  border-left: 3px solid var(--blood);
+}
+.damage-head {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.damage-body {
+  font-size: 0.88rem;
 }
 .row-locked {
   opacity: 0.45;

@@ -4,11 +4,18 @@ import { shieldPool } from "./combat.js";
 import {
   ATTACK_BY_ID,
   DEFENSE_BY_ID,
-  MAX_STEAL_PCT,
+  MAX_BROKEN_SHARE,
   MIN_RATE_MULTIPLIER,
   PRODUCER_BY_ID,
 } from "./content.js";
-import { checkpoint, harvestedAt, potatoesAt, producerCost, rateAt, slowMultiplier } from "./economy.js";
+import {
+  checkpoint,
+  potatoesAt,
+  producerCost,
+  rateAt,
+  repairCost,
+  slowMultiplier,
+} from "./economy.js";
 import { P, ms, seconds, type Millis } from "./numbers.js";
 import { applyCommand, createMatch, mustApply, opponentView, standings } from "./match.js";
 import type { ActiveEffect, Command, MatchState, PlayerState } from "./state.js";
@@ -92,20 +99,13 @@ describe("production integration", () => {
     expect(potatoesAt(viaCheckpoints, at(120))).toBeCloseTo(direct, 6);
   });
 
-  it("drops a disabled producer's contribution only while the effect is live", () => {
+  it("drops broken units from the rate and keeps them dropped", () => {
     const base = withFarm(newMatch(), "a", { hand: 10, tractor: 2 });
-    const disable: ActiveEffect = {
-      kind: "disable",
-      id: "e1",
-      source: "b",
-      label: "Ruined Soil",
-      producer: "tractor",
-      startedAt: T0,
-      expiresAt: at(20),
-    };
-    const p: PlayerState = { ...base.players.a!, effects: [disable] };
+    const p: PlayerState = { ...base.players.a!, broken: { tractor: 2 } };
     expect(rateAt(p, at(10))).toBe(R);
-    expect(rateAt(p, at(25))).toBe(R + 2 * TRACTOR);
+    // Nothing times out — a hundred seconds later it's still down.
+    expect(rateAt(p, at(100))).toBe(R);
+    expect(rateAt({ ...p, broken: {} }, at(10))).toBe(R + 2 * TRACTOR);
   });
 });
 
@@ -182,25 +182,41 @@ describe("attack vs defense", () => {
       DEFENSE_BY_ID.fence.power - ATTACK_BY_ID.blight.power,
     );
 
-    // Second Blight now outmatches what's left, so it gets through.
+    // Fence had 200 against Blight's 110, so the first one was absorbed whole.
+    expect(state.players.b!.broken.hand ?? 0).toBe(0);
+
+    // Two more and the pool is dry, so damage starts landing.
     state = mustApply(state, { type: "attack", player: "a", target: "b", attack: "blight" }, at(1));
-    expect(state.players.b!.effects.some((e) => e.kind === "slow")).toBe(true);
+    state = mustApply(state, { type: "attack", player: "a", target: "b", attack: "blight" }, at(2));
+    expect(shieldPool(state.players.b!, at(2))).toBe(0);
+    expect(state.players.b!.broken.hand ?? 0).toBeGreaterThan(0);
   });
 
-  it("shortens a disable instead of scaling it, since it has no magnitude", () => {
-    let state = attacker(withFarm(newMatch(), "b", { hand: 20, tractor: 3 }));
-    state = { ...state, players: { ...state.players, b: { ...state.players.b!, potatoes: P.of(1e6) } } };
-    state = mustApply(state, { type: "defend", player: "b", defense: "greenhouse" }, T0);
-    // Greenhouse 550 vs Ruined Soil 420 would fully block, so chip it down first.
-    state = mustApply(state, { type: "attack", player: "a", target: "b", attack: "drought" }, T0);
+  it("breaks units of the target's best producer, permanently", () => {
+    let state = attacker(withFarm(newMatch(), "b", { hand: 20, tractor: 12 }));
     state = mustApply(state, { type: "attack", player: "a", target: "b", attack: "soil_rot" }, T0);
 
-    const disable = state.players.b!.effects.find((e) => e.kind === "disable");
-    expect(disable).toBeDefined();
-    if (disable?.kind !== "disable") return;
-    expect(disable.producer).toBe("tractor"); // its biggest earner
-    expect(disable.expiresAt - disable.startedAt).toBeLessThan(seconds(40));
-    expect(disable.expiresAt).toBeGreaterThan(disable.startedAt);
+    const b = state.players.b!;
+    expect(b.broken.tractor ?? 0).toBeGreaterThan(0); // its biggest earner
+    expect(b.broken.hand ?? 0).toBe(0);
+    // Still owned, just not working — and still broken much later.
+    expect(b.producers.tractor).toBe(12);
+    expect(rateAt(b, at(600))).toBeLessThan(rateAt({ ...b, broken: {} }, at(600)));
+  });
+
+  it("scales breakage down rather than negating it when partly shielded", () => {
+    // Big farm so the difference survives rounding to whole units.
+    const build = (defend: boolean) => {
+      let state = attacker(withFarm(newMatch(), "b", { hand: 20, tractor: 60 }));
+      state = { ...state, players: { ...state.players, b: { ...state.players.b!, potatoes: P.of(1e6) } } };
+      if (defend) state = mustApply(state, { type: "defend", player: "b", defense: "fence" }, T0);
+      state = mustApply(state, { type: "attack", player: "a", target: "b", attack: "soil_rot" }, T0);
+      return state.players.b!.broken.tractor ?? 0;
+    };
+    const shielded = build(true);
+    const bare = build(false);
+    expect(shielded).toBeGreaterThan(0); // scaled down, not negated
+    expect(shielded).toBeLessThan(bare);
   });
 });
 
@@ -221,23 +237,46 @@ describe("no knockouts", () => {
     expect(rateAt(p, T0)).toBeCloseTo(R * MIN_RATE_MULTIPLIER, 6);
   });
 
-  it("caps a single steal and never claws back lifetime harvested", () => {
-    let state = withFarm(newMatch(), "b", { hand: 10 });
+  it("caps how much of a producer type one hit can take out", () => {
+    let state = withFarm(newMatch(), "b", { hand: 100 });
+    state = {
+      ...state,
+      players: { ...state.players, a: { ...state.players.a!, potatoes: P.of(1e12) } },
+    };
+    // Locusts hit everything; fire a pile of them and the cap should hold.
+    for (let i = 0; i < 8; i++) {
+      state = mustApply(state, { type: "attack", player: "a", target: "b", attack: "locusts" }, at(i));
+    }
+    const b = state.players.b!;
+    expect(b.broken.hand!).toBeLessThanOrEqual(Math.floor(100 * MAX_BROKEN_SHARE));
+    expect(rateAt(b, at(20))).toBeGreaterThan(0); // never knocked out
+  });
+
+  it("lets repair buy the rate back, for less than rebuilding", () => {
+    let state = withFarm(newMatch(), "b", { hand: 20 });
     state = {
       ...state,
       players: {
         ...state.players,
-        a: { ...state.players.a!, potatoes: P.of(1e9) },
-        b: { ...state.players.b!, potatoes: P.of(100_000), harvested: P.of(100_000) },
+        a: { ...state.players.a!, potatoes: P.of(1e12) },
+        b: { ...state.players.b!, potatoes: P.of(1e9) },
       },
     };
-    const harvestedBefore = harvestedAt(state.players.b!, T0);
-    state = mustApply(state, { type: "attack", player: "a", target: "b", attack: "moles" }, T0);
+    state = mustApply(state, { type: "attack", player: "a", target: "b", attack: "blight" }, T0);
+    const damaged = state.players.b!;
+    const broken = damaged.broken.hand!;
+    expect(broken).toBeGreaterThan(0);
 
-    const b = state.players.b!;
-    expect(b.potatoes).toBeGreaterThanOrEqual(100_000 * (1 - MAX_STEAL_PCT));
-    expect(b.potatoes).toBeLessThan(100_000);
-    expect(harvestedAt(b, T0)).toBeCloseTo(harvestedBefore, 6);
+    const bill = repairCost(damaged, "hand");
+    const rebuild = producerCost("hand", 20 - broken, broken);
+    expect(bill).toBeLessThan(rebuild);
+
+    const before = damaged.potatoes;
+    state = mustApply(state, { type: "repair", player: "b", producer: "hand" }, T0);
+    const fixed = state.players.b!;
+    expect(fixed.broken.hand).toBe(0);
+    expect(rateAt(fixed, T0)).toBeCloseTo(20 * HAND, 6);
+    expect(before - fixed.potatoes).toBeCloseTo(bill, 6);
   });
 });
 

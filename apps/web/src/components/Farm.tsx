@@ -1,11 +1,13 @@
 import {
   P,
+  brokenRate,
   clickYield,
   format,
   potatoesAt,
   rateAt,
   scoreOf,
   slowMultiplier,
+  totalRepairCost,
   type MatchState,
   type Millis,
   type PlayerState,
@@ -16,9 +18,7 @@ function EffectChip({ effect, now }: { effect: PlayerState["effects"][number]; n
   const detail =
     effect.kind === "slow"
       ? `−${Math.round((1 - effect.multiplier) * 100)}% output`
-      : effect.kind === "disable"
-        ? "producer offline"
-        : `${format(effect.power)} absorb left`;
+      : `${format(effect.power)} absorb left`;
   return (
     <li className={`chip chip-${effect.kind}`}>
       <span className="chip-name">{effect.label}</span>
@@ -49,6 +49,8 @@ export function Farm({
   const score = P.add(scoreOf(me, now, state.config.scoring), P.mul(perClick, pendingClicks));
   const rate = rateAt(me, now);
   const slow = slowMultiplier(me, now);
+  const lost = brokenRate(me);
+  const bill = totalRepairCost(me);
 
   return (
     <section className="panel farm">
@@ -87,6 +89,16 @@ export function Farm({
         </span>
         <span className="dig-label">Dig</span>
       </button>
+
+      {lost > 0 && (
+        <div className="damage">
+          <div className="damage-head">Broken kit</div>
+          <div className="damage-body">
+            <span className="hurt">−{format(lost)}/s</span> until repaired ·{" "}
+            <span className="muted">{format(bill)} to fix</span>
+          </div>
+        </div>
+      )}
 
       <div className="effects">
         <h3>Conditions</h3>

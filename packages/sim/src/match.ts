@@ -1,4 +1,4 @@
-import { buildShield, resolveAttack, shieldPool } from "./combat.js";
+import { buildShield, describeBreak, resolveAttack, shieldPool } from "./combat.js";
 import {
   ATTACK_BY_ID,
   DEFENSE_BY_ID,
@@ -13,6 +13,7 @@ import {
   potatoesAt,
   producerCost,
   rateAt,
+  repairCost,
   repeatCost,
 } from "./economy.js";
 import { P, format, ms, type Millis, type Potatoes, type Rate } from "./numbers.js";
@@ -40,6 +41,7 @@ export function createPlayer(id: PlayerId, name: string, startedAt: Millis, isBo
     harvested: P.zero,
     checkpointAt: startedAt,
     producers: {},
+    broken: {},
     upgrades: [],
     attacksUsed: {},
     defensesUsed: {},
@@ -234,17 +236,31 @@ export function applyCommand(state: MatchState, cmd: Command, now: Millis): Comm
       let text: string;
       if (outcome.blocked) {
         text = `sent ${attack.name} at ${defender.name} — fully blocked.`;
-      } else if (outcome.stolen > 0) {
-        text = `${attack.name} took ${format(outcome.stolen)} potatoes from ${defender.name}.`;
-      } else if (outcome.disabledProducerName) {
-        text = `${attack.name} shut down ${defender.name}'s ${outcome.disabledProducerName}.`;
+      } else if (outcome.brokeTotal > 0) {
+        // Phrased so the target is an object, not a possessive — the local
+        // player is literally named "You", and "You's Potato Plot" is grim.
+        text = `hit ${defender.name} with ${attack.name} — wrecked ${describeBreak(outcome.broke)}.`;
       } else {
-        text = `${attack.name} hit ${defender.name}.`;
+        text = `hit ${defender.name} with ${attack.name}.`;
       }
       if (!outcome.blocked && outcome.mitigation > 0) {
         text += ` (${Math.round(outcome.mitigation * 100)}% absorbed)`;
       }
       entries.push(entry(state, t, actor.id, text, outcome.blocked ? "neutral" : "bad", defender.id));
+      break;
+    }
+
+    case "repair": {
+      const producer = PRODUCER_BY_ID[cmd.producer as ProducerId];
+      if (!producer) return fail("No such producer.");
+      const broken = Math.min(actor.broken[producer.id] ?? 0, actor.producers[producer.id] ?? 0);
+      if (broken <= 0) return fail("Nothing broken there.");
+      const cost = repairCost(actor, producer.id);
+      if (!spend(cost)) return fail("Not enough potatoes.");
+      actor = { ...actor, broken: { ...actor.broken, [producer.id]: 0 } };
+      entries.push(
+        entry(state, t, actor.id, `repaired ${broken}x ${producer.name}.`, "good"),
+      );
       break;
     }
 

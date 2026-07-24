@@ -7,7 +7,15 @@ import {
   type Attack,
   type Defense,
 } from "./content.js";
-import { checkpoint, producerCost, producerMultiplier, rateAt, repeatCost } from "./economy.js";
+import {
+  brokenRate,
+  checkpoint,
+  producerCost,
+  producerMultiplier,
+  rateAt,
+  repairCost,
+  repeatCost,
+} from "./economy.js";
 import { P, seconds, type Millis, type Potatoes } from "./numbers.js";
 import { clampToMatch, isOver, scoreOf } from "./match.js";
 import { rngFor } from "./rng.js";
@@ -144,6 +152,25 @@ export function botDecide(
     saveTarget === undefined
       ? budget
       : P.sub(budget, P.min(saveTarget, P.mul(budget, RESERVE_FRACTION)));
+
+  // Fix what's broken first when it's worth fixing. Repairs buy back rate you
+  // already paid for, so they're normally the best potatoes on the board — but
+  // a bot that repairs unconditionally can be bled dry by cheap chip damage,
+  // hence the same value test everything else gets.
+  if (brokenRate(me) > 0) {
+    let bestRepair: { id: (typeof PRODUCERS)[number]["id"]; value: number; cost: Potatoes } | undefined;
+    for (const prod of PRODUCERS) {
+      const broken = Math.min(me.broken[prod.id] ?? 0, me.producers[prod.id] ?? 0);
+      if (broken <= 0) continue;
+      const cost = repairCost(me, prod.id);
+      if (cost <= 0) continue;
+      const value = (broken * prod.baseRate * producerMultiplier(me, prod.id)) / cost;
+      if (!bestRepair || value > bestRepair.value) bestRepair = { id: prod.id, value, cost };
+    }
+    if (bestRepair && P.gte(economyBudget, bestRepair.cost)) {
+      return { type: "repair", player: botId, producer: bestRepair.id };
+    }
+  }
 
   // Upgrades are almost always the best potato-per-potato buy available.
   for (const up of UPGRADES) {

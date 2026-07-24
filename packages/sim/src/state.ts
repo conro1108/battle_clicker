@@ -21,15 +21,6 @@ export type ActiveEffect =
       expiresAt: Millis;
     }
   | {
-      kind: "disable";
-      id: string;
-      source: PlayerId;
-      label: string;
-      producer: ProducerId;
-      startedAt: Millis;
-      expiresAt: Millis;
-    }
-  | {
       kind: "shield";
       id: string;
       source: PlayerId;
@@ -54,6 +45,11 @@ export interface PlayerState {
   harvested: Potatoes;
 
   producers: Partial<Record<ProducerId, number>>;
+  /**
+   * Units knocked out by sabotage. These stay owned but produce nothing until
+   * repaired — unlike a timed effect, nothing brings them back on its own.
+   */
+  broken: Partial<Record<ProducerId, number>>;
   upgrades: UpgradeId[];
   /** How many times each repeatable action has been bought — drives its cost curve. */
   attacksUsed: Partial<Record<AttackId, number>>;
@@ -95,7 +91,9 @@ export type Command =
   | { type: "buy_producer"; player: PlayerId; producer: ProducerId; qty: number }
   | { type: "buy_upgrade"; player: PlayerId; upgrade: UpgradeId }
   | { type: "attack"; player: PlayerId; target: PlayerId; attack: AttackId }
-  | { type: "defend"; player: PlayerId; defense: DefenseId };
+  | { type: "defend"; player: PlayerId; defense: DefenseId }
+  /** Bring broken units of one producer type back online. */
+  | { type: "repair"; player: PlayerId; producer: ProducerId };
 
 export type CommandResult =
   | { ok: true; state: MatchState; entries: LogEntry[] }

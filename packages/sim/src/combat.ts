@@ -1,6 +1,13 @@
-import { MAX_STEAL_PCT, PRODUCERS, PRODUCER_BY_ID, type Attack, type Defense } from "./content.js";
-import { isActive, producerRate } from "./economy.js";
-import { P, ms, type Millis, type Potatoes } from "./numbers.js";
+import {
+  MAX_BROKEN_SHARE,
+  PRODUCERS,
+  PRODUCER_BY_ID,
+  type Attack,
+  type Defense,
+  type ProducerId,
+} from "./content.js";
+import { isActive, producerRate, workingCount } from "./economy.js";
+import { ms, type Millis } from "./numbers.js";
 import type { Rng } from "./rng.js";
 import type { ActiveEffect, PlayerState } from "./state.js";
 
@@ -10,9 +17,10 @@ export interface AttackOutcome {
   blocked: boolean;
   /** Shield power consumed soaking this. */
   absorbed: number;
-  stolen: Potatoes;
+  /** Units knocked offline, by producer. Stays broken until repaired. */
+  broke: Partial<Record<ProducerId, number>>;
+  brokeTotal: number;
   applied?: ActiveEffect;
-  disabledProducerName?: string;
 }
 
 function activeShields(p: PlayerState, t: Millis) {
@@ -37,14 +45,14 @@ function drainShields(p: PlayerState, t: Millis, amount: number): PlayerState {
   return { ...p, effects: effects.filter((e) => e.kind !== "shield" || e.power > 0) };
 }
 
-/** The producer contributing the most right now — what Ruined Soil goes for. */
-function bestProducer(p: PlayerState, t: Millis) {
-  let best: { id: (typeof PRODUCERS)[number]["id"]; rate: number } | undefined;
-  for (const prod of PRODUCERS) {
-    const r = producerRate(p, prod.id, t);
-    if (r > 0 && (!best || r > best.rate)) best = { id: prod.id, rate: r };
-  }
-  return best;
+/** Producer types a breakage attack can actually hit, worst-first by scope. */
+function targetsFor(p: PlayerState, scope: "best" | "cheapest" | "all"): ProducerId[] {
+  const live = PRODUCERS.filter((prod) => workingCount(p, prod.id) > 0);
+  if (live.length === 0) return [];
+  if (scope === "all") return live.map((prod) => prod.id);
+  if (scope === "cheapest") return [live[0]!.id];
+  const best = live.reduce((a, b) => (producerRate(p, b.id) > producerRate(p, a.id) ? b : a));
+  return [best.id];
 }
 
 /**
@@ -74,58 +82,61 @@ export function resolveAttack(args: {
     mitigation,
     blocked: potency <= 1e-9,
     absorbed,
-    stolen: P.zero,
+    broke: {},
+    brokeTotal: 0,
   };
   if (outcome.blocked) return { defender, outcome };
 
-  const id = `${eventIndex}:${attack.id}`;
-  switch (attack.effect.kind) {
-    case "steal": {
-      const pct = Math.min(
-        MAX_STEAL_PCT,
-        rng.range(attack.effect.minPct, attack.effect.maxPct) * potency,
-      );
-      // Comes off the pile only — lifetime harvested is never clawed back.
-      const stolen = P.mul(defender.potatoes, pct);
-      defender = { ...defender, potatoes: P.sub(defender.potatoes, stolen) };
-      outcome.stolen = stolen;
-      break;
-    }
-    case "slow": {
-      const applied: ActiveEffect = {
-        kind: "slow",
-        id,
-        source: attackerId,
-        label: attack.name,
-        multiplier: 1 - attack.effect.cut * potency,
-        startedAt: at,
-        expiresAt: ms(at + attack.effect.durationMs),
-      };
-      defender = { ...defender, effects: [...defender.effects, applied] };
-      outcome.applied = applied;
-      break;
-    }
-    case "disable": {
-      const target = bestProducer(defender, at);
-      if (!target) break; // nothing running to shut off
-      // Binary effect, so mitigation buys back time instead of magnitude.
-      const applied: ActiveEffect = {
-        kind: "disable",
-        id,
-        source: attackerId,
-        label: attack.name,
-        producer: target.id,
-        startedAt: at,
-        expiresAt: ms(at + attack.effect.durationMs * potency),
-      };
-      defender = { ...defender, effects: [...defender.effects, applied] };
-      outcome.applied = applied;
-      outcome.disabledProducerName = PRODUCER_BY_ID[target.id].name;
-      break;
-    }
+  if (attack.effect.kind === "slow") {
+    const applied: ActiveEffect = {
+      kind: "slow",
+      id: `${eventIndex}:${attack.id}`,
+      source: attackerId,
+      label: attack.name,
+      multiplier: 1 - attack.effect.cut * potency,
+      startedAt: at,
+      expiresAt: ms(at + attack.effect.durationMs),
+    };
+    defender = { ...defender, effects: [...defender.effects, applied] };
+    outcome.applied = applied;
+    return { defender, outcome };
   }
 
+  // Breakage. Mitigation scales how many units go down; a partial shield means
+  // fewer things to fix, not a shorter outage — nothing here times out.
+  const share = attack.effect.share * potency;
+  const broken = { ...defender.broken };
+  for (const id of targetsFor(defender, attack.effect.scope)) {
+    const owned = defender.producers[id] ?? 0;
+    const already = broken[id] ?? 0;
+    const working = owned - already;
+    if (working <= 0) continue;
+
+    // A little jitter so identical attacks aren't perfectly predictable, and
+    // so the seeded PRNG stays the only source of randomness in the sim.
+    const rolled = share * rng.range(0.85, 1.15);
+    // At least one unit, or cheap attacks quietly do nothing to a small farm.
+    const want = Math.max(1, Math.round(working * rolled));
+    // No knockouts: capped share of what they own, per type.
+    const cap = Math.max(0, Math.floor(owned * MAX_BROKEN_SHARE) - already);
+    const hit = Math.min(want, working, cap);
+    if (hit <= 0) continue;
+
+    broken[id] = already + hit;
+    outcome.broke[id] = (outcome.broke[id] ?? 0) + hit;
+    outcome.brokeTotal += hit;
+  }
+  defender = { ...defender, broken };
+
   return { defender, outcome };
+}
+
+/** Human-readable summary of what an attack knocked out. */
+export function describeBreak(broke: Partial<Record<ProducerId, number>>): string {
+  const parts = PRODUCERS.filter((prod) => (broke[prod.id] ?? 0) > 0).map(
+    (prod) => `${broke[prod.id]}x ${PRODUCER_BY_ID[prod.id].name}`,
+  );
+  return parts.join(", ");
 }
 
 export function buildShield(

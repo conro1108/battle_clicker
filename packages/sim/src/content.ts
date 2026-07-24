@@ -205,13 +205,23 @@ export const UPGRADE_BY_ID: Record<UpgradeId, Upgrade> = Object.fromEntries(
 
 export type AttackId = "moles" | "blight" | "drought" | "soil_rot" | "locusts";
 
+/**
+ * Which producers a breakage attack goes for.
+ * - `best`: their biggest earner, where it hurts most.
+ * - `cheapest`: their entry-tier stuff — early harassment.
+ * - `all`: a slice off every type they own.
+ */
+export type BreakScope = "best" | "cheapest" | "all";
+
 export type AttackEffect =
-  /** Takes potatoes off the pile. Never touches lifetime harvested. */
-  | { kind: "steal"; minPct: number; maxPct: number }
-  /** Cuts total output by `cut` (0..1) for a while. */
-  | { kind: "slow"; cut: number; durationMs: number }
-  /** Shuts off the target's single biggest earner. */
-  | { kind: "disable"; durationMs: number };
+  /**
+   * Breaks producer units. Broken units stay broken and produce nothing until
+   * the owner spends on repairs — the damage compounds instead of timing out,
+   * which is the whole reason to attack before the last minute of a match.
+   */
+  | { kind: "break"; /** Fraction of the targeted units, floored at 1. */ share: number; scope: BreakScope }
+  /** Cuts total output by `cut` (0..1) for a while. Weather passes; pests don't. */
+  | { kind: "slow"; cut: number; durationMs: number };
 
 export interface Attack {
   id: AttackId;
@@ -228,47 +238,47 @@ export const ATTACKS: readonly Attack[] = [
   {
     id: "moles",
     name: "Moles",
-    blurb: "Skims potatoes off their pile. Cheap, rude.",
+    blurb: "Chews through their cheap stuff. Stays chewed.",
     power: 40,
     baseCost: P.of(200),
-    growth: 1.35,
-    effect: { kind: "steal", minPct: 0.08, maxPct: 0.16 },
+    growth: 1.3,
+    effect: { kind: "break", share: 0.28, scope: "cheapest" },
   },
   {
     id: "blight",
     name: "Potato Blight",
-    blurb: "-35% output for 45s.",
+    blurb: "Rots a chunk of their best producer. Needs repairing.",
     power: 110,
-    baseCost: P.of(1_500),
-    growth: 1.35,
-    effect: { kind: "slow", cut: 0.35, durationMs: seconds(45) },
+    baseCost: P.of(1_200),
+    growth: 1.3,
+    effect: { kind: "break", share: 0.28, scope: "best" },
   },
   {
     id: "drought",
     name: "Drought",
-    blurb: "-60% output for 35s.",
+    blurb: "-55% output for 40s. Passes on its own.",
     power: 260,
-    baseCost: P.of(9_000),
+    baseCost: P.of(6_000),
     growth: 1.35,
-    effect: { kind: "slow", cut: 0.6, durationMs: seconds(35) },
+    effect: { kind: "slow", cut: 0.55, durationMs: seconds(40) },
   },
   {
     id: "soil_rot",
     name: "Ruined Soil",
-    blurb: "Shuts down their best producer for 45s.",
+    blurb: "Wrecks half their best producer.",
     power: 420,
-    baseCost: P.of(40_000),
-    growth: 1.4,
-    effect: { kind: "disable", durationMs: seconds(45) },
+    baseCost: P.of(30_000),
+    growth: 1.35,
+    effect: { kind: "break", share: 0.46, scope: "best" },
   },
   {
     id: "locusts",
     name: "Locust Swarm",
-    blurb: "-75% output for 60s. They'll feel this one.",
+    blurb: "Takes a slice of everything they own. Repair bills for days.",
     power: 750,
-    baseCost: P.of(200_000),
+    baseCost: P.of(150_000),
     growth: 1.4,
-    effect: { kind: "slow", cut: 0.75, durationMs: seconds(60) },
+    effect: { kind: "break", share: 0.35, scope: "all" },
   },
 ];
 
@@ -347,5 +357,15 @@ export const BASE_CLICK = P.of(1);
  */
 export const MIN_RATE_MULTIPLIER = 0.15;
 
-/** And a single steal can never take more than this share of the pile. */
-export const MAX_STEAL_PCT = 0.25;
+/**
+ * And breakage can never take more than this share of a producer type you own,
+ * so no single hit can flatten a farm however far ahead the attacker is.
+ */
+export const MAX_BROKEN_SHARE = 0.6;
+
+/**
+ * Repairing costs this share of what those units would cost to buy fresh at
+ * your current count. Cheaper than rebuilding, so damage is a tax on your
+ * momentum rather than a wipe — but it's still potatoes that didn't compound.
+ */
+export const REPAIR_COST_FRACTION = 0.75;

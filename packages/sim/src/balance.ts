@@ -29,7 +29,15 @@ export function simulateMatch(opts: {
   seed: string;
   durationMs: number;
   scoring?: ScoringRule;
-  players: { id: string; name: string; profile: keyof typeof BOT_PROFILES }[];
+  players: {
+    id: string;
+    name: string;
+    profile: keyof typeof BOT_PROFILES;
+    /** Overrides on top of the named profile, for probing one knob at a time. */
+    tweak?: Partial<BotProfile>;
+    /** Seconds [from, to) during which this seat is willing to attack at all. */
+    attackWindow?: [number, number];
+  }[];
   stepMs?: number;
   sampleEverySeconds?: number;
 }): BalanceResult {
@@ -44,8 +52,12 @@ export function simulateMatch(opts: {
   });
 
   const profiles = new Map<string, BotProfile>(
-    opts.players.map((p) => [p.id, BOT_PROFILES[p.profile] ?? BOT_PROFILES.scrappy!]),
+    opts.players.map((p) => [
+      p.id,
+      { ...(BOT_PROFILES[p.profile] ?? BOT_PROFILES.scrappy!), ...p.tweak },
+    ]),
   );
+  const windows = new Map(opts.players.map((p) => [p.id, p.attackWindow]));
   const clickCarry = new Map<string, number>(opts.players.map((p) => [p.id, 0]));
   const samples: BalanceSample[] = [];
 
@@ -66,7 +78,14 @@ export function simulateMatch(opts: {
       // Each profile acts on its own cadence, so these runs measure the same
       // opponent the app actually puts in front of a player.
       if ((t - startedAt) % profile.decisionMs >= step) continue;
-      const decision = botDecide(state, p.id, profile, t);
+
+      const window = windows.get(p.id);
+      const elapsedSeconds = (t - startedAt) / 1000;
+      const mayAttack =
+        !window || (elapsedSeconds >= window[0] && elapsedSeconds < window[1]);
+      const effective = mayAttack ? profile : { ...profile, aggression: 0 };
+
+      const decision = botDecide(state, p.id, effective, t);
       if (decision) state = apply(state, decision, t);
     }
 

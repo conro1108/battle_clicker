@@ -8,8 +8,10 @@ import {
   affordableCount,
   format,
   potatoesAt,
+  brokenRate,
   producerCost,
   producerMultiplier,
+  repairCost,
   repeatCost,
   shieldPool,
   type Command,
@@ -103,6 +105,9 @@ export function Shop({
         </button>
         <button className={tab === "defend" ? "on" : ""} onClick={() => setTab("defend")}>
           Defend
+          {brokenRate(me) > 0 && (
+            <span className="tab-alert" title="You have broken kit" aria-label="damaged" />
+          )}
         </button>
       </header>
 
@@ -129,6 +134,7 @@ export function Shop({
               const cost = producerCost(prod.id, owned, n);
               const each = prod.baseRate * producerMultiplier(me, prod.id);
               const isBestValue = prod.id === bestValueId;
+              const broken = Math.min(me.broken[prod.id] ?? 0, owned);
               // The ladder reveals itself a rung at a time — but the first rung
               // is always there, or an empty shop greets you at zero potatoes.
               const prev = PRODUCERS[i - 1];
@@ -143,7 +149,7 @@ export function Shop({
                   key={prod.id}
                   accent={isBestValue ? "row-best" : undefined}
                   badge={isBestValue ? "best value" : undefined}
-                  name={`${prod.name}${owned ? ` ×${owned}` : ""}`}
+                  name={`${prod.name}${owned ? ` ×${owned}` : ""}${broken ? ` (${broken} broken)` : ""}`}
                   blurb={`${prod.blurb} +${format(each * n)}/s`}
                   cost={cost}
                   meta={qty === "max" ? `buy ${n}` : undefined}
@@ -221,6 +227,34 @@ export function Shop({
 
       {tab === "defend" && (
         <>
+          {PRODUCERS.some((prod) => (me.broken[prod.id] ?? 0) > 0) && (
+            <>
+              <p className="hint">
+                Broken kit stays broken. Repairs cost less than rebuilding, but they're still
+                potatoes you didn't grow with — that's the price of getting hit.
+              </p>
+              <div className="rows">
+                {PRODUCERS.map((prod) => {
+                  const broken = Math.min(me.broken[prod.id] ?? 0, me.producers[prod.id] ?? 0);
+                  if (broken <= 0) return null;
+                  const cost = repairCost(me, prod.id);
+                  const back = broken * prod.baseRate * producerMultiplier(me, prod.id);
+                  return (
+                    <Row
+                      key={`repair-${prod.id}`}
+                      accent="row-repair"
+                      name={`Repair ${prod.name}`}
+                      blurb={`${broken} broken · restores +${format(back)}/s`}
+                      cost={cost}
+                      affordable={P.gte(budget, cost)}
+                      onBuy={() => dispatch({ type: "repair", player: me.id, producer: prod.id })}
+                    />
+                  );
+                })}
+              </div>
+            </>
+          )}
+
           <p className="hint">
             Shield left: <strong>{format(shieldPool(me, now))}</strong>. It's a pool, not a wall —
             every attack it soaks spends some of it.

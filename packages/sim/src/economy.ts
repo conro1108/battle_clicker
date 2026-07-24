@@ -1,6 +1,7 @@
 import {
   BASE_CLICK,
   MIN_RATE_MULTIPLIER,
+  REPAIR_COST_FRACTION,
   PRODUCERS,
   PRODUCER_BY_ID,
   UPGRADE_BY_ID,
@@ -36,21 +37,33 @@ export function clickYield(p: PlayerState): Potatoes {
   return P.mul(BASE_CLICK, m);
 }
 
-/** Per-producer contribution at time `t`, after upgrades but before sabotage. */
-export function producerRate(p: PlayerState, id: ProducerId, t: Millis): Rate {
-  const disabled = p.effects.some(
-    (e) => e.kind === "disable" && e.producer === id && isActive(e, t),
-  );
-  if (disabled) return asRate(0);
-  const count = p.producers[id] ?? 0;
-  return asRate(count * PRODUCER_BY_ID[id].baseRate * producerMultiplier(p, id));
+/** Units of `id` that are actually turning out potatoes. */
+export function workingCount(p: PlayerState, id: ProducerId): number {
+  return Math.max(0, (p.producers[id] ?? 0) - (p.broken[id] ?? 0));
 }
 
-/** Rate with no sabotage applied — the denominator for "how hard am I hit". */
+/** Per-producer contribution, after upgrades and breakage but before slows. */
+export function producerRate(p: PlayerState, id: ProducerId): Rate {
+  return asRate(workingCount(p, id) * PRODUCER_BY_ID[id].baseRate * producerMultiplier(p, id));
+}
+
+/** Rate with no sabotage applied at all — what repairing would get you back to. */
 export function cleanRate(p: PlayerState): Rate {
   let total = 0;
   for (const prod of PRODUCERS) {
     total += (p.producers[prod.id] ?? 0) * prod.baseRate * producerMultiplier(p, prod.id);
+  }
+  return asRate(total);
+}
+
+/** Production lost to unrepaired damage, per second. */
+export function brokenRate(p: PlayerState): Rate {
+  let total = 0;
+  for (const prod of PRODUCERS) {
+    total +=
+      Math.min(p.broken[prod.id] ?? 0, p.producers[prod.id] ?? 0) *
+      prod.baseRate *
+      producerMultiplier(p, prod.id);
   }
   return asRate(total);
 }
@@ -70,7 +83,7 @@ export function slowMultiplier(p: PlayerState, t: Millis): number {
 /** Actual production rate at `t`, everything applied. */
 export function rateAt(p: PlayerState, t: Millis): Rate {
   let total = 0;
-  for (const prod of PRODUCERS) total += producerRate(p, prod.id, t);
+  for (const prod of PRODUCERS) total += producerRate(p, prod.id);
   return asRate(total * slowMultiplier(p, t));
 }
 
@@ -136,6 +149,25 @@ export function producerCost(id: ProducerId, owned: number, qty = 1): Potatoes {
 /** Repeatable actions (sabotage, defense) get pricier each time you use them. */
 export function repeatCost(baseCost: Potatoes, growth: number, timesUsed: number): Potatoes {
   return P.of(Math.ceil(baseCost * Math.pow(growth, timesUsed)));
+}
+
+/**
+ * What it costs to bring every broken unit of `id` back online. Priced off the
+ * units you'd be re-buying at your current count, discounted — repairing beats
+ * rebuilding, but it's still potatoes that didn't go into growth.
+ */
+export function repairCost(p: PlayerState, id: ProducerId): Potatoes {
+  const broken = Math.min(p.broken[id] ?? 0, p.producers[id] ?? 0);
+  if (broken <= 0) return P.zero;
+  const gross = producerCost(id, workingCount(p, id), broken);
+  return P.of(Math.ceil(gross * REPAIR_COST_FRACTION));
+}
+
+/** Total outstanding repair bill across every producer type. */
+export function totalRepairCost(p: PlayerState): Potatoes {
+  let total = 0;
+  for (const prod of PRODUCERS) total += repairCost(p, prod.id);
+  return P.of(total);
 }
 
 /** How many of `id` the player can afford right now. */
