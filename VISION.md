@@ -72,6 +72,9 @@ paths.
   every decision; fog of war makes sabotage feel more like a gamble.
 - How punishing is sabotage — a nuisance/tempo hit, or can you actually get
   wrecked and taken out of a match?
+  - **Answer:** no knockouts from sabotage. Tempo hits, setbacks, real pain —
+    but not eliminated from the match. Maybe one giga/mega/ultra-rare exception
+    exists somewhere down the line, but that's not the core vibe.
 - Does defense ever fully counter offense, or is it always partial mitigation?
 - Real-time simultaneous, or does turn structure / cooldowns matter?
 - Sit-down or slow-burn — or both, as genuinely different modes?
