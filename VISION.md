@@ -70,6 +70,9 @@ paths.
 
 - How visible is the opponent's board? Full visibility raises the stakes of
   every decision; fog of war makes sabotage feel more like a gamble.
+  - **Answer (for now):** you see their item count and production rate. Not
+    their upgrade tree, defenses, or anything else on their board — just
+    those two numbers.
 - How punishing is sabotage — a nuisance/tempo hit, or can you actually get
   wrecked and taken out of a match?
   - **Answer:** no knockouts from sabotage. Tempo hits, setbacks, real pain —
