@@ -1,4 +1,5 @@
-import { BOT_PROFILES, botDecide, type BotProfile } from "./bot.js";
+import { BOT_PROFILES, botTurn, type BotProfile } from "./bot.js";
+import { HUMAN_STYLES, clicksPerSecondAt, humanTurn, type HumanStyle } from "./reference.js";
 import { applyCommand, createMatch, endsAt, scoreOf } from "./match.js";
 import { rateAt } from "./economy.js";
 import { ms, type Millis } from "./numbers.js";
@@ -32,7 +33,10 @@ export function simulateMatch(opts: {
   players: {
     id: string;
     name: string;
-    profile: keyof typeof BOT_PROFILES;
+    /** A bot seat. Mutually exclusive with `human`. */
+    profile?: keyof typeof BOT_PROFILES;
+    /** A reference-human seat, for grading the difficulty ladder. */
+    human?: keyof typeof HUMAN_STYLES;
     /** Overrides on top of the named profile, for probing one knob at a time. */
     tweak?: Partial<BotProfile>;
     /** Seconds [from, to) during which this seat is willing to attack at all. */
@@ -48,17 +52,25 @@ export function simulateMatch(opts: {
   let state = createMatch({
     config: { seed: opts.seed, durationMs: opts.durationMs, scoring: opts.scoring ?? "total_harvested" },
     startedAt,
-    players: opts.players.map((p) => ({ id: p.id, name: p.name, isBot: true })),
+    players: opts.players.map((p) => ({ id: p.id, name: p.name, isBot: !p.human })),
   });
 
   const profiles = new Map<string, BotProfile>(
-    opts.players.map((p) => [
-      p.id,
-      { ...(BOT_PROFILES[p.profile] ?? BOT_PROFILES.scrappy!), ...p.tweak },
-    ]),
+    opts.players
+      .filter((p) => !p.human)
+      .map((p) => [
+        p.id,
+        { ...(BOT_PROFILES[p.profile ?? "scrappy"] ?? BOT_PROFILES.scrappy!), ...p.tweak },
+      ]),
+  );
+  const humans = new Map<string, HumanStyle>(
+    opts.players
+      .filter((p) => p.human)
+      .map((p) => [p.id, HUMAN_STYLES[p.human!] ?? HUMAN_STYLES.builder!]),
   );
   const windows = new Map(opts.players.map((p) => [p.id, p.attackWindow]));
   const clickCarry = new Map<string, number>(opts.players.map((p) => [p.id, 0]));
+  const nextDecision = new Map<string, number>(opts.players.map((p) => [p.id, startedAt]));
   const samples: BalanceSample[] = [];
 
   const apply = (state: MatchState, cmd: Parameters<typeof applyCommand>[1], t: Millis) => {
@@ -68,25 +80,35 @@ export function simulateMatch(opts: {
 
   const end = endsAt(state);
   for (let t = startedAt; t < end; t = ms(t + step)) {
+    const elapsedSeconds = (t - startedAt) / 1000;
     for (const p of opts.players) {
-      const profile = profiles.get(p.id)!;
-      const carry = clickCarry.get(p.id)! + (profile.clicksPerSecond * step) / 1000;
+      const style = humans.get(p.id);
+      const profile = profiles.get(p.id);
+
+      const cps = style
+        ? clicksPerSecondAt(style, elapsedSeconds)
+        : profile!.clicksPerSecond;
+      const carry = clickCarry.get(p.id)! + (cps * step) / 1000;
       const clicks = Math.floor(carry);
       clickCarry.set(p.id, carry - clicks);
       if (clicks > 0) state = apply(state, { type: "click", player: p.id, count: clicks }, t);
 
-      // Each profile acts on its own cadence, so these runs measure the same
+      // Each seat acts on its own cadence, so these runs measure the same
       // opponent the app actually puts in front of a player.
-      if ((t - startedAt) % profile.decisionMs >= step) continue;
+      if (t < nextDecision.get(p.id)!) continue;
+      nextDecision.set(p.id, t + (style?.decisionMs ?? profile!.decisionMs));
 
       const window = windows.get(p.id);
-      const elapsedSeconds = (t - startedAt) / 1000;
       const mayAttack =
         !window || (elapsedSeconds >= window[0] && elapsedSeconds < window[1]);
-      const effective = mayAttack ? profile : { ...profile, aggression: 0 };
 
-      const decision = botDecide(state, p.id, effective, t);
-      if (decision) state = apply(state, decision, t);
+      if (style) {
+        const effective = mayAttack ? style : { ...style, attacks: false };
+        for (const cmd of humanTurn(state, p.id, effective, t)) state = apply(state, cmd, t);
+      } else {
+        const effective = mayAttack ? profile! : { ...profile!, aggression: 0 };
+        for (const cmd of botTurn(state, p.id, effective, t)) state = apply(state, cmd, t);
+      }
     }
 
     const elapsed = (t - startedAt) / 1000;

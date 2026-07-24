@@ -7,7 +7,9 @@ import {
   type ProducerId,
 } from "./content.js";
 import {
+  attackCost,
   checkpoint,
+  cleanRate,
   clickYield,
   harvestedAt,
   potatoesAt,
@@ -219,7 +221,7 @@ export function applyCommand(state: MatchState, cmd: Command, now: Millis): Comm
       if (!target0) return fail("No such target.");
 
       const used = actor.attacksUsed[attack.id] ?? 0;
-      const cost = repeatCost(attack.baseCost, attack.growth, used);
+      const cost = attackCost(attack, used, cleanRate(target0));
       if (!spend(cost)) return fail("Not enough potatoes.");
       actor = { ...actor, attacksUsed: { ...actor.attacksUsed, [attack.id]: used + 1 } };
 

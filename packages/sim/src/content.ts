@@ -228,8 +228,17 @@ export interface Attack {
   name: string;
   blurb: string;
   power: number;
+  /** Floor price, and what you pay while the target is still small. */
   baseCost: Potatoes;
-  /** Repeat use gets pricier — this is the only thing pacing sabotage. */
+  /**
+   * Potatoes charged per point of the target's production rate. Sabotage that
+   * costs a flat price does damage proportional to how big the target is, which
+   * makes hitting a leader wildly better value than growing — the one outcome
+   * that collapses the spend-on-yourself-vs-spend-on-them choice. Pricing the
+   * swing against the farm you're swinging at is what keeps it a real trade.
+   */
+  costPerRate: number;
+  /** Repeat use gets pricier on top of that. */
   growth: number;
   effect: AttackEffect;
 }
@@ -241,6 +250,7 @@ export const ATTACKS: readonly Attack[] = [
     blurb: "Chews through their cheap stuff. Stays chewed.",
     power: 40,
     baseCost: P.of(200),
+    costPerRate: 0.15,
     growth: 1.3,
     effect: { kind: "break", share: 0.28, scope: "cheapest" },
   },
@@ -250,6 +260,7 @@ export const ATTACKS: readonly Attack[] = [
     blurb: "Rots a chunk of their best producer. Needs repairing.",
     power: 110,
     baseCost: P.of(1_200),
+    costPerRate: 1,
     growth: 1.3,
     effect: { kind: "break", share: 0.28, scope: "best" },
   },
@@ -259,6 +270,7 @@ export const ATTACKS: readonly Attack[] = [
     blurb: "-55% output for 40s. Passes on its own.",
     power: 260,
     baseCost: P.of(6_000),
+    costPerRate: 3,
     growth: 1.35,
     effect: { kind: "slow", cut: 0.55, durationMs: seconds(40) },
   },
@@ -268,6 +280,7 @@ export const ATTACKS: readonly Attack[] = [
     blurb: "Wrecks half their best producer.",
     power: 420,
     baseCost: P.of(30_000),
+    costPerRate: 1.75,
     growth: 1.35,
     effect: { kind: "break", share: 0.46, scope: "best" },
   },
@@ -277,6 +290,7 @@ export const ATTACKS: readonly Attack[] = [
     blurb: "Takes a slice of everything they own. Repair bills for days.",
     power: 750,
     baseCost: P.of(150_000),
+    costPerRate: 2.2,
     growth: 1.4,
     effect: { kind: "break", share: 0.35, scope: "all" },
   },

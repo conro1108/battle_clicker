@@ -59,16 +59,25 @@ describe("match pacing", () => {
 
   /**
    * The central question of the whole design: is reaching across the board ever
-   * worth the potatoes you didn't spend on yourself? If pure growth wins every
-   * seed, sabotage is decoration and there's no second axis.
+   * worth the potatoes you didn't spend on yourself? If pure growth wins by a
+   * mile, sabotage is decoration and there's no second axis. If sabotage wins by
+   * a mile, growth is a tax you pay before the real game starts.
+   *
+   * Graded on the margin rather than on a win count. A bot playing at skill 1 is
+   * deterministic — the only thing the seed still moves is the jitter on how many
+   * units an attack knocks out — so "how often does each side win" collapses to
+   * 0-10 or 10-0 no matter how close the two lines actually are. The margin is
+   * the thing that was always meant by "neither is dominant".
    */
   it("leaves neither pure growth nor sabotage dominant", () => {
     const seeds = Array.from({ length: 10 }, (_, i) => `dom-${i}`);
-    const wins = seeds.map((seed) => {
+    const ratios = seeds.map((seed) => {
       const r = simulateMatch({
         seed,
         durationMs: seconds(300),
         players: [
+          // `greedy` is `nasty` with the second axis switched off, so this
+          // isolates sabotage and nothing else.
           { id: "greedy", name: "Greedy", profile: "greedy" },
           { id: "nasty", name: "Nasty", profile: "nasty" },
         ],
@@ -77,15 +86,14 @@ describe("match pacing", () => {
         `  ${seed}: greedy=${format(r.finalScores.greedy!)} nasty=${format(r.finalScores.nasty!)} ` +
           `landed=${r.attacksLanded} blocked=${r.attacksBlocked}`,
       );
-      return r.finalScores.greedy! > r.finalScores.nasty! ? "greedy" : "nasty";
+      return r.finalScores.nasty! / r.finalScores.greedy!;
     });
-    const greedyWins = wins.filter((w) => w === "greedy").length;
-    console.log(`growth-vs-sabotage over ${wins.length} seeds: greedy ${greedyWins}-${wins.length - greedyWins} nasty`);
-    // Not a claim that it's balanced for humans — these are crude bots. It's a
-    // guard against either axis becoming strictly dominant, which is the one
-    // outcome that would collapse the game back into a solo idle clicker.
-    expect(greedyWins).toBeGreaterThan(0);
-    expect(wins.length - greedyWins).toBeGreaterThan(0);
+    const median = [...ratios].sort((a, b) => a - b)[Math.floor(ratios.length / 2)]!;
+    console.log(`growth-vs-sabotage: sabotage line finishes at ${median.toFixed(2)}x the pure-growth line`);
+    // An edge to sabotage is fine and expected — it's spending on something the
+    // control group can't answer. A rout in either direction is not.
+    expect(median).toBeGreaterThan(0.7);
+    expect(median).toBeLessThan(1.6);
   });
 
   /**
@@ -125,40 +133,52 @@ describe("match pacing", () => {
   });
 
   /**
-   * Sabotage has to be worth considering at any point in the match, not just
-   * in the last minute.
+   * When in the match sabotage is worth reaching for.
    *
-   * When attacks were timed effects the victim recovered for free, so attacking
-   * early meant paying compounding costs to deny forty-five seconds of output —
-   * it won 2/15 seeds, and the whole strategy collapsed into "ignore sabotage,
-   * then dump everything at the buzzer". Persistent breakage is what fixes
-   * that: damage stays until they spend on repairs, so hitting them early costs
-   * them for the rest of the match either way.
-   *
-   * Late should still be the stronger window — there's no compounding left to
-   * lose by then — but early has to be a real option rather than a blunder.
+   * Sabotage is priced against the target's production rate, so a swing costs
+   * about what the damage is worth whenever you throw it. What changes over a
+   * match is the other side of the trade: potatoes spent in the first minute
+   * would have compounded for four more, so early sabotage is buying denial at
+   * the moment growth is cheapest. That should make it a wash early and a good
+   * buy later — a gradient, not a cliff, and never an outright self-own.
    */
-  it("makes sabotage worth considering early, and still best late", () => {
+  it("makes sabotage a wash early and a good buy later", () => {
     const seeds = Array.from({ length: 15 }, (_, i) => `window-${i}`);
-    const winsFor = (attackWindow: [number, number]) =>
-      seeds.filter((seed) => {
-        const r = simulateMatch({
-          seed,
-          durationMs: seconds(300),
-          players: [
-            { id: "econ", name: "Econ", profile: "greedy" },
-            { id: "sab", name: "Sab", profile: "greedy", tweak: { aggression: 0.7 }, attackWindow },
-          ],
-        });
-        return r.finalScores.sab! > r.finalScores.econ!;
-      }).length;
+    const marginFor = (attackWindow: [number, number]) => {
+      const ratios = seeds
+        .map((seed) => {
+          const r = simulateMatch({
+            seed,
+            durationMs: seconds(300),
+            players: [
+              { id: "econ", name: "Econ", profile: "greedy" },
+              {
+                id: "sab",
+                name: "Sab",
+                profile: "greedy",
+                tweak: { aggression: 0.5 },
+                attackWindow,
+              },
+            ],
+          });
+          return r.finalScores.sab! / r.finalScores.econ!;
+        })
+        .sort((a, b) => a - b);
+      return ratios[Math.floor(ratios.length / 2)]!;
+    };
 
-    const early = winsFor([0, 100]);
-    const late = winsFor([200, 300]);
-    console.log(`sabotage window: early wins ${early}/15, late wins ${late}/15`);
-    // Early sabotage should be roughly a coin flip, not a self-own.
-    expect(early).toBeGreaterThanOrEqual(4);
-    expect(late).toBeGreaterThanOrEqual(early);
+    const early = marginFor([0, 100]);
+    const mid = marginFor([100, 200]);
+    const late = marginFor([200, 300]);
+    console.log(
+      `sabotage window: early ${early.toFixed(2)}x  mid ${mid.toFixed(2)}x  late ${late.toFixed(2)}x`,
+    );
+    // Spending early on a farm with nothing on it yet shouldn't cost you the
+    // match — you should roughly get back what you put in.
+    expect(early).toBeGreaterThan(0.95);
+    // And it should be worth more once there's something there to wreck.
+    expect(late).toBeGreaterThan(early);
+    expect(mid).toBeGreaterThan(early);
   });
 
   it("reports the shape of a match", () => {

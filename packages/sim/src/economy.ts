@@ -5,6 +5,7 @@ import {
   PRODUCERS,
   PRODUCER_BY_ID,
   UPGRADE_BY_ID,
+  type Attack,
   type ProducerId,
   type Upgrade,
 } from "./content.js";
@@ -149,6 +150,19 @@ export function producerCost(id: ProducerId, owned: number, qty = 1): Potatoes {
 /** Repeatable actions (sabotage, defense) get pricier each time you use them. */
 export function repeatCost(baseCost: Potatoes, growth: number, timesUsed: number): Potatoes {
   return P.of(Math.ceil(baseCost * Math.pow(growth, timesUsed)));
+}
+
+/**
+ * What it costs to swing at a farm producing `targetRate`.
+ *
+ * Priced off the target's *clean* rate — what they'd be making with nothing
+ * broken and no weather on them — rather than what they're producing right now.
+ * If damage made the next hit cheaper, stacking sabotage would snowball toward
+ * exactly the knockout VISION.md rules out.
+ */
+export function attackCost(attack: Attack, timesUsed: number, targetRate: Rate): Potatoes {
+  const base = Math.max(attack.baseCost, attack.costPerRate * targetRate);
+  return P.of(Math.ceil(base * Math.pow(attack.growth, timesUsed)));
 }
 
 /**

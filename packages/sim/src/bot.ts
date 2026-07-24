@@ -1,4 +1,4 @@
-import { shieldPool } from "./combat.js";
+import { buildShield, shieldPool } from "./combat.js";
 import {
   ATTACKS,
   DEFENSES,
@@ -8,216 +8,203 @@ import {
   type Defense,
 } from "./content.js";
 import {
+  attackCost,
   brokenRate,
   checkpoint,
+  cleanRate,
   producerCost,
   producerMultiplier,
-  rateAt,
   repairCost,
   repeatCost,
 } from "./economy.js";
-import { P, seconds, type Millis, type Potatoes } from "./numbers.js";
+import { P, type Millis, type Potatoes } from "./numbers.js";
 import { clampToMatch, isOver, scoreOf } from "./match.js";
 import { rngFor } from "./rng.js";
-import type { Command, MatchState, PlayerId } from "./state.js";
+import type { Command, MatchState, PlayerId, PlayerState } from "./state.js";
 
 export interface BotProfile {
-  /** 0..1 — how much of its pile it's willing to throw at sabotage. */
+  /** 0..1 — the share of its pile it's willing to throw at a single swing. */
   aggression: number;
-  /** 0..1 — how eagerly it shields up. */
+  /** 0..1 — the share of its pile it's willing to sink into a shield. */
   defensiveness: number;
   /** Stand-in for a human mashing the button. */
   clicksPerSecond: number;
   /**
-   * 0..1 — how often it plays the producer ladder well: hold out for the best
-   * rate-per-potato on the board rather than dumping the pile into whatever is
-   * cheapest. This is the difficulty knob.
+   * 0..1 — how well it plays the economy. This is the difficulty knob, and it
+   * drives three things at once, all of which a beginner gets wrong:
    *
-   * Note that decision *cadence* is deliberately not a difficulty knob. Acting
-   * less often means accumulating a bigger pile between buys, which buys better
-   * tiers — a slower bot came out stronger, which is not what a difficulty
-   * setting should do.
+   * - whether it buys the best rate-per-potato on the board or just the
+   *   cheapest thing on the shelf,
+   * - how much of its pile it converts into production each time it acts (a
+   *   beginner leaves potatoes sitting idle, earning nothing),
+   * - whether it bothers repairing broken kit at all.
    */
   skill: number;
-  /** How often it acts. Kept uniform across profiles; see `skill`. */
+  /** How often it acts. */
   decisionMs: number;
 }
 
 export const BOT_PROFILES: Record<string, BotProfile> = {
-  // Skill maps steeply onto score — 0.35/0.7/0.85 lands roughly 75K/320K/1.3M
-  // median over a five-minute match. See the ladder test in balance.test.ts.
-  chill: { aggression: 0.15, defensiveness: 0.3, clicksPerSecond: 1, skill: 0.35, decisionMs: 800 },
-  scrappy: { aggression: 0.45, defensiveness: 0.45, clicksPerSecond: 2, skill: 0.7, decisionMs: 800 },
-  nasty: { aggression: 0.7, defensiveness: 0.55, clicksPerSecond: 3, skill: 0.85, decisionMs: 800 },
-  /** Never spends a potato on anyone else. The control group for balance runs. */
-  greedy: { aggression: 0, defensiveness: 0, clicksPerSecond: 2, skill: 0.85, decisionMs: 800 },
+  // The ladder is checked by the difficulty test in balance.test.ts, and the
+  // top rung is checked against a human-speed reference player in human.test.ts
+  // — "nasty should actually be able to beat you" is a claim we test, not hope.
+  chill: { aggression: 0.15, defensiveness: 0.2, clicksPerSecond: 1, skill: 0.3, decisionMs: 1400 },
+  scrappy: { aggression: 0.3, defensiveness: 0.4, clicksPerSecond: 2, skill: 0.6, decisionMs: 1000 },
+  nasty: { aggression: 0.4, defensiveness: 0.5, clicksPerSecond: 3, skill: 1, decisionMs: 700 },
+  /**
+   * `nasty` with the second axis switched off. The control group only means
+   * anything if it's identical apart from the thing being measured, so this has
+   * to be kept in step with `nasty` whenever that's retuned.
+   */
+  greedy: { aggression: 0, defensiveness: 0, clicksPerSecond: 3, skill: 1, decisionMs: 700 },
 };
 
-/**
- * How many seconds of income the bot will hold out for. Without this it spends
- * every potato on the next producer the instant it can, and never banks enough
- * to attack or shield — which made sabotage literally never fire.
- */
-const SAVE_WINDOW_SECONDS = 25;
-/** How long its current intent sticks, so saving isn't re-rolled every tick. */
-const INTENT_BUCKET_MS = 20_000;
-/** Most of the pile it will hold back while saving, rather than reinvesting. */
-const RESERVE_FRACTION = 0.25;
-/**
- * Most of the pile it will put into a single swing. VISION.md says pacing comes
- * from resource contention rather than cooldowns, and for a human it does — you
- * feel the cost. A bot feels nothing, so without this it fires every decision
- * tick while it's in an aggressive mood and immolates its own economy.
- */
-const SPEND_SHARE = 0.55;
+/** Buys per turn at skill 1. A beginner (skill 0) manages one. */
+const MAX_BUYS_PER_TURN = 24;
 
-/** Priciest item it could reach within the save window. */
-function reachable<T extends Attack | Defense>(
+/** Priciest item it can afford within `budget`. */
+function affordable<T extends Attack | Defense>(
   items: readonly T[],
-  used: Partial<Record<string, number>>,
-  reach: Potatoes,
+  costOf: (item: T) => Potatoes,
+  budget: Potatoes,
 ): { item: T; cost: Potatoes } | undefined {
   let best: { item: T; cost: Potatoes } | undefined;
   for (const item of items) {
-    const cost = repeatCost(item.baseCost, item.growth, used[item.id] ?? 0);
-    if (P.gte(reach, cost) && (!best || cost > best.cost)) best = { item, cost };
+    const cost = costOf(item);
+    if (P.gte(budget, cost) && (!best || cost > best.cost)) best = { item, cost };
   }
   return best;
 }
 
+/** Rate per potato for the next unit of each producer, best first. */
+function rankProducers(me: PlayerState) {
+  return PRODUCERS.map((prod) => {
+    const cost = producerCost(prod.id, me.producers[prod.id] ?? 0);
+    return { id: prod.id, cost, value: (prod.baseRate * producerMultiplier(me, prod.id)) / cost };
+  }).sort((a, b) => b.value - a.value);
+}
+
 /**
- * A deliberately simple opponent: buy the best rate-per-potato producer, grab
- * upgrades on sight, and spend a slice of the pile on offense/defense. Enough
- * pressure to make the spend-on-yourself-vs-spend-against-them call feel real,
- * which is the whole thing we're trying to prove out.
+ * A whole turn's worth of decisions, in the order a competent player would make
+ * them: patch the damage, cover yourself, take your swing, then put every
+ * remaining potato to work.
+ *
+ * Returning a list rather than a single command is the point. A bot that buys
+ * one thing per tick leaves a growing pile sitting idle in the late game, which
+ * is exactly the mistake that made every difficulty crushable — potatoes that
+ * aren't producing are potatoes you've already lost.
  */
-export function botDecide(
+export function botTurn(
   state: MatchState,
   botId: PlayerId,
   profile: BotProfile,
   now: Millis,
-): Command | null {
-  if (isOver(state, now)) return null;
+): Command[] {
+  if (isOver(state, now)) return [];
   const t = clampToMatch(state, now);
   const raw = state.players[botId];
-  if (!raw) return null;
-  const me = checkpoint(raw, t);
-  const budget = me.potatoes;
+  if (!raw) return [];
 
-  // Intent is held for a bucket at a time so the bot can actually save toward
-  // something instead of flip-flopping every tick. Both rolls are always drawn
-  // so the sequence stays deterministic regardless of which branch is live.
-  const bucket = Math.floor((t - state.startedAt) / INTENT_BUCKET_MS);
-  const roll = rngFor(state.config.seed, bucket * 7919 + botId.length);
-  const wantsDefense = roll.next() < profile.defensiveness;
-  const wantsAttack = roll.next() < profile.aggression;
-  const reach = P.add(budget, P.overTime(rateAt(me, t), seconds(SAVE_WINDOW_SECONDS)));
+  const out: Command[] = [];
+  // A shadow copy so costs and affordability advance across the turn the same
+  // way they will when these commands actually land.
+  let me = checkpoint(raw, t);
+  const pay = (cost: Potatoes) => {
+    me = { ...me, potatoes: P.sub(me.potatoes, cost) };
+  };
 
+  // Rolled per turn, not per twenty-second bucket: difficulty shouldn't hinge
+  // on one coin flip, and a bot that commits to a mood for twenty seconds
+  // spends half the match doing the wrong thing.
+  const roll = rngFor(state.config.seed, Math.floor(t / profile.decisionMs) * 31 + botId.length);
+  const plays = () => roll.next() < profile.skill;
+
+  // --- Repairs. Broken kit is rate you already paid for, so buying it back is
+  // normally the best potato on the board. Same value test as everything else,
+  // though, or cheap chip damage becomes a way to bleed the bot dry.
+  if (brokenRate(me) > 0 && plays()) {
+    for (const prod of PRODUCERS) {
+      const broken = Math.min(me.broken[prod.id] ?? 0, me.producers[prod.id] ?? 0);
+      if (broken <= 0) continue;
+      const cost = repairCost(me, prod.id);
+      if (cost <= 0 || !P.gte(me.potatoes, cost)) continue;
+      // Worth it if the rate it buys back is cheaper than buying that rate new.
+      const back = broken * prod.baseRate * producerMultiplier(me, prod.id);
+      const best = rankProducers(me)[0];
+      if (best && back / cost < best.value) continue;
+      out.push({ type: "repair", player: botId, producer: prod.id });
+      pay(cost);
+      me = { ...me, broken: { ...me.broken, [prod.id]: 0 } };
+    }
+  }
+
+  // --- Defense. Kept up as a standing policy rather than a mood, because
+  // against anyone who attacks on a cadence, a bot that shields only when it
+  // feels like it is naked most of the match.
+  if (profile.defensiveness > 0 && shieldPool(me, t) <= 0) {
+    const pick = affordable(
+      DEFENSES,
+      (d) => repeatCost(d.baseCost, d.growth, me.defensesUsed[d.id] ?? 0),
+      P.mul(me.potatoes, profile.defensiveness),
+    );
+    if (pick) {
+      out.push({ type: "defend", player: botId, defense: pick.item.id });
+      pay(pick.cost);
+      me = {
+        ...me,
+        defensesUsed: { ...me.defensesUsed, [pick.item.id]: (me.defensesUsed[pick.item.id] ?? 0) + 1 },
+        effects: [...me.effects, buildShield(pick.item, botId, t, 0)],
+      };
+    }
+  }
+
+  // --- Sabotage, aimed at whoever's ahead. The budget share is the only thing
+  // pacing this: VISION.md says contention does the pacing, not cooldowns, and
+  // for a bot the share cap is what makes contention actually bite.
   const leader = state.order
     .filter((id) => id !== botId)
     .map((id) => ({ id, score: scoreOf(state.players[id]!, t, state.config.scoring) }))
     .sort((a, b) => b.score - a.score)[0];
 
-  let saveTarget: Potatoes | undefined;
-
-  // Shield up when exposed.
-  if (wantsDefense && shieldPool(me, t) <= 0) {
-    // Swing with what's in hand; only bank potatoes when nothing is affordable.
-    const now = reachable(DEFENSES, me.defensesUsed, P.mul(budget, SPEND_SHARE));
-    if (now) return { type: "defend", player: botId, defense: now.item.id as Defense["id"] };
-    saveTarget = reachable(DEFENSES, me.defensesUsed, reach)?.cost;
-  }
-
-  // Go after whoever's ahead of it.
-  if (saveTarget === undefined && wantsAttack && leader) {
-    const mine = scoreOf(me, t, state.config.scoring);
-    if (leader.score > P.mul(mine, 0.6)) {
-      const now = reachable(ATTACKS, me.attacksUsed, P.mul(budget, SPEND_SHARE));
-      if (now) {
-        return {
-          type: "attack",
-          player: botId,
-          target: leader.id,
-          attack: now.item.id as Attack["id"],
-        };
-      }
-      saveTarget = reachable(ATTACKS, me.attacksUsed, reach)?.cost;
+  if (profile.aggression > 0 && leader && leader.score > P.mul(scoreOf(me, t, state.config.scoring), 0.6)) {
+    const targetRate = cleanRate(state.players[leader.id]!);
+    const pick = affordable(
+      ATTACKS,
+      (a) => attackCost(a, me.attacksUsed[a.id] ?? 0, targetRate),
+      P.mul(me.potatoes, profile.aggression),
+    );
+    if (pick) {
+      out.push({ type: "attack", player: botId, target: leader.id, attack: pick.item.id });
+      pay(pick.cost);
+      me = { ...me, attacksUsed: { ...me.attacksUsed, [pick.item.id]: (me.attacksUsed[pick.item.id] ?? 0) + 1 } };
     }
   }
 
-  // Saving is not the same as stopping. Bank part of the pile toward the
-  // target and keep compounding the rest — a bot that freezes its economy
-  // every time it wants to swing just loses to anyone who never swings.
-  const economyBudget =
-    saveTarget === undefined
-      ? budget
-      : P.sub(budget, P.min(saveTarget, P.mul(budget, RESERVE_FRACTION)));
-
-  // Fix what's broken first when it's worth fixing. Repairs buy back rate you
-  // already paid for, so they're normally the best potatoes on the board — but
-  // a bot that repairs unconditionally can be bled dry by cheap chip damage,
-  // hence the same value test everything else gets.
-  if (brokenRate(me) > 0) {
-    let bestRepair: { id: (typeof PRODUCERS)[number]["id"]; value: number; cost: Potatoes } | undefined;
-    for (const prod of PRODUCERS) {
-      const broken = Math.min(me.broken[prod.id] ?? 0, me.producers[prod.id] ?? 0);
-      if (broken <= 0) continue;
-      const cost = repairCost(me, prod.id);
-      if (cost <= 0) continue;
-      const value = (broken * prod.baseRate * producerMultiplier(me, prod.id)) / cost;
-      if (!bestRepair || value > bestRepair.value) bestRepair = { id: prod.id, value, cost };
-    }
-    if (bestRepair && P.gte(economyBudget, bestRepair.cost)) {
-      return { type: "repair", player: botId, producer: bestRepair.id };
-    }
-  }
-
-  // Upgrades are almost always the best potato-per-potato buy available.
+  // --- Growth. Upgrades first (almost always the best buy on the board), then
+  // producers until the pile is spent.
   for (const up of UPGRADES) {
     if (me.upgrades.includes(up.id)) continue;
     if (up.requires && (me.producers[up.requires.producer] ?? 0) < up.requires.count) continue;
-    if (P.gte(economyBudget, up.cost)) return { type: "buy_upgrade", player: botId, upgrade: up.id };
+    if (!P.gte(me.potatoes, up.cost)) continue;
+    out.push({ type: "buy_upgrade", player: botId, upgrade: up.id });
+    pay(up.cost);
+    me = { ...me, upgrades: [...me.upgrades, up.id] };
   }
 
-  // Rank every producer by rate per potato, affordable or not. The best buy on
-  // the board is usually one tier above what's in hand, so a bot that only ever
-  // considers what it can afford right now permanently underbuilds.
-  const ranked = PRODUCERS.map((prod) => {
-    const cost = producerCost(prod.id, me.producers[prod.id] ?? 0);
-    return { id: prod.id, cost, value: (prod.baseRate * producerMultiplier(me, prod.id)) / cost };
-  }).sort((a, b) => b.value - a.value);
-
-  // Rolled per decision rather than per intent bucket, so a difficulty setting
-  // isn't one twenty-second coin flip deciding the match.
-  const tickRoll = rngFor(
-    state.config.seed,
-    Math.floor(t / profile.decisionMs) * 31 + botId.length,
-  );
-
-  if (tickRoll.next() < profile.skill) {
-    const bestOverall = ranked[0];
-    if (bestOverall) {
-      if (P.gte(economyBudget, bestOverall.cost)) {
-        return { type: "buy_producer", player: botId, producer: bestOverall.id, qty: 1 };
-      }
-      // Hold out for it, but only if it's actually in reach — otherwise the bot
-      // stares at a Tuber Lab it will never afford while its farm sits idle.
-      if (P.gte(reach, bestOverall.cost)) return null;
-    }
-    const bestAffordable = ranked.find((r) => P.gte(economyBudget, r.cost));
-    if (bestAffordable) {
-      return { type: "buy_producer", player: botId, producer: bestAffordable.id, qty: 1 };
-    }
-    return null;
+  const buys = Math.max(1, Math.round(MAX_BUYS_PER_TURN * profile.skill));
+  for (let i = 0; i < buys; i++) {
+    const ranked = rankProducers(me);
+    // Playing badly, on purpose: grab the cheapest thing on the shelf. It's what
+    // a first-timer does, and it quietly wrecks your curve — you pay ever more
+    // per plot while the good tiers stay one save away.
+    const pick = plays()
+      ? ranked.find((r) => P.gte(me.potatoes, r.cost))
+      : [...ranked].sort((a, b) => a.cost - b.cost).find((r) => P.gte(me.potatoes, r.cost));
+    if (!pick) break;
+    out.push({ type: "buy_producer", player: botId, producer: pick.id, qty: 1 });
+    pay(pick.cost);
+    me = { ...me, producers: { ...me.producers, [pick.id]: (me.producers[pick.id] ?? 0) + 1 } };
   }
 
-  // Playing badly, on purpose: grab the cheapest thing on the shelf. It's what
-  // a first-timer does, and it quietly wrecks your curve — you pay ever more
-  // per plot while the good tiers stay one save away.
-  const cheapest = [...ranked]
-    .sort((a, b) => a.cost - b.cost)
-    .find((r) => P.gte(economyBudget, r.cost));
-  if (cheapest) return { type: "buy_producer", player: botId, producer: cheapest.id, qty: 1 };
-
-  return null;
+  return out;
 }

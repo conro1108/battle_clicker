@@ -6,11 +6,14 @@ import {
   PRODUCERS,
   UPGRADES,
   affordableCount,
+  attackCost,
+  cleanRate,
   format,
   potatoesAt,
   brokenRate,
   producerCost,
   producerMultiplier,
+  rate,
   repairCost,
   repeatCost,
   shieldPool,
@@ -81,6 +84,8 @@ export function Shop({
   const [target, setTarget] = useState<string>(opponents[0]?.id ?? "");
 
   const targetId = opponents.some((o) => o.id === target) ? target : (opponents[0]?.id ?? "");
+  const targetPlayer = opponents.find((o) => o.id === targetId);
+  const targetRate = targetPlayer ? cleanRate(targetPlayer) : rate(0);
 
   // Most production per potato, affordable or not — the buy you should be
   // saving toward. Same ranking the bot uses, surfaced so a player isn't
@@ -199,13 +204,14 @@ export function Shop({
             </div>
           )}
           <p className="hint">
-            Power is weighed against whatever shield they have left. Enough of a shield eats the
-            attack whole.
+            Sabotage is priced against the farm you're aiming at — the bigger they get, the more a
+            swing costs. Power is weighed against whatever shield they have left, and enough of a
+            shield eats the attack whole.
           </p>
           <div className="rows">
             {ATTACKS.map((a) => {
               const used = me.attacksUsed[a.id] ?? 0;
-              const cost = repeatCost(a.baseCost, a.growth, used);
+              const cost = attackCost(a, used, targetRate);
               return (
                 <Row
                   key={a.id}

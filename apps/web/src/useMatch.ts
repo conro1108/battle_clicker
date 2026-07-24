@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BOT_PROFILES,
   applyCommand,
-  botDecide,
+  botTurn,
   checkpoint,
   clampToMatch,
   clickYield,
@@ -20,8 +20,11 @@ import { nowMs } from "./clock.js";
 
 /** How often batched clicks are flushed into the sim (STACK.md). */
 const CLICK_FLUSH_MS = 500;
-/** How often the bot gets to make a purchase decision. */
-const BOT_THINK_MS = 800;
+/**
+ * How often the bot loop wakes up. Each profile decides on its own cadence
+ * (`decisionMs`); this just has to be fine enough to serve the fastest one.
+ */
+const BOT_TICK_MS = 250;
 /** Display refresh. The sim isn't ticking — this only redraws extrapolated numbers. */
 const RENDER_MS = 100;
 
@@ -129,14 +132,15 @@ export function useMatch(setup: MatchSetup): MatchRuntime {
     return () => clearInterval(id);
   }, [flushClicks]);
 
-  // Bot: a click cadence plus a purchase decision, both through applyCommand.
+  // Bot: a click cadence plus a purchase turn, both through applyCommand.
   useEffect(() => {
     let clickCarry = 0;
+    let nextDecision = 0;
     const id = setInterval(() => {
       const t = nowMs();
       if (isOver(stateRef.current, t)) return;
 
-      clickCarry += (botProfile.clicksPerSecond * BOT_THINK_MS) / 1000;
+      clickCarry += (botProfile.clicksPerSecond * BOT_TICK_MS) / 1000;
       const clicks = Math.floor(clickCarry);
       if (clicks > 0) {
         clickCarry -= clicks;
@@ -144,12 +148,13 @@ export function useMatch(setup: MatchSetup): MatchRuntime {
         if (res.ok) setState(res.state);
       }
 
-      const decision = botDecide(stateRef.current, BOT, botProfile, t);
-      if (decision) {
-        const res = applyCommand(stateRef.current, decision, t);
+      if (t < nextDecision) return;
+      nextDecision = t + botProfile.decisionMs;
+      for (const cmd of botTurn(stateRef.current, BOT, botProfile, t)) {
+        const res = applyCommand(stateRef.current, cmd, t);
         if (res.ok) setState(res.state);
       }
-    }, BOT_THINK_MS);
+    }, BOT_TICK_MS);
     return () => clearInterval(id);
   }, [botProfile, setState]);
 
