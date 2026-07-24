@@ -89,6 +89,11 @@ paths.
     afford to spam an action because spending it means not spending on
     something else), not from a timer gating the action itself.
 - Sit-down or slow-burn — or both, as genuinely different modes?
+  - **Answer: deferred on purpose.** Not deciding this yet, and not treating
+    it as blocking. Build out the core game feel and pacing first (the
+    click/produce/upgrade loop, sabotage/defense feel) with whatever match
+    shape is easiest to prototype against, then figure out which length (or
+    both) it wants to be once the fun part is proven out.
 - What's the resource, thematically? Cookies is the reference point but not
   necessarily the skin.
   - **Answer: potatoes.** Farming has a built-in physical world (soil,
