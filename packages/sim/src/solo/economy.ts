@@ -112,7 +112,7 @@ export function clickYield(f: FarmState): Potatoes {
     if (u.effect.kind === "click_mult") flat *= u.effect.factor;
     else if (u.effect.kind === "click_from_rate") seconds += u.effect.seconds;
   }
-  const back = 1 + 0.5 * perkLevel(f, "strong_back");
+  const back = 1 + 0.1 * perkLevel(f, "strong_back");
   return P.of((flat + seconds * currentRate(f)) * back);
 }
 

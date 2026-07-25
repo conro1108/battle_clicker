@@ -58,9 +58,14 @@ export const FARMER_STYLES: Record<string, FarmerStyle> = {
     landBudget: 0,
     soilFloor: 0.9,
   },
-  /** Doesn't click, checks in rarely. The idle-player shape. */
+  /**
+   * Barely clicks, checks in rarely. The idle-player shape, and the control
+   * group for "how much faster is clicking?". Not zero digs: a farm with no
+   * producers and no clicks earns nothing forever, so a truly idle bot measures
+   * nothing at all.
+   */
   absent: {
-    digsPerSecond: 0,
+    digsPerSecond: 0.05,
     decisionMs: 60_000,
     repairBudget: 0.4,
     soilBudget: 0.4,

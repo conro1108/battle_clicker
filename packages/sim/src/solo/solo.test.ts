@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vitest";
 
 import { format, ms, seconds } from "../numbers.js";
-import { MIN_SOIL, REPAIR_SECONDS, SOLO_PRODUCERS } from "./content.js";
-import { currentRate, soilLossRate, soilRestoreCost, totalRepairCost } from "./economy.js";
+import {
+  MIN_SOIL,
+  REPAIR_SECONDS,
+  SOLO_PRODUCERS,
+  SOLO_REPAIR_COST_FRACTION,
+} from "./content.js";
+import {
+  currentRate,
+  producerCost,
+  producerMultiplier,
+  soilLossRate,
+  soilRestoreCost,
+  totalRepairCost,
+} from "./economy.js";
 import { advance, applyFarmCommand, pendingSeeds } from "./farm.js";
 import { parseFarm, resumeFarm, serializeFarm } from "./persist.js";
 import { MULT_PER_UNSPENT_SEED, seedsFor } from "./prestige.js";
@@ -23,8 +35,14 @@ describe("the ladder", () => {
     for (let i = 1; i < paybacks.length; i++) {
       expect(paybacks[i]!).toBeGreaterThan(paybacks[i - 1]!);
     }
+    // The gap between rungs is the pace control for the whole run, so it's
+    // worth being specific: the bottom rung pays for itself in seconds, the top
+    // one in about an hour and a half. Flatten that and the ladder gets cleared
+    // in a single sitting.
+    expect(paybacks[0]!).toBeLessThan(30);
+    expect(paybacks.at(-1)!).toBeGreaterThan(3_000);
     // And never so expensive that the top of the tree is decorative.
-    expect(paybacks.at(-1)!).toBeLessThan(400);
+    expect(paybacks.at(-1)!).toBeLessThan(9_000);
   });
 
   it("climbs into the upper tiers over a long session", () => {
@@ -171,10 +189,31 @@ describe("weather", () => {
     const farm = developedFarm("prices", 2 * HOUR);
     const hurt: FarmState = { ...farm, soil: farm.soil - 0.1 };
     const payback = soilRestoreCost(hurt) / soilLossRate(hurt);
-    console.log(`soil payback=${Math.round(payback)}s, repair payback=${REPAIR_SECONDS}s`);
-    expect(payback).toBeLessThan(4 * REPAIR_SECONDS);
+    const repairPayback = REPAIR_SECONDS * SOLO_REPAIR_COST_FRACTION;
+    console.log(`soil payback=${Math.round(payback)}s, repair payback=${repairPayback}s`);
+    expect(payback).toBeLessThan(2 * repairPayback);
     // And not so cheap that letting the soil go is free.
-    expect(payback).toBeGreaterThan(REPAIR_SECONDS);
+    expect(payback).toBeGreaterThan(0.5 * repairPayback);
+  });
+
+  /**
+   * The other half of that: both bills also have to compete with the ladder,
+   * because that's what the potatoes would otherwise be spent on. Priced at
+   * twenty minutes of payback, restoring soil lost to every producer on the
+   * board and the weather's soil half was a tax with no move attached.
+   */
+  it("prices fixing the land against what else you could buy", () => {
+    const farm = developedFarm("versus_ladder", 2 * HOUR);
+    const hurt: FarmState = { ...farm, soil: farm.soil - 0.15 };
+    const soilPayback = soilRestoreCost(hurt) / soilLossRate(hurt);
+
+    let bestRung = Infinity;
+    for (const prod of SOLO_PRODUCERS) {
+      const gain = prod.baseRate * producerMultiplier(hurt, prod.id) * hurt.soil;
+      bestRung = Math.min(bestRung, producerCost(hurt, prod.id, 1) / gain);
+    }
+    console.log(`soil payback=${Math.round(soilPayback)}s, best rung=${Math.round(bestRung)}s`);
+    expect(soilPayback).toBeLessThan(3 * bestRung);
   });
 
   it("leaves an idle farm alone until it has something worth wrecking", () => {
@@ -195,7 +234,10 @@ describe("prestige", () => {
   });
 
   it("wipes the run, keeps the inheritance, and starts you stronger", () => {
-    const base = developedFarm("prestige", 4 * HOUR);
+    // Eight hours, because a seed is now worth a run that got somewhere: the
+    // ladder takes most of a long session to climb, and the first hand-down is
+    // meant to land around the point it stops paying.
+    const base = developedFarm("prestige", 8 * HOUR);
     const earned = pendingSeeds(base);
     expect(earned).toBeGreaterThan(0);
 

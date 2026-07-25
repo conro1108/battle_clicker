@@ -35,9 +35,13 @@ export interface SoloProducer {
 }
 
 /**
- * Twelve rungs, each roughly 8x the output and 10x the price of the one below.
- * Payback climbs from ~15s at the bottom to ~6 minutes at the top, so the cheap
- * rungs stay buyable filler while the expensive ones are things you save for.
+ * Twelve rungs, each 8x the output and ~12.5x the price of the one below.
+ *
+ * That gap is the pace control for the whole run. Payback climbs from 20s at
+ * the bottom rung to about ninety minutes at the top, so the cheap rungs stay
+ * buyable filler while the expensive ones are things you save days for. Narrow
+ * the gap back towards 10x and the ladder collapses — a busy player was
+ * clearing all twelve tiers inside an hour and then had nothing left to buy.
  * `solo.test.ts` is the check on that curve — retune here, run that.
  */
 export const SOLO_PRODUCERS: readonly SoloProducer[] = [
@@ -46,96 +50,96 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     name: "Potato Plot",
     blurb: "A patch of dirt. It does what dirt does.",
     baseRate: 1,
-    baseCost: P.of(15),
-    growth: 1.15,
+    baseCost: P.of(20),
+    growth: 1.16,
   },
   {
     id: "hand",
     name: "Farmhand",
     blurb: "Pays for themselves. Eventually.",
     baseRate: 8,
-    baseCost: P.of(160),
-    growth: 1.15,
+    baseCost: P.of(270),
+    growth: 1.16,
   },
   {
     id: "irrigation",
     name: "Irrigation Rig",
     blurb: "Water, on purpose, at the right time.",
     baseRate: 60,
-    baseCost: P.of(1_600),
-    growth: 1.15,
+    baseCost: P.of(3_300),
+    growth: 1.16,
   },
   {
     id: "tractor",
     name: "Tractor",
     blurb: "Diesel-powered crop math.",
     baseRate: 450,
-    baseCost: P.of(16_000),
-    growth: 1.15,
+    baseCost: P.of(42_000),
+    growth: 1.16,
   },
   {
     id: "harvester",
     name: "Combine Harvester",
     blurb: "Eats a field for breakfast.",
     baseRate: 3_400,
-    baseCost: P.of(160_000),
-    growth: 1.15,
+    baseCost: P.of(530_000),
+    growth: 1.16,
   },
   {
     id: "lab",
     name: "Tuber Lab",
     blurb: "The potatoes are asking questions now.",
     baseRate: 26_000,
-    baseCost: P.of(1_650_000),
-    growth: 1.15,
+    baseCost: P.of(6_700_000),
+    growth: 1.16,
   },
   {
     id: "refinery",
     name: "Starch Refinery",
     blurb: "Potatoes in one end, more potatoes out the other. Don't ask.",
     baseRate: 200_000,
-    baseCost: P.of(17_000_000),
-    growth: 1.15,
+    baseCost: P.of(86_000_000),
+    growth: 1.16,
   },
   {
     id: "tower",
     name: "Hydroponic Tower",
     blurb: "Forty floors of dirt-free ambition.",
     baseRate: 1_500_000,
-    baseCost: P.of(170_000_000),
-    growth: 1.15,
+    baseCost: P.of(1_100_000_000),
+    growth: 1.16,
   },
   {
     id: "seeder",
     name: "Cloud Seeder",
     blurb: "The weather works for you now. Mostly.",
     baseRate: 12_000_000,
-    baseCost: P.of(1_800_000_000),
-    growth: 1.15,
+    baseCost: P.of(14_000_000_000),
+    growth: 1.16,
   },
   {
     id: "reactor",
     name: "Spud Fusion Reactor",
     blurb: "Binds four small potatoes into one enormous one.",
     baseRate: 90_000_000,
-    baseCost: P.of(18_000_000_000),
-    growth: 1.15,
+    baseCost: P.of(180_000_000_000),
+    growth: 1.16,
   },
   {
     id: "orbital",
     name: "Orbital Greenhouse",
     blurb: "No frost in low earth orbit. Different problems up there.",
     baseRate: 700_000_000,
-    baseCost: P.of(190_000_000_000),
-    growth: 1.15,
+    baseCost: P.of(2_300_000_000_000),
+    growth: 1.16,
   },
   {
     id: "singularity",
     name: "Tuber Singularity",
     blurb: "Grows potatoes that have always already been grown.",
     baseRate: 5_500_000_000,
-    baseCost: P.of(2_000_000_000_000),
-    growth: 1.15,
+    baseCost: P.of(30_000_000_000_000),
+    growth: 1.16,
   },
 ];
 
@@ -155,6 +159,12 @@ export type SoloUpgradeEffect =
    * Ties digging to the farm you've built: a dig is worth this many seconds of
    * production. Without it, clicking is dead weight within the first hour and
    * the game stops having a verb.
+   *
+   * The seconds are deliberately fractional. This effect is a feedback loop —
+   * income scales with the rate it's spent on — so at a whole second per dig a
+   * player clicking twice a second is worth twice the entire farm, and the
+   * whole ladder falls over in half an hour. Everything here is meant to sum to
+   * a couple of seconds at most, even fully perked.
    */
   | { kind: "click_from_rate"; seconds: number };
 
@@ -168,10 +178,27 @@ export interface SoloUpgrade {
   requires?: { producer: SoloProducerId; count: number };
 }
 
+/**
+ * What the first `count` of a producer cost, from nothing.
+ *
+ * Upgrade prices are quoted against this rather than as absolute numbers, so
+ * they mean "about what the fleet that unlocked this cost you" at every rung
+ * and stay honest when the ladder gets retuned. As flat constants they drifted
+ * every time: an upgrade priced for a 170M tier is a giveaway once that tier
+ * costs 1.1B, and giveaways are how a day-long run turns into an hour.
+ */
+function fleetCost(id: SoloProducerId, count: number, share = 1): Potatoes {
+  const prod = SOLO_PRODUCERS.find((p) => p.id === id)!;
+  const units = (Math.pow(prod.growth, count) - 1) / (prod.growth - 1);
+  return P.of(Math.ceil(prod.baseCost * units * share));
+}
+
 /** Two doublings per tier: one when you have a few, one when you're deep in. */
 function tierUpgrades(): SoloUpgrade[] {
-  // Priced against roughly 12 and 60 units owned of that tier — enough that a
-  // doubling is a real chunk of your rate rather than rounding error.
+  // Priced against the fleet you must already own to see them: the first
+  // doubling costs about what your ten units cost, the second a third of what
+  // fifty cost. Cheaper than that and every tier doubles itself the moment it
+  // unlocks, which is most of why the ladder used to evaporate.
   const naming: Record<SoloProducerId, [string, string]> = {
     plot: ["Raised Beds", "Terraced Slopes"],
     hand: ["Overtime Pay", "Profit Sharing"],
@@ -193,7 +220,7 @@ function tierUpgrades(): SoloUpgrade[] {
       id: `${prod.id}_x2a`,
       name: first,
       blurb: `${prod.name}s produce twice as much.`,
-      cost: P.of(Math.ceil(prod.baseCost * 12)),
+      cost: fleetCost(prod.id, 10),
       effect: { kind: "producer_mult", producer: prod.id, factor: 2 },
       requires: { producer: prod.id, count: 10 },
     });
@@ -201,7 +228,7 @@ function tierUpgrades(): SoloUpgrade[] {
       id: `${prod.id}_x2b`,
       name: second,
       blurb: `${prod.name}s produce twice as much again.`,
-      cost: P.of(Math.ceil(prod.baseCost * 400)),
+      cost: fleetCost(prod.id, 50, 0.3),
       effect: { kind: "producer_mult", producer: prod.id, factor: 2 },
       requires: { producer: prod.id, count: 50 },
     });
@@ -221,7 +248,7 @@ const CLICK_UPGRADES: SoloUpgrade[] = [
     id: "two_hand_spade",
     name: "Two-Handed Spade",
     blurb: "Both hands. Digs x5.",
-    cost: P.of(3_000),
+    cost: fleetCost("hand", 5),
     effect: { kind: "click_mult", factor: 5 },
     requires: { producer: "hand", count: 5 },
   },
@@ -229,32 +256,32 @@ const CLICK_UPGRADES: SoloUpgrade[] = [
     id: "gold_spade",
     name: "Ceremonial Gold Spade",
     blurb: "Impractical. Effective. Digs x8.",
-    cost: P.of(150_000),
+    cost: fleetCost("tractor", 10),
     effect: { kind: "click_mult", factor: 8 },
     requires: { producer: "tractor", count: 10 },
   },
   {
     id: "trowel",
     name: "Prospector's Trowel",
-    blurb: "Each dig is also worth 1 second of production.",
-    cost: P.of(2_000_000),
-    effect: { kind: "click_from_rate", seconds: 1 },
-    requires: { producer: "lab", count: 1 },
+    blurb: "Each dig is also worth 0.25 seconds of production.",
+    cost: fleetCost("lab", 5, 1.5),
+    effect: { kind: "click_from_rate", seconds: 0.25 },
+    requires: { producer: "lab", count: 5 },
   },
   {
     id: "backhoe",
     name: "Pocket Backhoe",
-    blurb: "Each dig is worth 5 more seconds of production.",
-    cost: P.of(150_000_000),
-    effect: { kind: "click_from_rate", seconds: 5 },
+    blurb: "Each dig is worth 0.5 more seconds of production.",
+    cost: fleetCost("tower", 10, 1.5),
+    effect: { kind: "click_from_rate", seconds: 0.5 },
     requires: { producer: "tower", count: 10 },
   },
   {
     id: "hands_of_god",
     name: "The Big Hands",
-    blurb: "Each dig is worth 30 more seconds of production.",
-    cost: P.of(20_000_000_000),
-    effect: { kind: "click_from_rate", seconds: 30 },
+    blurb: "Each dig is worth 0.75 more seconds of production.",
+    cost: fleetCost("orbital", 10, 1.5),
+    effect: { kind: "click_from_rate", seconds: 0.75 },
     requires: { producer: "orbital", count: 10 },
   },
 ];
@@ -264,7 +291,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "fertilizer",
     name: "Fertilizer",
     blurb: "Everything produces +50%.",
-    cost: P.of(20_000),
+    cost: fleetCost("hand", 15),
     effect: { kind: "global_mult", factor: 1.5 },
     requires: { producer: "hand", count: 15 },
   },
@@ -272,7 +299,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "crop_rotation",
     name: "Crop Rotation",
     blurb: "Everything produces +50%.",
-    cost: P.of(400_000),
+    cost: fleetCost("irrigation", 25),
     effect: { kind: "global_mult", factor: 1.5 },
     requires: { producer: "irrigation", count: 25 },
   },
@@ -280,7 +307,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "gmo_seed",
     name: "GMO Seed Stock",
     blurb: "Everything produces x2. Don't read the label.",
-    cost: P.of(9_000_000),
+    cost: fleetCost("harvester", 20),
     effect: { kind: "global_mult", factor: 2 },
     requires: { producer: "harvester", count: 20 },
   },
@@ -288,7 +315,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "co_op",
     name: "Growers' Co-op",
     blurb: "Everything produces x2.",
-    cost: P.of(250_000_000),
+    cost: fleetCost("refinery", 25),
     effect: { kind: "global_mult", factor: 2 },
     requires: { producer: "refinery", count: 25 },
   },
@@ -296,7 +323,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "subsidy",
     name: "Agricultural Subsidy",
     blurb: "Everything produces x2. Paperwork was involved.",
-    cost: P.of(6_000_000_000),
+    cost: fleetCost("seeder", 25),
     effect: { kind: "global_mult", factor: 2 },
     requires: { producer: "seeder", count: 25 },
   },
@@ -304,7 +331,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "monopoly",
     name: "Vertical Integration",
     blurb: "Everything produces x3.",
-    cost: P.of(120_000_000_000),
+    cost: fleetCost("reactor", 25),
     effect: { kind: "global_mult", factor: 3 },
     requires: { producer: "reactor", count: 25 },
   },
@@ -312,7 +339,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "terraform",
     name: "Terraforming Charter",
     blurb: "Everything produces x3.",
-    cost: P.of(2_500_000_000_000),
+    cost: fleetCost("orbital", 25),
     effect: { kind: "global_mult", factor: 3 },
     requires: { producer: "orbital", count: 25 },
   },
@@ -320,7 +347,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "ur_potato",
     name: "The Ur-Potato",
     blurb: "The first potato. Everything produces x5.",
-    cost: P.of(60_000_000_000_000),
+    cost: fleetCost("singularity", 25),
     effect: { kind: "global_mult", factor: 5 },
     requires: { producer: "singularity", count: 25 },
   },
@@ -441,12 +468,14 @@ export const MIN_SOIL = 0.25;
  * the moment you out-grow it.
  *
  * The number is a payback time: fixing the dirt buys back its own price in this
- * many seconds. It has to sit in the same league as `REPAIR_SECONDS`, or the
- * two halves of the same mechanic quote wildly different prices for the same
- * lost potato. At two hours it was never the right buy at any scale — the
- * weather's soil half was a tax with no move attached.
+ * many seconds. What it competes with is the next rung of the ladder, and that
+ * pays back in one to five minutes for most of a run — so anything much above
+ * five minutes here is a button no one should ever press, which is what twenty
+ * minutes was. It also has to stay in the same league as `REPAIR_SECONDS`, or
+ * the two halves of the same mechanic quote different prices for the same lost
+ * potato.
  */
-export const SOIL_RESTORE_SECONDS = 1_200;
+export const SOIL_RESTORE_SECONDS = 300;
 
 /** Discount on the quoted repair price. See `repairCost` for what's quoted. */
 export const SOLO_REPAIR_COST_FRACTION = 0.7;
@@ -455,8 +484,12 @@ export const SOLO_REPAIR_COST_FRACTION = 0.7;
  * Repairs are billed as this many seconds of the production they give back.
  * The single knob for how much weather actually costs — raise it and damage
  * bites harder without touching how often anything breaks.
+ *
+ * `SOLO_REPAIR_COST_FRACTION` discounts this, so the real payback is about five
+ * minutes: the same league as putting the soil right, and near enough to the
+ * ladder's own payback that fixing what broke is usually the better buy.
  */
-export const REPAIR_SECONDS = 600;
+export const REPAIR_SECONDS = 450;
 
 /** No single disaster can break more than this share of a producer type. */
 export const SOLO_MAX_BROKEN_SHARE = 0.5;

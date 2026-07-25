@@ -59,10 +59,12 @@ export const PERKS: readonly Perk[] = [
   {
     id: "strong_back",
     name: "Strong Back",
-    blurb: "Digs are worth 50% more per level.",
+    blurb: "Digs are worth 10% more per level.",
     baseCost: 2,
     growth: 1.5,
-    maxLevel: 20,
+    // Multiplies the click-from-rate upgrades, so this is the second half of
+    // the same feedback loop. Kept to a bit over 2x at full stack.
+    maxLevel: 8,
   },
   {
     id: "salvage",
