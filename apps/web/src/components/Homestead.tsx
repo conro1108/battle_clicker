@@ -42,6 +42,13 @@ export function Homestead({
   const lostToSoil = solo.soilLossRate(farm);
   const repairBill = solo.totalRepairCost(farm);
   const soilBill = solo.soilRestoreCost(farm);
+  // Damage reads as a share of what the farm would otherwise be making — a rate
+  // in potatoes is a number you have to divide before it means anything. The two
+  // are measured against their own cause rather than a common total, because
+  // that's what each one is exactly worth: broken kit is the share of units
+  // offline, tired soil is the multiplier itself.
+  const breakPct = Math.round((lostToBreak / Math.max(1e-9, lostToBreak + rate)) * 100);
+  const soilPct = Math.round((1 - farm.soil) * 100);
 
   return (
     <section className="panel farm homestead">
@@ -97,13 +104,13 @@ export function Homestead({
           <div className="damage-body">
             {lostToBreak > 0 && (
               <div>
-                <span className="hurt">−{format(lostToBreak)}/s</span> broken kit ·{" "}
+                <span className="hurt">−{breakPct}% production</span> broken kit ·{" "}
                 <span className="muted">{format(repairBill)} to fix</span>
               </div>
             )}
             {lostToSoil > 0 && (
               <div>
-                <span className="hurt">−{format(lostToSoil)}/s</span> tired soil ·{" "}
+                <span className="hurt">−{soilPct}% production</span> tired soil ·{" "}
                 <span className="muted">{format(soilBill)} to put right</span>
               </div>
             )}

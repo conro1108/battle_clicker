@@ -439,8 +439,14 @@ export const MIN_SOIL = 0.25;
  * Restoring soil is priced against your production rate rather than a fixed
  * table, so it stays a real decision at every scale instead of becoming free
  * the moment you out-grow it.
+ *
+ * The number is a payback time: fixing the dirt buys back its own price in this
+ * many seconds. It has to sit in the same league as `REPAIR_SECONDS`, or the
+ * two halves of the same mechanic quote wildly different prices for the same
+ * lost potato. At two hours it was never the right buy at any scale — the
+ * weather's soil half was a tax with no move attached.
  */
-export const SOIL_RESTORE_SECONDS = 7_200;
+export const SOIL_RESTORE_SECONDS = 1_200;
 
 /** Discount on the quoted repair price. See `repairCost` for what's quoted. */
 export const SOLO_REPAIR_COST_FRACTION = 0.7;

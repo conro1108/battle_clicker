@@ -53,8 +53,8 @@ export function AwayReport({
           )}
           {report.soilLost > 0.001 && (
             <li>
-              <span>Soil lost</span>
-              <strong className="hurt">{(report.soilLost * 100).toFixed(0)} points</strong>
+              <span>Soil worn down</span>
+              <strong className="hurt">−{(report.soilLost * 100).toFixed(0)}% production</strong>
             </li>
           )}
         </ol>

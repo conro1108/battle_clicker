@@ -49,7 +49,7 @@ export const FARMER_STYLES: Record<string, FarmerStyle> = {
     landBudget: 0.15,
     soilFloor: 0.9,
   },
-  /** Never builds mitigation. The control group for "is land worth it". */
+  /** Never builds mitigation. A control group for anything land-related. */
   reckless: {
     digsPerSecond: 2,
     decisionMs: 2_000,

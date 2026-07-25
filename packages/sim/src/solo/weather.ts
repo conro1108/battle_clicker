@@ -13,7 +13,7 @@
  * clock — and it means a save file can't be rerolled for better weather.
  */
 
-import { P, ms, seconds, type Millis, type Potatoes } from "../numbers.js";
+import { P, format, ms, seconds, type Millis, type Potatoes } from "../numbers.js";
 import { rngFor, type Rng } from "../rng.js";
 import {
   MIN_SOIL,
@@ -103,6 +103,11 @@ export interface WeatherEvent {
   brokeTotal: number;
   /** Soil health points taken, after mitigation. */
   soilLost: number;
+  /**
+   * Share of production the event took, 0..1. Broken kit and tired soil cost
+   * the same thing in the end, so this is the one number worth reading.
+   */
+  lostShare: number;
   /** Boon windfall plus any insurance payout. */
   gained: Potatoes;
   text: string;
@@ -168,6 +173,7 @@ export function fireWeather(f: FarmState, at: Millis): { farm: FarmState; event:
   const kind = pickKind(rng);
 
   let farm = advanced;
+  const rateBefore = currentRate(farm);
   const broke: Partial<Record<SoloProducerId, number>> = {};
   let brokeTotal = 0;
   let soilLost = 0;
@@ -230,11 +236,18 @@ export function fireWeather(f: FarmState, at: Millis): { farm: FarmState; event:
   };
   farm = { ...farm, nextWeatherAt: scheduleNext(farm, at) };
 
+  const lostShare = rateBefore > 0 ? Math.max(0, 1 - currentRate(farm) / rateBefore) : 0;
+
+  // What happened, then what it costs you — in output, which is the only unit
+  // the player has any feel for. "Took 8.0 soil" is a number from the engine;
+  // "−8% production" is the same fact in the terms you'd act on.
   const parts: string[] = [];
   if (brokeTotal > 0) parts.push(`wrecked ${describeBreak(broke)}`);
-  if (soilLost > 1e-9) parts.push(`took ${(soilLost * 100).toFixed(1)} soil`);
-  if (kind.effect.kind === "boon") parts.push("a good year");
-  const text = `${kind.name} — ${parts.join(", ")}.`;
+  if (soilLost > 1e-9) parts.push("tired the soil");
+  if (kind.effect.kind === "boon") parts.push(`a good year, +${format(gained)}`);
+  const cost =
+    lostShare > 0.0005 ? ` −${(lostShare * 100).toFixed(0)}% production.` : "";
+  const text = `${kind.name} — ${parts.join(", ")}.${cost}`;
 
   return {
     farm,
@@ -247,6 +260,7 @@ export function fireWeather(f: FarmState, at: Millis): { farm: FarmState; event:
       broke,
       brokeTotal,
       soilLost,
+      lostShare,
       gained,
       text,
     },

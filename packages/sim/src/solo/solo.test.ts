@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { format, ms, seconds } from "../numbers.js";
-import { MIN_SOIL, SOLO_PRODUCERS } from "./content.js";
-import { currentRate, soilRestoreCost, totalRepairCost } from "./economy.js";
+import { MIN_SOIL, REPAIR_SECONDS, SOLO_PRODUCERS } from "./content.js";
+import { currentRate, soilLossRate, soilRestoreCost, totalRepairCost } from "./economy.js";
 import { advance, applyFarmCommand, pendingSeeds } from "./farm.js";
 import { parseFarm, resumeFarm, serializeFarm } from "./persist.js";
 import { MULT_PER_UNSPENT_SEED, seedsFor } from "./prestige.js";
@@ -132,18 +132,49 @@ describe("weather", () => {
     expect(median).toBeGreaterThan(0.35);
   });
 
+  /**
+   * Measured on an absence, because that's the only place mitigation can pay.
+   * A farmer sitting at the shop repairs everything the moment it breaks, and
+   * potatoes spent barely move the harvest curve — spend a third of your income
+   * on repairs all session and you finish about a percent behind. So online,
+   * land and no land come out the same. Away, nobody is fixing anything, and
+   * what you built is the only thing standing between the farm and the floor.
+   */
   it("makes building the land worth the potatoes it costs", () => {
     const ratios = ["l1", "l2", "l3"].map((seed) => {
-      const built = simulateFarm({ seed, durationMs: 8 * HOUR, style: "keen" });
-      const bare = simulateFarm({ seed, durationMs: 8 * HOUR, style: "reckless" });
+      const base = developedFarm(seed, 2 * HOUR);
+      const bare: FarmState = { ...base, land: {} };
+      const built: FarmState = {
+        ...base,
+        land: { windbreak: 6, drainage: 6, pest_control: 4 },
+      };
+      const away = ms(base.checkpointAt + 2 * HOUR);
+      const after = (f: FarmState) => advance(f, away, true).farm;
+      const [left, kept] = [after(bare), after(built)];
       console.log(
-        `${seed}: built=${format(built.farm.harvested)} bare=${format(bare.farm.harvested)} ` +
-          `builtBroke=${built.brokeTotal} bareBroke=${bare.brokeTotal}`,
+        `${seed}: bare=${format(currentRate(left))}/s soil=${left.soil.toFixed(2)} ` +
+          `built=${format(currentRate(kept))}/s soil=${kept.soil.toFixed(2)}`,
       );
-      return built.farm.harvested / bare.farm.harvested;
+      return currentRate(kept) / currentRate(left);
     });
     const median = [...ratios].sort((a, b) => a - b)[1]!;
-    expect(median).toBeGreaterThan(1);
+    expect(median).toBeGreaterThan(1.5);
+  });
+
+  /**
+   * Broken kit and tired soil are the same injury billed two ways, so their
+   * prices have to stay in the same league. They drifted an order of magnitude
+   * apart once — repairs paid for themselves in minutes while the soil bill
+   * took two hours, which made restoring soil a button nobody should ever press.
+   */
+  it("prices fixing the land in the same league as fixing the kit", () => {
+    const farm = developedFarm("prices", 2 * HOUR);
+    const hurt: FarmState = { ...farm, soil: farm.soil - 0.1 };
+    const payback = soilRestoreCost(hurt) / soilLossRate(hurt);
+    console.log(`soil payback=${Math.round(payback)}s, repair payback=${REPAIR_SECONDS}s`);
+    expect(payback).toBeLessThan(4 * REPAIR_SECONDS);
+    // And not so cheap that letting the soil go is free.
+    expect(payback).toBeGreaterThan(REPAIR_SECONDS);
   });
 
   it("leaves an idle farm alone until it has something worth wrecking", () => {
