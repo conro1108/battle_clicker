@@ -28,7 +28,7 @@ import {
   repairCost,
   soilRestoreCost,
 } from "./economy.js";
-import { headStartPotatoes, seedsFor } from "./prestige.js";
+import { PERK_BY_ID, headStartPotatoes, perkCost, seedsFor } from "./prestige.js";
 import type { FarmCommand, FarmLogEntry, FarmResult, FarmState } from "./state.js";
 import { fireWeather, scheduleNext, type WeatherEvent } from "./weather.js";
 
@@ -120,9 +120,18 @@ export function advance(f: FarmState, to: Millis, offline = false): AdvanceResul
   return { farm, events };
 }
 
+/**
+ * Monotonic, and deliberately not `log.length` — the feed is trimmed, so a
+ * length-based index starts repeating itself the moment it fills up.
+ */
+function nextLogIndex(f: FarmState): number {
+  return (f.log[f.log.length - 1]?.index ?? -1) + 1;
+}
+
 function appendLog(f: FarmState, events: WeatherEvent[]): FarmLogEntry[] {
+  const base = nextLogIndex(f);
   const entries = events.map((e, i) => ({
-    index: f.log.length + i,
+    index: base + i,
     at: e.at,
     text: e.text,
     tone: e.tone,
@@ -154,7 +163,7 @@ export function applyFarmCommand(f0: FarmState, cmd: FarmCommand, now: Millis): 
   const at = farm.checkpointAt;
 
   const note = (text: string, tone: FarmLogEntry["tone"]) => {
-    entries.push({ index: farm.log.length + entries.length, at, text, tone });
+    entries.push({ index: nextLogIndex(farm) + entries.length, at, text, tone });
   };
 
   const spend = (cost: Potatoes): boolean => {
@@ -233,6 +242,24 @@ export function applyFarmCommand(f0: FarmState, cmd: FarmCommand, now: Millis): 
       break;
     }
 
+    case "buy_perk": {
+      const perk = PERK_BY_ID[cmd.perk];
+      if (!perk) return fail("No such perk.");
+      const level = farm.perks[perk.id] ?? 0;
+      if (level >= perk.maxLevel) return fail("Already fully grown.");
+      const cost = perkCost(perk, level);
+      // Seeds spent stop counting toward the output multiplier. That's the
+      // whole trade, so it has to come out of the same number.
+      if (farm.seeds < cost) return fail("Not enough Heirloom Seed.");
+      farm = {
+        ...farm,
+        seeds: farm.seeds - cost,
+        perks: { ...farm.perks, [perk.id]: level + 1 },
+      };
+      note(`grew ${perk.name} to ${romanish(level + 1)}.`, "good");
+      break;
+    }
+
     case "prestige": {
       const earned = seedsFor(farm.harvested);
       if (earned <= 0) return fail("Nothing worth handing down yet.");
@@ -279,6 +306,22 @@ function resetForNextGeneration(f: FarmState, earned: number, at: Millis): FarmS
 function romanish(n: number): string {
   const numerals = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
   return numerals[n - 1] ?? String(n);
+}
+
+/**
+ * The pile at `now`, without advancing anything.
+ *
+ * For display between ticks only. It extrapolates at the current rate, so it's
+ * exact right up until the next weather event and slightly optimistic after —
+ * which is why the app still ticks `advance` on a short interval and treats
+ * this as a smoothing layer, not as truth.
+ */
+export function projectedPotatoes(f: FarmState, now: Millis): Potatoes {
+  return P.add(f.potatoes, P.overTime(currentRate(f), Math.max(0, now - f.checkpointAt)));
+}
+
+export function projectedHarvested(f: FarmState, now: Millis): Potatoes {
+  return P.add(f.harvested, P.overTime(currentRate(f), Math.max(0, now - f.checkpointAt)));
 }
 
 /** Convenience for tests: apply a command, throw if it was rejected. */

@@ -66,6 +66,7 @@ export type FarmCommand =
   | { type: "buy_land"; land: LandId }
   | { type: "repair"; producer: SoloProducerId }
   | { type: "restore_soil" }
+  | { type: "buy_perk"; perk: PerkId }
   | { type: "prestige" };
 
 export type FarmResult =

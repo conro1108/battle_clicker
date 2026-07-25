@@ -33,7 +33,6 @@ function Row({
   affordable,
   onBuy,
   accent,
-  badge,
 }: {
   name: string;
   blurb: string;
@@ -42,7 +41,6 @@ function Row({
   affordable: boolean;
   onBuy: () => void;
   accent?: string;
-  badge?: string;
 }) {
   return (
     <button
@@ -51,10 +49,7 @@ function Row({
       disabled={!affordable}
     >
       <span className="row-body">
-        <span className="row-name">
-          {name}
-          {badge && <span className="row-badge">{badge}</span>}
-        </span>
+        <span className="row-name">{name}</span>
         <span className="row-blurb">{blurb}</span>
       </span>
       <span className="row-right">
@@ -86,18 +81,6 @@ export function Shop({
   const targetPlayer = opponents.find((o) => o.id === targetId);
   const targetRate = targetPlayer ? cleanRate(targetPlayer) : rate(0);
 
-  // Most production per potato, affordable or not — the buy you should be
-  // saving toward. Same ranking the bot uses, surfaced so a player isn't
-  // expected to do the arithmetic mid-match.
-  const bestValueId = [...PRODUCERS]
-    .map((prod) => ({
-      id: prod.id,
-      value:
-        (prod.baseRate * producerMultiplier(me, prod.id)) /
-        producerCost(prod.id, me.producers[prod.id] ?? 0),
-    }))
-    .sort((a, b) => b.value - a.value)[0]?.id;
-
   return (
     <section className="panel shop">
       <header className="panel-head tabs">
@@ -126,18 +109,12 @@ export function Shop({
             ))}
           </div>
 
-          <p className="hint">
-            <strong>Best value</strong> is the most production per potato — usually a tier above
-            what you're buying. Climbing beats stacking.
-          </p>
-
           <div className="rows">
             {PRODUCERS.map((prod, i) => {
               const owned = me.producers[prod.id] ?? 0;
               const n = qty === "max" ? Math.max(1, affordableCount(me, prod.id, budget)) : qty;
               const cost = producerCost(prod.id, owned, n);
               const each = prod.baseRate * producerMultiplier(me, prod.id);
-              const isBestValue = prod.id === bestValueId;
               const broken = Math.min(me.broken[prod.id] ?? 0, owned);
               // The ladder reveals itself a rung at a time — but the first rung
               // is always there, or an empty shop greets you at zero potatoes.
@@ -151,8 +128,6 @@ export function Shop({
               return (
                 <Row
                   key={prod.id}
-                  accent={isBestValue ? "row-best" : undefined}
-                  badge={isBestValue ? "best value" : undefined}
                   name={`${prod.name}${owned ? ` ×${owned}` : ""}${broken ? ` (${broken} broken)` : ""}`}
                   blurb={`${prod.blurb} +${format(each * n)}/s`}
                   cost={cost}

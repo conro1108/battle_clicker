@@ -1,5 +1,31 @@
 # VISION.md
 
+## Where this went
+
+The pitch below is the head-to-head game, and it's still the interesting
+long-term idea. But the mode that's now the front door is a **persistent
+single-player homestead**: one farm you keep, growing while you're away, with a
+prestige loop under it and a much longer upgrade ladder above it.
+
+The competitive version is parked behind a menu rather than deleted. Its sim,
+content and bots are intact and its tests still run.
+
+What carries over is the thesis, not the multiplayer. The claim in "Why this is
+interesting" was never really about opponents — it was that a clicker gets a
+second axis once something is actively taking your production away, so every
+purchase is "grow" vs. "hold onto what I've got." An opponent was one way to
+supply that pressure. **Weather is another, and it doesn't need a lobby.**
+
+So in solo, sabotage becomes a force of nature: the same permanent damage, the
+same repair bills, the same spend-on-yourself-vs-spend-on-defense tension, with
+nobody on the other end of it. The one real design change is that defense had to
+stop being timed shields and become permanent buildings, because most weather
+lands while the tab is closed.
+
+The open questions below are answered for the versus mode and mostly moot for
+solo, which has no clock, no opponent and no fog of war. `README.md` covers how
+the homestead actually works.
+
 ## The pitch
 
 A cookie-clicker-like, but head-to-head. 2+ players join a match and race to

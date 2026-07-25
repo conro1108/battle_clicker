@@ -5,14 +5,20 @@ import {
   format,
   formatDuration,
   seconds,
+  solo,
   standings,
   type ScoringRule,
 } from "@battle/sim";
 
+import { AwayReport } from "./components/AwayReport.js";
 import { Farm } from "./components/Farm.js";
+import { FarmFeed } from "./components/FarmFeed.js";
+import { FarmShop } from "./components/FarmShop.js";
 import { Feed } from "./components/Feed.js";
+import { Homestead } from "./components/Homestead.js";
 import { Opponents } from "./components/Opponents.js";
 import { Shop } from "./components/Shop.js";
+import { hasSavedFarm, useFarm } from "./useFarm.js";
 import { YOU, useMatch, type MatchSetup } from "./useMatch.js";
 
 /** `greedy` exists as a control group for the balance harness, not as an opponent. */
@@ -24,7 +30,137 @@ const LENGTHS = [
   { label: "10 min", ms: seconds(600) },
 ];
 
-function Lobby({ onStart }: { onStart: (setup: MatchSetup) => void }) {
+type Screen = { kind: "home" } | { kind: "farm" } | { kind: "versus-lobby" } | { kind: "versus"; setup: MatchSetup };
+
+/**
+ * Space always digs, so the shop stays a mouse-only surface. Without the blur,
+ * space would re-fire whichever shop button you last clicked.
+ */
+function useSpaceToDig(dig: () => void, enabled = true) {
+  useEffect(() => {
+    if (!enabled) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || e.repeat) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
+      if (el && el.tagName === "BUTTON") el.blur();
+      e.preventDefault();
+      dig();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dig, enabled]);
+}
+
+// ---------------------------------------------------------------------------
+// Home
+// ---------------------------------------------------------------------------
+
+function Home({ onGo }: { onGo: (screen: Screen) => void }) {
+  const returning = hasSavedFarm();
+  return (
+    <div className="lobby">
+      <h1>
+        Potatoes, <span>Inc.</span>
+      </h1>
+      <p className="tagline">
+        Grow potatoes. The weather will have opinions about that.
+      </p>
+
+      <button className="start" onClick={() => onGo({ kind: "farm" })}>
+        {returning ? "Back to your farm" : "Start your farm"}
+      </button>
+      <p className="muted small home-note">
+        A farm you keep. It grows while you're gone — and so does everything that's wrong with it.
+      </p>
+
+      {/* Versus is the older idea and still the more finished one, but it isn't
+          what this is anymore. Kept reachable, kept out of the way. */}
+      <div className="home-aside">
+        <button className="ghost" onClick={() => onGo({ kind: "versus-lobby" })}>
+          Versus a bot
+        </button>
+        <span className="muted small">Experimental — the head-to-head prototype.</span>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The homestead
+// ---------------------------------------------------------------------------
+
+function Homefarm({ onExit }: { onExit: () => void }) {
+  const { farm, now, report, dismissReport, budget, pendingDigs, error, dig, dispatch, abandon } =
+    useFarm();
+  useSpaceToDig(dig, report === null);
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          Potatoes, <span>Inc.</span>
+        </div>
+        <div className="topbar-bank">
+          <span className="topbar-bank-value">{format(budget)}</span>
+          <span className="topbar-bank-label">to spend</span>
+        </div>
+        <div className="topbar-right">
+          <span className="muted rule">{format(solo.currentRate(farm))}/s</span>
+          <button className="ghost" onClick={onExit}>
+            Home
+          </button>
+        </div>
+      </header>
+
+      {error && <div className="error">{error}</div>}
+
+      <main className="grid">
+        <Homestead
+          farm={farm}
+          now={now}
+          budget={budget}
+          pendingDigs={pendingDigs}
+          onDig={dig}
+        />
+        <FarmShop farm={farm} budget={budget} dispatch={dispatch} />
+        <div className="sidebar">
+          <FarmFeed farm={farm} now={now} />
+          <section className="panel">
+            <header className="panel-head">
+              <h2>This farm</h2>
+            </header>
+            <dl className="stats">
+              <div>
+                <dt>Generation</dt>
+                <dd>{farm.generation}</dd>
+              </div>
+              <div>
+                <dt>Heirloom Seed</dt>
+                <dd>{farm.seeds}</dd>
+              </div>
+            </dl>
+            <button className="ghost danger" onClick={() => {
+              if (window.confirm("Plough it all under? This keeps nothing — not even seeds.")) {
+                abandon();
+              }
+            }}>
+              Plough it all under
+            </button>
+          </section>
+        </div>
+      </main>
+
+      {report && <AwayReport report={report} onDismiss={dismissReport} />}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Versus (the older prototype)
+// ---------------------------------------------------------------------------
+
+function VersusLobby({ onStart, onBack }: { onStart: (setup: MatchSetup) => void; onBack: () => void }) {
   const [playerName, setPlayerName] = useState("");
   const [durationMs, setDurationMs] = useState(seconds(300));
   const [botProfile, setBotProfile] = useState<MatchSetup["botProfile"]>("chill");
@@ -100,27 +236,18 @@ function Lobby({ onStart }: { onStart: (setup: MatchSetup) => void }) {
       >
         Start match
       </button>
+      <div className="home-aside">
+        <button className="ghost" onClick={onBack}>
+          Back
+        </button>
+      </div>
     </div>
   );
 }
 
 function Match({ setup, onExit }: { setup: MatchSetup; onExit: () => void }) {
   const { state, now, me, pendingClicks, over, error, click, dispatch, restart } = useMatch(setup);
-
-  // Space always digs, so the shop stays a mouse-only surface. Without the
-  // blur, space would re-fire whichever shop button you last clicked.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.code !== "Space" || e.repeat) return;
-      const el = document.activeElement as HTMLElement | null;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
-      if (el && el.tagName === "BUTTON") el.blur();
-      e.preventDefault();
-      click();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [click]);
+  useSpaceToDig(click);
 
   const table = standings(state, now);
   const opponentIds = state.order.filter((id) => id !== YOU);
@@ -206,13 +333,27 @@ function Match({ setup, onExit }: { setup: MatchSetup; onExit: () => void }) {
 }
 
 export function App() {
-  const [setup, setSetup] = useState<MatchSetup | null>(null);
-  if (!setup) return <Lobby onStart={setSetup} />;
-  return (
-    <Match
-      key={`${setup.durationMs}-${setup.botProfile}-${setup.scoring}`}
-      setup={setup}
-      onExit={() => setSetup(null)}
-    />
-  );
+  const [screen, setScreen] = useState<Screen>({ kind: "home" });
+
+  switch (screen.kind) {
+    case "farm":
+      return <Homefarm onExit={() => setScreen({ kind: "home" })} />;
+    case "versus-lobby":
+      return (
+        <VersusLobby
+          onStart={(setup) => setScreen({ kind: "versus", setup })}
+          onBack={() => setScreen({ kind: "home" })}
+        />
+      );
+    case "versus":
+      return (
+        <Match
+          key={`${screen.setup.durationMs}-${screen.setup.botProfile}-${screen.setup.scoring}`}
+          setup={screen.setup}
+          onExit={() => setScreen({ kind: "versus-lobby" })}
+        />
+      );
+    default:
+      return <Home onGo={setScreen} />;
+  }
 }

@@ -1,13 +1,20 @@
 # Potatoes, Inc.
 
-A playable prototype of the game in [VISION.md](VISION.md): a head-to-head
-potato clicker where every purchase competes for the same currency across
-production, sabotage, and defense.
+A potato clicker where every purchase competes for the same currency, and
+something is always working against you.
 
-This is the "prove the core loop first" slice VISION.md asks for. It runs
-entirely in the browser against a bot — no Supabase, no auth, no network. The
-backend in [STACK.md](STACK.md) is deliberately not built yet, but the sim is
-already shaped for it.
+There are two modes, and the front door leads to the first one:
+
+- **Your farm** — the persistent single-player homestead. Twelve tiers, forty
+  upgrades, a prestige loop, and weather that damages your land permanently
+  whether or not the tab is open. This is where development is going.
+- **Versus a bot** — the original head-to-head prototype from
+  [VISION.md](VISION.md), where the thing working against you is another player
+  spending their own potatoes to do it. Still playable, parked behind a menu.
+
+Both run entirely in the browser — no Supabase, no auth, no network. The backend
+in [STACK.md](STACK.md) is deliberately not built yet, but both sims are already
+shaped for it.
 
 ## Running it
 
@@ -28,6 +35,10 @@ npm test
 - **`packages/sim`** — the whole game, as pure TypeScript with zero I/O. Both
   the client and (eventually) the Edge Function import this, so optimistic
   prediction and server truth can't drift.
+- **`packages/sim/src/solo`** — the homestead, namespaced (`solo.*`) rather than
+  flattened into the same export surface. It has its own producers, its own cost
+  curves and its own `clickYield`, and merging them would make it far too easy
+  to price a farm with match content.
 - **`apps/web`** — Vite + React. Owns rendering and the local match runtime;
   no economy logic.
 
@@ -35,7 +46,51 @@ Commands go through `applyCommand(state, cmd, now)`, which is the single
 authority for mutations. The local runtime calls it directly; swapping that for
 a network round-trip shouldn't touch any game logic.
 
-## What's implemented
+## The homestead
+
+A farm you keep, running against nothing but time and the weather.
+
+**Weather is sabotage with nobody behind it.** A deterministic schedule keyed on
+`(seed, weatherIndex)` decides what happens and when, and every event lands at an
+instant the state already knows. That's what lets a week offline resolve
+*exactly* rather than approximately — walk the schedule, don't sample a clock —
+and it means a save file can't be reloaded for better weather.
+
+Nothing in solo expires. Broken kit stays broken and soil health only ever falls
+on its own; both come back solely by spending. So a farm's rate is constant
+between events, and `advance()` across ten seconds and across ten days are the
+same code path. `solo.test.ts` pins that down directly: resolving a six-hour gap
+in one call and ticking through it one second at a time have to agree on every
+event, every broken unit and the soil to ten decimal places.
+
+**Defense is buildings, not shields.** The versus mode's timed absorb pools are
+the right shape for a five-minute fight you're watching and the wrong shape here,
+because most weather lands while the tab is closed and a ninety-second shield
+would protect nothing. Windbreaks, ditches, a pest contract and insurance are
+levelled and permanent, stack with diminishing returns, and never reach zero
+exposure. They're worth roughly 3x the harvest of never building them — the
+difference between weather as a 6% running cost and weather as a 65% one.
+
+**Prestige** hands the farm down for Heirloom Seed, cube-rooted off the run's
+harvest. Seeds do two jobs and you can't have both: held, they multiply output;
+spent, they buy permanent perks. Same shape as the rest of the game — one pile,
+competing uses.
+
+Three balance findings from the harness are worth knowing, because each was
+invisible until a long run was actually measured:
+
+- **Repairs can't be priced off the cost curve.** From the *working* count, a
+  half-wrecked farm buys capacity back at the rates it paid tiers ago — a ~30x
+  discount on its next unit, making breakage a coupon and more damage mean more
+  harvest. From the *owned* count, 1.15^200 means reassembling a fleet costs more
+  than the fleet can ever produce, and insurance payouts on that bill become a
+  money printer. Repairs are priced against the production they restore.
+- **Boons have to be small.** At 600s of production, a good year outweighed every
+  storm in a session, which made the entire mitigation half of the game pointless.
+- **Weather has to cost enough for mitigation to pay for itself.** At a ~7% tax
+  no amount of building could earn its price back.
+
+## What's implemented (versus)
 
 Production rate is piecewise-constant with boundaries only at effect expiries,
 so `potatoesAt()` integrates in closed form and there is no tick loop — the

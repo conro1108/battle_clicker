@@ -450,26 +450,6 @@ button.ghost {
 .row-upgrade {
   border-left-color: var(--leaf);
 }
-.row-best {
-  border-left-color: var(--gold);
-  background: rgba(232, 182, 76, 0.09);
-}
-/* The best buy is usually one you can't afford yet — that's the point of it. */
-.row-best.row-locked {
-  opacity: 0.7;
-}
-.row-badge {
-  margin-left: 8px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--gold);
-  color: #1a1611;
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  vertical-align: middle;
-}
 .row-attack {
   border-left-color: var(--blood);
 }
@@ -771,4 +751,90 @@ button.ghost {
   .lobby h1 {
     font-size: 2rem;
   }
+}
+
+
+/* ---------- Homestead ----------
+   Everything below belongs to the solo farm. */
+
+.home-note {
+  margin: 10px 0 0;
+  text-align: center;
+}
+/* Versus is reachable, not offered. It sits below the fold of the decision. */
+.home-aside {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+button.danger {
+  border-color: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+button.danger:hover:not(:disabled) {
+  border-color: var(--blood);
+  color: var(--blood);
+}
+
+/* Soil only ever falls on its own, so it reads as a level draining rather than
+   a figure you have to compare against a remembered one. */
+.soil {
+  margin-top: 16px;
+}
+.soil-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.soil-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.soil-fill {
+  height: 100%;
+  background: var(--leaf);
+  transition: width 0.3s ease-out;
+}
+.soil-fill.low {
+  background: var(--blood);
+}
+
+.legacy-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.legacy-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--gold);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.away-kinds {
+  list-style: none;
+  margin: 12px 0 20px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.away-kinds li {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  font-size: 0.8rem;
 }
