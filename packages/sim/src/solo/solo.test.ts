@@ -1,0 +1,207 @@
+import { describe, expect, it } from "vitest";
+
+import { format, ms, seconds } from "../numbers.js";
+import { MIN_SOIL, SOLO_PRODUCERS } from "./content.js";
+import { currentRate, soilRestoreCost, totalRepairCost } from "./economy.js";
+import { advance, applyFarmCommand, pendingSeeds } from "./farm.js";
+import { parseFarm, resumeFarm, serializeFarm } from "./persist.js";
+import { MULT_PER_UNSPENT_SEED, seedsFor } from "./prestige.js";
+import { simulateFarm } from "./sim.js";
+import type { FarmState } from "./state.js";
+
+const HOUR = seconds(3_600);
+const DAY = HOUR * 24;
+
+/** A farm that's been played long enough to have something worth wrecking. */
+function developedFarm(seed = "dev", forMs = HOUR): FarmState {
+  return simulateFarm({ seed, durationMs: forMs, style: "keen" }).farm;
+}
+
+describe("the ladder", () => {
+  it("gets more expensive per potato of output as you climb", () => {
+    const paybacks = SOLO_PRODUCERS.map((p) => p.baseCost / p.baseRate);
+    for (let i = 1; i < paybacks.length; i++) {
+      expect(paybacks[i]!).toBeGreaterThan(paybacks[i - 1]!);
+    }
+    // And never so expensive that the top of the tree is decorative.
+    expect(paybacks.at(-1)!).toBeLessThan(400);
+  });
+
+  it("climbs into the upper tiers over a long session", () => {
+    const { farm, samples } = simulateFarm({ seed: "climb", durationMs: 8 * HOUR, style: "keen" });
+    const reached = SOLO_PRODUCERS.filter((p) => (farm.producers[p.id] ?? 0) > 0).length;
+    console.log(
+      `8h keen: tiers=${reached}/12 rate=${format(currentRate(farm))}/s ` +
+        `harvested=${format(farm.harvested)} soil=${farm.soil.toFixed(2)} ` +
+        `seeds worth=${pendingSeeds(farm)}`,
+    );
+    expect(reached).toBeGreaterThanOrEqual(8);
+    // Still growing at the end, not parked on a plateau.
+    const [last, prior] = [samples.at(-1)!, samples.at(-2)!];
+    expect(last.rate).toBeGreaterThan(prior.rate);
+  });
+});
+
+describe("offline resolution", () => {
+  /**
+   * The whole architecture rests on this. Weather lands at instants the state
+   * already knows, so resolving six hours in one call and resolving it in six
+   * hours of one-second steps have to agree — otherwise "come back tomorrow" is
+   * a different game from "leave the tab open", and the save file is a lie.
+   */
+  it("resolves a long gap identically to ticking through it", () => {
+    const base = developedFarm("gap");
+    const to = ms(base.checkpointAt + 6 * HOUR);
+
+    const oneShot = advance(base, to);
+
+    let ticked = base;
+    let tickedEvents = 0;
+    for (let t = base.checkpointAt; t < to; t = ms(t + 1_000)) {
+      const stepped = advance(ticked, ms(Math.min(t + 1_000, to)));
+      ticked = stepped.farm;
+      tickedEvents += stepped.events.length;
+    }
+
+    expect(tickedEvents).toBe(oneShot.events.length);
+    expect(ticked.weatherIndex).toBe(oneShot.farm.weatherIndex);
+    expect(ticked.soil).toBeCloseTo(oneShot.farm.soil, 10);
+    for (const prod of SOLO_PRODUCERS) {
+      expect(ticked.broken[prod.id] ?? 0).toBe(oneShot.farm.broken[prod.id] ?? 0);
+    }
+    // Potatoes accumulate over 21,600 additions in one case and a handful in
+    // the other, so this is float drift, not a modelling difference.
+    expect(ticked.potatoes / oneShot.farm.potatoes).toBeCloseTo(1, 6);
+  });
+
+  it("survives a week away without being unrecoverable", () => {
+    for (const seed of ["a", "b", "c"]) {
+      const base = developedFarm(seed);
+      const { farm, report } = resumeFarm(base, ms(base.checkpointAt + 7 * DAY));
+      expect(report).not.toBeNull();
+
+      // No knockouts, same as versus: the land floors out and the farm keeps
+      // turning over however long it's left.
+      expect(farm.soil).toBeGreaterThanOrEqual(MIN_SOIL - 1e-9);
+      expect(currentRate(farm)).toBeGreaterThan(0);
+
+      // And you can afford to put it right when you get back. A week that
+      // leaves you unable to pay your own repair bill is a week that ends the
+      // save, which is exactly what "a setback, not a wipe" has to rule out.
+      const bill = totalRepairCost(farm) + soilRestoreCost(farm);
+      console.log(
+        `week away (${seed}): pile=${format(farm.potatoes)} bill=${format(bill)} ` +
+          `soil=${farm.soil.toFixed(2)} broke=${report!.brokeTotal}`,
+      );
+      expect(farm.potatoes).toBeGreaterThan(bill);
+    }
+  });
+
+  it("reports what happened while you were out", () => {
+    const base = developedFarm("report");
+    const { report } = resumeFarm(base, ms(base.checkpointAt + 12 * HOUR));
+    expect(report!.awayMs).toBe(12 * HOUR);
+    expect(report!.earned).toBeGreaterThan(0);
+    expect(report!.events.length).toBeGreaterThan(0);
+  });
+
+  it("treats a clock that jumped backwards as no time passing", () => {
+    const base = developedFarm("clock");
+    const { farm, report } = resumeFarm(base, ms(base.checkpointAt - HOUR));
+    expect(report).toBeNull();
+    expect(farm.potatoes).toBe(base.potatoes);
+  });
+});
+
+describe("weather", () => {
+  it("is a running cost, not a wipe", () => {
+    const ratios = ["w1", "w2", "w3"].map((seed) => {
+      const withWeather = simulateFarm({ seed, durationMs: 4 * HOUR, style: "keen" });
+      const control = simulateFarm({ seed, durationMs: 4 * HOUR, style: "keen", weather: false });
+      console.log(
+        `${seed}: weathered=${format(withWeather.farm.harvested)} ` +
+          `clear=${format(control.farm.harvested)} ` +
+          `events=${withWeather.weatherEvents} broke=${withWeather.brokeTotal}`,
+      );
+      return withWeather.farm.harvested / control.farm.harvested;
+    });
+    const median = [...ratios].sort((a, b) => a - b)[1]!;
+    // It has to actually cost you something, or the land is decoration...
+    expect(median).toBeLessThan(0.97);
+    // ...and it can't be the dominant term, or growing is beside the point.
+    expect(median).toBeGreaterThan(0.35);
+  });
+
+  it("makes building the land worth the potatoes it costs", () => {
+    const ratios = ["l1", "l2", "l3"].map((seed) => {
+      const built = simulateFarm({ seed, durationMs: 8 * HOUR, style: "keen" });
+      const bare = simulateFarm({ seed, durationMs: 8 * HOUR, style: "reckless" });
+      console.log(
+        `${seed}: built=${format(built.farm.harvested)} bare=${format(bare.farm.harvested)} ` +
+          `builtBroke=${built.brokeTotal} bareBroke=${bare.brokeTotal}`,
+      );
+      return built.farm.harvested / bare.farm.harvested;
+    });
+    const median = [...ratios].sort((a, b) => a - b)[1]!;
+    expect(median).toBeGreaterThan(1);
+  });
+
+  it("leaves an idle farm alone until it has something worth wrecking", () => {
+    // Ten minutes of a brand-new farm should not be spent watching your four
+    // potato plots break.
+    const early = simulateFarm({ seed: "grace", durationMs: seconds(600), style: "keen" });
+    expect(early.brokeTotal).toBe(0);
+  });
+});
+
+describe("prestige", () => {
+  it("pays more for a bigger run, with sharply diminishing returns", () => {
+    expect(seedsFor(1e13 as never)).toBe(1);
+    expect(seedsFor(1e16 as never)).toBe(10);
+    expect(seedsFor(1e19 as never)).toBe(100);
+    // Ten seeds costs a thousand times the harvest of one.
+    expect(seedsFor(1e16 as never)).toBeGreaterThan(seedsFor(1e15 as never));
+  });
+
+  it("wipes the run, keeps the inheritance, and starts you stronger", () => {
+    const base = developedFarm("prestige", 4 * HOUR);
+    const earned = pendingSeeds(base);
+    expect(earned).toBeGreaterThan(0);
+
+    const rateBefore = currentRate(base);
+    const res = applyFarmCommand(base, { type: "prestige" }, base.checkpointAt);
+    expect(res.ok).toBe(true);
+    const next = (res as { farm: FarmState }).farm;
+
+    expect(next.seeds).toBe(base.seeds + earned);
+    expect(next.generation).toBe(base.generation + 1);
+    expect(next.harvested).toBe(0);
+    expect(next.soil).toBe(1);
+    expect(Object.values(next.producers).reduce((a, b) => a + b, 0)).toBe(0);
+    // Lifetime is the one number that never goes backwards.
+    expect(next.lifetimeHarvested).toBeGreaterThanOrEqual(base.lifetimeHarvested);
+    // And the seeds are worth something on the way back up.
+    expect(1 + MULT_PER_UNSPENT_SEED * next.seeds).toBeGreaterThan(1);
+    expect(currentRate(next)).toBeLessThan(rateBefore);
+  });
+
+  it("refuses a prestige that would pay nothing", () => {
+    const fresh = simulateFarm({ seed: "tiny", durationMs: seconds(30), style: "keen" }).farm;
+    const res = applyFarmCommand(fresh, { type: "prestige" }, fresh.checkpointAt);
+    expect(res.ok).toBe(false);
+  });
+});
+
+describe("saving", () => {
+  it("round-trips a farm exactly", () => {
+    const farm = developedFarm("save");
+    const restored = parseFarm(serializeFarm(farm, farm.checkpointAt));
+    expect(restored).toEqual(farm);
+  });
+
+  it("refuses junk rather than throwing", () => {
+    expect(parseFarm("not json")).toBeNull();
+    expect(parseFarm("{}")).toBeNull();
+    expect(parseFarm(JSON.stringify({ version: 999, farm: {} }))).toBeNull();
+  });
+});
