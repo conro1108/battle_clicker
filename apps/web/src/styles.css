@@ -203,7 +203,7 @@ button.ghost {
 }
 .grid {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 320px;
+  grid-template-columns: 340px minmax(0, 1fr) 320px;
   gap: 16px;
   align-items: start;
 }
@@ -214,7 +214,12 @@ button.ghost {
 
 /* One column, but not in source order. Stacked naively you'd scroll past the
    whole shop to find out whether you're winning, so the scoreboard comes up to
-   sit right under your own numbers and the field report drops to the bottom. */
+   sit right under your own numbers and everything you only read drops below the
+   thing you came to tap.
+
+   Every panel here needs an explicit order. `.sidebar` becomes `display:
+   contents`, so an unordered child defaults to 0 and silently jumps ahead of the
+   farm — which is exactly what the homestead's ledger did. */
 @media (max-width: 1100px) {
   .grid {
     grid-template-columns: 1fr;
@@ -233,6 +238,9 @@ button.ghost {
   }
   .feed {
     order: 4;
+  }
+  .ledger {
+    order: 5;
   }
 }
 
@@ -327,8 +335,10 @@ button.ghost {
 
 .dig {
   width: 100%;
-  padding: 20px;
+  padding: 26px 20px;
+  min-height: 150px;
   display: grid;
+  align-content: center;
   justify-items: center;
   gap: 4px;
   background: linear-gradient(180deg, #7a5b31, var(--soil));
@@ -342,6 +352,11 @@ button.ghost {
 .dig-emoji {
   font-size: 3rem;
   line-height: 1;
+}
+.dig-yield {
+  font-weight: 700;
+  color: #ffe6ac;
+  font-variant-numeric: tabular-nums;
 }
 .dig-label {
   font-weight: 700;
@@ -443,9 +458,20 @@ button.ghost {
   gap: 12px;
   text-align: left;
   width: 100%;
-  padding: 10px 12px;
+  padding: 12px 14px;
   background: var(--panel-2);
   border-left: 3px solid var(--soil);
+}
+/* Something you can afford is a button; something you can't is a label. Without
+   this they look identical apart from opacity, and the shop reads as a price
+   list you scan rather than a row of things to press. */
+.row:not(.row-locked) {
+  background: linear-gradient(180deg, #2c261c, var(--panel-2));
+  border-color: #4a3f2c;
+}
+.row:not(.row-locked):hover {
+  border-color: var(--gold);
+  background: rgba(232, 182, 76, 0.08);
 }
 .row-upgrade {
   border-left-color: var(--leaf);
@@ -501,8 +527,12 @@ button.ghost {
 }
 .row-cost {
   font-weight: 700;
+  font-size: 1.05rem;
   color: var(--gold);
   font-variant-numeric: tabular-nums;
+}
+.row-locked .row-cost {
+  color: var(--muted);
 }
 .row-meta {
   font-size: 0.75rem;
@@ -651,7 +681,7 @@ button.ghost {
   .app {
     padding: 10px;
     /* Room for the pinned dig bar, so the last shop row isn't stuck under it. */
-    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+    padding-bottom: calc(120px + env(safe-area-inset-bottom));
   }
   .topbar {
     gap: 10px;
@@ -694,6 +724,41 @@ button.ghost {
     margin: 12px 0 0;
   }
 
+  /* On a phone the homestead's farm panel was half a screen of numbers you can
+     only read, sitting between the top of the page and the first thing you can
+     press. The barn total is already pinned in the topbar, so showing it again
+     three times the size just pushes the shop off the bottom.
+
+     Scoped to `.homestead`, not `.farm`: under "biggest pile" scoring the versus
+     panel renders the bank *instead of* a score line, so hiding it there would
+     leave an empty box where the only number that matters used to be. */
+  .homestead .bank {
+    display: none;
+  }
+  .homestead .tally {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 8px 12px;
+  }
+  .homestead .tally-score {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
+    padding: 0;
+    border: 0;
+  }
+  .homestead .tally-score-value {
+    font-size: 1.3rem;
+  }
+  .homestead .panel-head {
+    display: none;
+  }
+  .soil {
+    margin-top: 12px;
+  }
+
   /* Dig follows you down the page. Otherwise every purchase costs you a scroll
      back to the top, which is most of what playing on a phone would be. */
   .dig {
@@ -712,6 +777,20 @@ button.ghost {
   }
   .dig-emoji {
     font-size: 2rem;
+  }
+  .dig-label {
+    font-size: 1.15rem;
+  }
+  .dig {
+    min-height: 0;
+  }
+  .dig-yield {
+    font-size: 1rem;
+  }
+  /* The barn total is the number every purchase is judged against, and on a
+     phone it's the only place it appears. */
+  .topbar-bank-value {
+    font-size: 1.7rem;
   }
 
   /* Switching tabs shouldn't mean scrolling back up the shop to find them. */

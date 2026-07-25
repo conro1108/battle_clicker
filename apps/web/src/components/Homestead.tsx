@@ -44,7 +44,7 @@ export function Homestead({
   const soilBill = solo.soilRestoreCost(farm);
 
   return (
-    <section className="panel farm">
+    <section className="panel farm homestead">
       <header className="panel-head">
         <h2>Your farm</h2>
         <span className="muted small">Generation {farm.generation}</span>
@@ -72,11 +72,15 @@ export function Homestead({
         </div>
       </dl>
 
+      {/* The one thing you're always able to do, so it gets the room. The yield
+          rides on the button because "what is a dig worth right now" is the
+          only question that decides whether to keep tapping. */}
       <button className="dig" onClick={onDig}>
         <span className="dig-emoji" aria-hidden>
           🥔
         </span>
         <span className="dig-label">Dig</span>
+        <span className="dig-yield">+{format(perDig)}</span>
       </button>
 
       <SoilBar soil={farm.soil} />

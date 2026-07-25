@@ -126,7 +126,7 @@ function Homefarm({ onExit }: { onExit: () => void }) {
         <FarmShop farm={farm} budget={budget} dispatch={dispatch} />
         <div className="sidebar">
           <FarmFeed farm={farm} now={now} />
-          <section className="panel">
+          <section className="panel ledger">
             <header className="panel-head">
               <h2>This farm</h2>
             </header>
