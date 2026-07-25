@@ -33,7 +33,7 @@ function Lobby({ onStart }: { onStart: (setup: MatchSetup) => void }) {
   return (
     <div className="lobby">
       <h1>
-        Battle <span>Clicker</span>
+        Potatoes, <span>Inc.</span>
       </h1>
       <p className="tagline">
         Grow potatoes. Ruin someone else's. You can't afford to do both.
@@ -141,7 +141,7 @@ function Match({ setup, onExit }: { setup: MatchSetup; onExit: () => void }) {
           shopping, which is exactly when you need them. */}
       <header className="topbar">
         <div className="brand">
-          Battle <span>Clicker</span>
+          Potatoes, <span>Inc.</span>
         </div>
         <div className={`clock ${timeLeft < seconds(30) ? "urgent" : ""}`}>
           {formatDuration(timeLeft)}

@@ -1,4 +1,4 @@
-# Battle Clicker
+# Potatoes, Inc.
 
 A playable prototype of the game in [VISION.md](VISION.md): a head-to-head
 potato clicker where every purchase competes for the same currency across
