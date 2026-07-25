@@ -297,7 +297,7 @@ export function FarmShop({
       {tab === "legacy" && <Legacy farm={farm} dispatch={dispatch} />}
 
       <footer className="shop-foot">
-        <span className="muted">In the barn</span>
+        <span className="muted">To spend</span>
         <strong>{format(budget)}</strong>
       </footer>
     </section>

@@ -101,6 +101,9 @@ function Homefarm({ onExit }: { onExit: () => void }) {
         <div className="brand">
           Potatoes, <span>Inc.</span>
         </div>
+        {/* This bar is pinned, so it's the copy of the spendable total that
+            follows you down the shop. The panel below holds the same number at
+            full size; harvested is the ambient one and rides small. */}
         <div className="topbar-bank">
           <span className="topbar-bank-value">{format(budget)}</span>
           <span className="topbar-bank-label">to spend</span>

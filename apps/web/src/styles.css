@@ -726,34 +726,28 @@ button.ghost {
 
   /* On a phone the homestead's farm panel was half a screen of numbers you can
      only read, sitting between the top of the page and the first thing you can
-     press. The barn total is already pinned in the topbar, so showing it again
-     three times the size just pushes the shop off the bottom.
-
-     Scoped to `.homestead`, not `.farm`: under "biggest pile" scoring the versus
-     panel renders the bank *instead of* a score line, so hiding it there would
-     leave an empty box where the only number that matters used to be. */
-  .homestead .bank {
+     press. Trimmed to what you act on — the spendable total keeps its size,
+     because that's the figure every row in the shop is judged against. */
+  .homestead .panel-head {
     display: none;
   }
   .homestead .tally {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 12px;
-    padding: 8px 12px;
+    padding: 10px 12px;
   }
+  .homestead .bank-value {
+    font-size: 2.6rem;
+  }
+  /* Harvested drops to a single line under the spendable total rather than a
+     block of its own — it's context, not a control. */
   .homestead .tally-score {
     flex-direction: row;
     align-items: baseline;
-    gap: 8px;
-    padding: 0;
-    border: 0;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 0 0;
   }
   .homestead .tally-score-value {
-    font-size: 1.3rem;
-  }
-  .homestead .panel-head {
-    display: none;
+    font-size: 1rem;
   }
   .soil {
     margin-top: 12px;

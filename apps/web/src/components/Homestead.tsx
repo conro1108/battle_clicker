@@ -34,8 +34,8 @@ export function Homestead({
   onDig: () => void;
 }) {
   const perDig = solo.clickYield(farm);
-  // Digs you've made but that haven't been flushed into the sim yet still
-  // count, the same way they do in the barn figure.
+  // Digs banked client-side but not yet flushed still count, the same way they
+  // do in the spendable total.
   const harvested = P.add(solo.projectedHarvested(farm, now), P.mul(perDig, pendingDigs));
   const rate = solo.currentRate(farm);
   const lostToBreak = solo.brokenRate(farm);
@@ -50,14 +50,17 @@ export function Homestead({
         <span className="muted small">Generation {farm.generation}</span>
       </header>
 
+      {/* What you can spend is the number every row in the shop is judged
+          against, so it's the big one, sitting next to the shop and above the
+          dig button. Harvested is the one you only glance at. */}
       <div className="tally">
         <div className="bank">
           <div className="bank-value">{format(budget)}</div>
-          <div className="bank-label">in the barn</div>
+          <div className="bank-label">to spend</div>
         </div>
         <div className="tally-score">
           <span className="tally-score-value">{format(harvested)}</span>
-          <span className="tally-score-label">harvested this generation</span>
+          <span className="tally-score-label">harvested</span>
         </div>
       </div>
 
