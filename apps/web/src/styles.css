@@ -789,10 +789,6 @@ button.ghost {
 
   /* Switching tabs shouldn't mean scrolling back up the shop to find them. */
   .shop .tabs {
-    position: sticky;
-    /* Just clear of the pinned topbar, which measures 54px at this size. */
-    top: 56px;
-    z-index: 10;
     margin: -12px -12px 12px;
     padding: 12px;
     background: var(--panel);
