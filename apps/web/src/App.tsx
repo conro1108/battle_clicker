@@ -5,7 +5,6 @@ import {
   format,
   formatDuration,
   seconds,
-  solo,
   standings,
   type ScoringRule,
 } from "@battle/sim";
