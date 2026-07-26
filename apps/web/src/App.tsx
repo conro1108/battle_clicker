@@ -97,24 +97,7 @@ function Homefarm({ onExit }: { onExit: () => void }) {
 
   return (
     <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          Potatoes, <span>Inc.</span>
-        </div>
-        {/* This bar is pinned, so it's the copy of the spendable total that
-            follows you down the shop. The panel below holds the same number at
-            full size; harvested is the ambient one and rides small. */}
-        <div className="topbar-bank">
-          <span className="topbar-bank-value">{format(budget)}</span>
-          <span className="topbar-bank-label">to spend</span>
-        </div>
-        <div className="topbar-right">
-          <span className="muted rule">{format(solo.currentRate(farm))}/s</span>
-          <button className="ghost" onClick={onExit}>
-            Home
-          </button>
-        </div>
-      </header>
+
 
       {error && <div className="error">{error}</div>}
 
@@ -149,6 +132,9 @@ function Homefarm({ onExit }: { onExit: () => void }) {
               }
             }}>
               Plough it all under
+            </button>
+            <button className="ghost" onClick={onExit}>
+              Home
             </button>
           </section>
         </div>
