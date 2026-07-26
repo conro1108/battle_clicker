@@ -35,14 +35,15 @@ export interface SoloProducer {
 }
 
 /**
- * Twelve rungs, each 8x the output and ~12.5x the price of the one below.
+ * Twelve rungs, each 8x the output and ~14-18x the price of the one below.
  *
- * That gap is the pace control for the whole run. Payback climbs from 20s at
- * the bottom rung to about ninety minutes at the top, so the cheap rungs stay
- * buyable filler while the expensive ones are things you save days for. Narrow
- * the gap back towards 10x and the ladder collapses — a busy player was
- * clearing all twelve tiers inside an hour and then had nothing left to buy.
- * `solo.test.ts` is the check on that curve — retune here, run that.
+ * The gap is the pace control for the whole run. Payback climbs from 20s at
+ * the bottom rung to many hours at the top, so cheap rungs stay buyable filler
+ * while expensive ones are things you save days for. Growth is 1.19 rather
+ * than the previous 1.16 — the compounding difference across 50+ units is
+ * substantial, and the upper-tier base costs are higher too, keeping a
+ * determined player busy for several real-world days before the ladder is
+ * cleared. `solo.test.ts` is the check on this curve — retune here, run that.
  */
 export const SOLO_PRODUCERS: readonly SoloProducer[] = [
   {
@@ -51,95 +52,95 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     blurb: "A patch of dirt. It does what dirt does.",
     baseRate: 1,
     baseCost: P.of(20),
-    growth: 1.16,
+    growth: 1.19,
   },
   {
     id: "hand",
     name: "Farmhand",
     blurb: "Pays for themselves. Eventually.",
     baseRate: 8,
-    baseCost: P.of(270),
-    growth: 1.16,
+    baseCost: P.of(280),
+    growth: 1.19,
   },
   {
     id: "irrigation",
     name: "Irrigation Rig",
     blurb: "Water, on purpose, at the right time.",
     baseRate: 60,
-    baseCost: P.of(3_300),
-    growth: 1.16,
+    baseCost: P.of(3_600),
+    growth: 1.19,
   },
   {
     id: "tractor",
     name: "Tractor",
     blurb: "Diesel-powered crop math.",
     baseRate: 450,
-    baseCost: P.of(42_000),
-    growth: 1.16,
+    baseCost: P.of(52_000),
+    growth: 1.19,
   },
   {
     id: "harvester",
     name: "Combine Harvester",
     blurb: "Eats a field for breakfast.",
     baseRate: 3_400,
-    baseCost: P.of(530_000),
-    growth: 1.16,
+    baseCost: P.of(800_000),
+    growth: 1.19,
   },
   {
     id: "lab",
     name: "Tuber Lab",
     blurb: "The potatoes are asking questions now.",
     baseRate: 26_000,
-    baseCost: P.of(6_700_000),
-    growth: 1.16,
+    baseCost: P.of(12_000_000),
+    growth: 1.19,
   },
   {
     id: "refinery",
     name: "Starch Refinery",
     blurb: "Potatoes in one end, more potatoes out the other. Don't ask.",
     baseRate: 200_000,
-    baseCost: P.of(86_000_000),
-    growth: 1.16,
+    baseCost: P.of(200_000_000),
+    growth: 1.19,
   },
   {
     id: "tower",
     name: "Hydroponic Tower",
     blurb: "Forty floors of dirt-free ambition.",
     baseRate: 1_500_000,
-    baseCost: P.of(1_100_000_000),
-    growth: 1.16,
+    baseCost: P.of(3_200_000_000),
+    growth: 1.19,
   },
   {
     id: "seeder",
     name: "Cloud Seeder",
     blurb: "The weather works for you now. Mostly.",
     baseRate: 12_000_000,
-    baseCost: P.of(14_000_000_000),
-    growth: 1.16,
+    baseCost: P.of(50_000_000_000),
+    growth: 1.19,
   },
   {
     id: "reactor",
     name: "Spud Fusion Reactor",
     blurb: "Binds four small potatoes into one enormous one.",
     baseRate: 90_000_000,
-    baseCost: P.of(180_000_000_000),
-    growth: 1.16,
+    baseCost: P.of(800_000_000_000),
+    growth: 1.19,
   },
   {
     id: "orbital",
     name: "Orbital Greenhouse",
     blurb: "No frost in low earth orbit. Different problems up there.",
     baseRate: 700_000_000,
-    baseCost: P.of(2_300_000_000_000),
-    growth: 1.16,
+    baseCost: P.of(13_000_000_000_000),
+    growth: 1.19,
   },
   {
     id: "singularity",
     name: "Tuber Singularity",
     blurb: "Grows potatoes that have always already been grown.",
     baseRate: 5_500_000_000,
-    baseCost: P.of(30_000_000_000_000),
-    growth: 1.16,
+    baseCost: P.of(200_000_000_000_000),
+    growth: 1.19,
   },
 ];
 
@@ -193,12 +194,16 @@ function fleetCost(id: SoloProducerId, count: number, share = 1): Potatoes {
   return P.of(Math.ceil(prod.baseCost * units * share));
 }
 
-/** Two doublings per tier: one when you have a few, one when you're deep in. */
+/**
+ * Two boosts per tier: one when you have a few, one when you're deep in.
+ *
+ * The first is a doubling (x2) gated on owning ten units.
+ * The second is a +50% boost (x1.5) gated on fifty units — not another
+ * doubling. Stacking two doublings per tier meant every tier self-amplified
+ * 4x the moment you were deep in it, which is a big part of why the ladder
+ * used to evaporate. Priced against the fleet you must already own.
+ */
 function tierUpgrades(): SoloUpgrade[] {
-  // Priced against the fleet you must already own to see them: the first
-  // doubling costs about what your ten units cost, the second a third of what
-  // fifty cost. Cheaper than that and every tier doubles itself the moment it
-  // unlocks, which is most of why the ladder used to evaporate.
   const naming: Record<SoloProducerId, [string, string]> = {
     plot: ["Raised Beds", "Terraced Slopes"],
     hand: ["Overtime Pay", "Profit Sharing"],
@@ -227,9 +232,9 @@ function tierUpgrades(): SoloUpgrade[] {
     out.push({
       id: `${prod.id}_x2b`,
       name: second,
-      blurb: `${prod.name}s produce twice as much again.`,
-      cost: fleetCost(prod.id, 50, 0.3),
-      effect: { kind: "producer_mult", producer: prod.id, factor: 2 },
+      blurb: `${prod.name}s produce 50% more.`,
+      cost: fleetCost(prod.id, 50, 0.4),
+      effect: { kind: "producer_mult", producer: prod.id, factor: 1.5 },
       requires: { producer: prod.id, count: 50 },
     });
   }
@@ -286,69 +291,76 @@ const CLICK_UPGRADES: SoloUpgrade[] = [
   },
 ];
 
+/**
+ * Global multipliers deliberately kept modest. Each one compounds against every
+ * tier below it, so a 2x here is louder than it looks — it effectively halves
+ * the time to reach the next milestone. Capped at 1.5x for most rungs; only the
+ * late-game unlocks reach 2x. The previous x2/x3/x5 chain was the main reason
+ * a week-long run evaporated into an afternoon.
+ */
 const GLOBAL_UPGRADES: SoloUpgrade[] = [
   {
     id: "fertilizer",
     name: "Fertilizer",
-    blurb: "Everything produces +50%.",
+    blurb: "Everything produces +30%.",
     cost: fleetCost("hand", 15),
-    effect: { kind: "global_mult", factor: 1.5 },
+    effect: { kind: "global_mult", factor: 1.3 },
     requires: { producer: "hand", count: 15 },
   },
   {
     id: "crop_rotation",
     name: "Crop Rotation",
-    blurb: "Everything produces +50%.",
+    blurb: "Everything produces +30%.",
     cost: fleetCost("irrigation", 25),
-    effect: { kind: "global_mult", factor: 1.5 },
+    effect: { kind: "global_mult", factor: 1.3 },
     requires: { producer: "irrigation", count: 25 },
   },
   {
     id: "gmo_seed",
     name: "GMO Seed Stock",
-    blurb: "Everything produces x2. Don't read the label.",
+    blurb: "Everything produces +50%. Don't read the label.",
     cost: fleetCost("harvester", 20),
-    effect: { kind: "global_mult", factor: 2 },
+    effect: { kind: "global_mult", factor: 1.5 },
     requires: { producer: "harvester", count: 20 },
   },
   {
     id: "co_op",
     name: "Growers' Co-op",
-    blurb: "Everything produces x2.",
+    blurb: "Everything produces +50%.",
     cost: fleetCost("refinery", 25),
-    effect: { kind: "global_mult", factor: 2 },
+    effect: { kind: "global_mult", factor: 1.5 },
     requires: { producer: "refinery", count: 25 },
   },
   {
     id: "subsidy",
     name: "Agricultural Subsidy",
-    blurb: "Everything produces x2. Paperwork was involved.",
+    blurb: "Everything produces +50%. Paperwork was involved.",
     cost: fleetCost("seeder", 25),
-    effect: { kind: "global_mult", factor: 2 },
+    effect: { kind: "global_mult", factor: 1.5 },
     requires: { producer: "seeder", count: 25 },
   },
   {
     id: "monopoly",
     name: "Vertical Integration",
-    blurb: "Everything produces x3.",
+    blurb: "Everything produces x2.",
     cost: fleetCost("reactor", 25),
-    effect: { kind: "global_mult", factor: 3 },
+    effect: { kind: "global_mult", factor: 2 },
     requires: { producer: "reactor", count: 25 },
   },
   {
     id: "terraform",
     name: "Terraforming Charter",
-    blurb: "Everything produces x3.",
+    blurb: "Everything produces x2.",
     cost: fleetCost("orbital", 25),
-    effect: { kind: "global_mult", factor: 3 },
+    effect: { kind: "global_mult", factor: 2 },
     requires: { producer: "orbital", count: 25 },
   },
   {
     id: "ur_potato",
     name: "The Ur-Potato",
-    blurb: "The first potato. Everything produces x5.",
+    blurb: "The first potato. Everything produces x2.",
     cost: fleetCost("singularity", 25),
-    effect: { kind: "global_mult", factor: 5 },
+    effect: { kind: "global_mult", factor: 2 },
     requires: { producer: "singularity", count: 25 },
   },
 ];

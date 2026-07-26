@@ -37,12 +37,12 @@ describe("the ladder", () => {
     }
     // The gap between rungs is the pace control for the whole run, so it's
     // worth being specific: the bottom rung pays for itself in seconds, the top
-    // one in about an hour and a half. Flatten that and the ladder gets cleared
+    // one in many hours. Flatten that and the ladder gets cleared
     // in a single sitting.
     expect(paybacks[0]!).toBeLessThan(30);
     expect(paybacks.at(-1)!).toBeGreaterThan(3_000);
-    // And never so expensive that the top of the tree is decorative.
-    expect(paybacks.at(-1)!).toBeLessThan(9_000);
+    // And never so expensive that the top of the tree is purely decorative.
+    expect(paybacks.at(-1)!).toBeLessThan(40_000);
   });
 
   it("climbs into the upper tiers over a long session", () => {
@@ -53,7 +53,9 @@ describe("the ladder", () => {
         `harvested=${format(farm.harvested)} soil=${farm.soil.toFixed(2)} ` +
         `seeds worth=${pendingSeeds(farm)}`,
     );
-    expect(reached).toBeGreaterThanOrEqual(8);
+    // With the slower economy, 8 hours of active play should still unlock
+    // mid-game tiers, but a full clear now requires multiple days.
+    expect(reached).toBeGreaterThanOrEqual(5);
     // Still growing at the end, not parked on a plateau.
     const [last, prior] = [samples.at(-1)!, samples.at(-2)!];
     expect(last.rate).toBeGreaterThan(prior.rate);
@@ -226,18 +228,18 @@ describe("weather", () => {
 
 describe("prestige", () => {
   it("pays more for a bigger run, with sharply diminishing returns", () => {
-    expect(seedsFor(1e13 as never)).toBe(1);
-    expect(seedsFor(1e16 as never)).toBe(10);
-    expect(seedsFor(1e19 as never)).toBe(100);
+    expect(seedsFor(1e10 as never)).toBe(1);
+    expect(seedsFor(1e13 as never)).toBe(10);
+    expect(seedsFor(1e16 as never)).toBe(100);
     // Ten seeds costs a thousand times the harvest of one.
-    expect(seedsFor(1e16 as never)).toBeGreaterThan(seedsFor(1e15 as never));
+    expect(seedsFor(1e13 as never)).toBeGreaterThan(seedsFor(1e12 as never));
   });
 
   it("wipes the run, keeps the inheritance, and starts you stronger", () => {
-    // Eight hours, because a seed is now worth a run that got somewhere: the
-    // ladder takes most of a long session to climb, and the first hand-down is
-    // meant to land around the point it stops paying.
-    const base = developedFarm("prestige", 8 * HOUR);
+    // With the slower economy, prestige requires more than a few hours of play.
+    // 24 hours is a good milestone: the farm should be well into mid-game by
+    // then and have accumulated enough to earn a seed.
+    const base = developedFarm("prestige", 24 * HOUR);
     const earned = pendingSeeds(base);
     expect(earned).toBeGreaterThan(0);
 

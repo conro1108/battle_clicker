@@ -100,12 +100,12 @@ export const MULT_PER_UNSPENT_SEED = 0.02;
  * one before it — the standard idle-game shape, and the reason a prestige is
  * always eventually worth doing but never worth doing immediately.
  *
- * The divisor sets when the first hand-down becomes worth it. Tuned so a good
- * first session is worth tens of seeds rather than the six figures an earlier
- * pass produced, which handed generation two a multiplier it hadn't earned and
- * ended the game on day one.
+ * The divisor sets when the first hand-down becomes worth it. Calibrated for
+ * the slower economy: a 24-hour run accumulates roughly billions, so 1e10 puts
+ * the first seed at around that mark and leaves the first prestige landing
+ * naturally in day 1-2 of a multi-day run.
  */
-const SEED_DIVISOR = 1e13;
+const SEED_DIVISOR = 1e10;
 
 export function seedsFor(lifetimeRunHarvest: Potatoes, vigor = 1): number {
   if (lifetimeRunHarvest <= 0) return 0;
