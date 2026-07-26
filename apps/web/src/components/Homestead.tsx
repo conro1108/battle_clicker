@@ -85,13 +85,15 @@ export function Homestead({
       {/* The one thing you're always able to do, so it gets the room. The yield
           rides on the button because "what is a dig worth right now" is the
           only question that decides whether to keep tapping. */}
-      <button className="dig" onClick={onDig}>
-        <span className="dig-emoji" aria-hidden>
-          🥔
-        </span>
-        <span className="dig-label">Dig</span>
-        <span className="dig-yield">+{format(perDig)}</span>
-      </button>
+      <div className="dig-layout">
+        <button className="dig" onClick={onDig}>
+          <span className="dig-emoji" aria-hidden>
+            🥔
+          </span>
+          <span className="dig-label">Dig</span>
+          <span className="dig-yield">+{format(perDig)}</span>
+        </button>
+      </div>
 
       <SoilBar soil={farm.soil} />
 

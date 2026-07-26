@@ -91,12 +91,14 @@ export function Farm({
         </div>
       </dl>
 
-      <button className="dig" onClick={onClick} disabled={disabled}>
-        <span className="dig-emoji" aria-hidden>
-          🥔
-        </span>
-        <span className="dig-label">Dig</span>
-      </button>
+      <div className="dig-layout">
+        <button className="dig" onClick={onClick} disabled={disabled}>
+          <span className="dig-emoji" aria-hidden>
+            🥔
+          </span>
+          <span className="dig-label">Dig</span>
+        </button>
+      </div>
 
       {lost > 0 && (
         <div className="damage">

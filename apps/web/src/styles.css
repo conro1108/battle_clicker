@@ -776,13 +776,15 @@ button.ghost {
 
   /* Dig follows you down the page. Otherwise every purchase costs you a scroll
      back to the top, which is most of what playing on a phone would be. */
-  .dig {
+  .dig-layout {
     position: fixed;
     left: 10px;
     right: 10px;
     bottom: calc(10px + env(safe-area-inset-bottom));
     z-index: 30;
-    width: auto;
+  }
+  .dig {
+    width: 100%;
     padding: 14px;
     grid-auto-flow: column;
     justify-content: center;
