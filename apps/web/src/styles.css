@@ -46,6 +46,10 @@ body {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+  /* The app is a fixed single screen, not a document. Without this the page
+     itself scrolls whenever the shell is a few pixels taller than the visual
+     viewport, which reads as the whole game sliding under your thumb. */
+  overflow: hidden;
 }
 
 /* iOS standalone leaves a strip below the layout viewport that only the root
@@ -271,7 +275,7 @@ input {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 8px 14px 10px;
+  padding: 6px 14px 7px;
   background: var(--cream);
   border-bottom: 3px solid var(--wood);
   z-index: 3;
@@ -283,7 +287,7 @@ input {
   gap: 8px;
 }
 .hud-value {
-  font-size: 1.35rem;
+  font-size: 1.25rem;
   font-weight: 800;
   line-height: 1.05;
   color: var(--wood-dark);
@@ -360,7 +364,7 @@ input {
 .digbar {
   position: relative;
   flex-shrink: 0;
-  padding: 8px 14px;
+  padding: 6px 14px 7px;
   background: var(--cream);
   border-top: 3px solid var(--wood);
 }
@@ -370,8 +374,8 @@ input {
   background: var(--accent);
   border-color: var(--wood-dark);
   color: #fff8ec;
-  font-size: 1.1rem;
-  padding: 11px 14px;
+  font-size: 1.05rem;
+  padding: 9px 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -433,11 +437,11 @@ input {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  padding: 7px 2px calc(7px + env(safe-area-inset-bottom));
+  padding: 5px 2px calc(5px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   font-size: 0.58rem;
   font-weight: 700;
   text-transform: uppercase;

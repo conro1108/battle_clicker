@@ -190,13 +190,13 @@ function Homefarm({ onExit }: { onExit: () => void }) {
             className={item.id === "land" && needsAttention ? "alert" : undefined}
             onClick={() => setSheet(item.id)}
           >
-            <PxIcon name={item.icon} size={22} />
+            <PxIcon name={item.icon} size={20} />
             <span>{item.label}</span>
             {item.id === "land" && needsAttention && <span className="nav-dot" />}
           </button>
         ))}
         <button onClick={onExit}>
-          <PxIcon name="house" size={22} />
+          <PxIcon name="house" size={20} />
           <span>Home</span>
         </button>
       </nav>
