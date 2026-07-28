@@ -13,9 +13,12 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <!-- The shell reserves the top inset itself, so a translucent bar sits over
-         its own painted strip rather than over the HUD. -->
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- Not black-translucent. Translucent makes the web view full-screen and
+         hands the status bar's height back as a safe-area inset, and any
+         mismatch between that inset and the viewport height the shell is sized
+         against pushes the bottom nav off a screen that deliberately can't
+         scroll. Opaque keeps the view below the bar and the insets at zero. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="Potatoes, Inc." />
 
     <title>Potatoes, Inc.</title>

@@ -60,38 +60,37 @@ html {
 }
 
 body {
-  height: 100vh;
-  height: 100dvh;
+  height: 100%;
   background: radial-gradient(circle at 50% 0%, #8a5f3f 0%, #6b4630 60%, #4a2f20 100%);
   color: var(--ink);
-  display: flex;
-  justify-content: center;
   /* Rapid tapping otherwise reads as a double-tap zoom, which makes the dig
      button feel broken exactly when you're using it hardest. */
   touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
 }
 
+/* Pinned to the viewport rather than sized in viewport units.
+ *
+ * Every vh flavour lies somewhere: vh ignores browser chrome, dvh recomputes
+ * lazily on iOS standalone, and lvh assumes the chrome is hidden. Any of them
+ * being a few pixels tall means the bottom nav is off the bottom of a screen
+ * that can't scroll. `position: fixed` with all four insets is measured against
+ * the layout viewport itself, so the shell is exactly as tall as there is room
+ * for and the nav always lands on-screen.
+ *
+ * The top inset is padding *inside* that box (border-box), so the HUD clears a
+ * translucent status bar without making the shell taller than the screen. */
 #root {
+  position: fixed;
+  inset: 0;
+  margin: 0 auto;
   width: 100%;
   max-width: 520px;
-  height: 100vh;
-  height: 100dvh;
   display: flex;
   flex-direction: column;
-  position: relative;
   overflow: hidden;
   background: #caa980;
-  /* The top inset is painted by the shell, not by whichever screen is up, so
-     the strip behind a translucent status bar is one consistent colour. */
   padding-top: env(safe-area-inset-top);
-}
-
-@media (display-mode: standalone) {
-  body,
-  #root {
-    height: 100lvh;
-  }
 }
 
 input,
