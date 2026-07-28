@@ -596,6 +596,24 @@ input {
   padding: 9px 11px;
   font-weight: 400;
 }
+/* A fixed-width slot rather than an intrinsic one, so the names down the
+   column line up whether the row's thing is a 7px potato plant or a 24px
+   combine harvester. */
+.row-art {
+  flex-shrink: 0;
+  width: 40px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.row-art img {
+  max-width: 40px;
+  max-height: 30px;
+  width: auto;
+  height: auto;
+}
+
 .row-body {
   display: flex;
   flex-direction: column;

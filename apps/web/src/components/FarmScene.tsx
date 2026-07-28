@@ -8,6 +8,7 @@ import {
 } from "react";
 import { solo, type Potatoes } from "@battle/sim";
 
+import { producerMark } from "../marks.js";
 import { EMPTY_VIEW, FarmScene as Scene, type FarmView } from "../render/farmScene.js";
 
 export interface FarmSceneHandle {
@@ -63,13 +64,16 @@ export const FarmScene = forwardRef<FarmSceneHandle, {
   const view = useMemo<FarmView>(() => {
     const working: FarmView["working"] = {};
     const broken: FarmView["broken"] = {};
+    const marks: FarmView["marks"] = {};
     for (const prod of solo.SOLO_PRODUCERS) {
       const owned = farm.producers[prod.id] ?? 0;
       const dead = solo.brokenCount(farm, prod.id);
       if (owned - dead > 0) working[prod.id] = owned - dead;
       if (dead > 0) broken[prod.id] = dead;
+      const level = producerMark(farm, prod.id);
+      if (level > 0) marks[prod.id] = level;
     }
-    return { ...EMPTY_VIEW, working, broken, soil: farm.soil, hoard, seed: farm.seed };
+    return { ...EMPTY_VIEW, working, broken, marks, soil: farm.soil, hoard, seed: farm.seed };
   }, [farm, hoard]);
 
   return (

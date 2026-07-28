@@ -22,27 +22,16 @@ import type { solo } from "@battle/sim";
 import {
   BARN,
   CLOUD,
-  COMBINE,
   CRATE,
-  FARMHAND,
   FENCE,
   FLOWERS,
-  LAB,
-  PLANT,
-  PLANT_TIRED,
   POTATO_SPRITE,
-  REACTOR,
-  REFINERY,
+  PRODUCER_MARKS,
   SACK,
-  SATELLITE,
-  SEEDER,
   SILO,
-  SINGULARITY,
-  SPRINKLER,
-  TOWER,
-  TRACTOR,
   TREE,
   TUFT,
+  withered,
 } from "./art.js";
 import { artCanvas, artTinted, type Art } from "./pixel.js";
 
@@ -63,6 +52,12 @@ export interface FarmView {
   working: Partial<Record<solo.SoloProducerId, number>>;
   /** Broken count per producer — drawn, greyed out, right where it stands. */
   broken: Partial<Record<solo.SoloProducerId, number>>;
+  /**
+   * How many of a producer's two upgrades you own, 0-2. Picks which mark of
+   * that tier gets drawn — spending on a tier changes something out in the
+   * field, not just a number in a panel.
+   */
+  marks: Partial<Record<solo.SoloProducerId, number>>;
   /** 0..1. Drags the field's colour and wilts a share of the crop. */
   soil: number;
   /** Potatoes on hand. Drives the whole yard. */
@@ -74,6 +69,7 @@ export interface FarmView {
 export const EMPTY_VIEW: FarmView = {
   working: {},
   broken: {},
+  marks: {},
   soil: 1,
   hoard: 0,
   seed: "0",
@@ -161,7 +157,6 @@ function hoardCount(tier: HoardTier, amount: number): number {
 type Band = "sky" | "back" | "field" | "walk";
 
 interface Placement {
-  art: Art;
   band: Band;
   /** How many of the thing ever appear, however many you own. */
   cap: number;
@@ -170,18 +165,18 @@ interface Placement {
 }
 
 const PLACEMENT: Record<solo.SoloProducerId, Placement> = {
-  plot: { art: PLANT, band: "field", cap: 30 },
-  hand: { art: FARMHAND, band: "walk", cap: 6 },
-  irrigation: { art: SPRINKLER, band: "field", cap: 4 },
-  tractor: { art: TRACTOR, band: "field", cap: 3, speed: 11 },
-  harvester: { art: COMBINE, band: "field", cap: 2, speed: 8 },
-  lab: { art: LAB, band: "back", cap: 3 },
-  refinery: { art: REFINERY, band: "back", cap: 2 },
-  tower: { art: TOWER, band: "back", cap: 4 },
-  seeder: { art: SEEDER, band: "sky", cap: 3, speed: 5 },
-  reactor: { art: REACTOR, band: "back", cap: 2 },
-  orbital: { art: SATELLITE, band: "sky", cap: 2, speed: 14 },
-  singularity: { art: SINGULARITY, band: "sky", cap: 2 },
+  plot: { band: "field", cap: 30 },
+  hand: { band: "walk", cap: 6 },
+  irrigation: { band: "field", cap: 4 },
+  tractor: { band: "field", cap: 3, speed: 11 },
+  harvester: { band: "field", cap: 2, speed: 8 },
+  lab: { band: "back", cap: 3 },
+  refinery: { band: "back", cap: 2 },
+  tower: { band: "back", cap: 4 },
+  seeder: { band: "sky", cap: 3, speed: 5 },
+  reactor: { band: "back", cap: 2 },
+  orbital: { band: "sky", cap: 2, speed: 14 },
+  singularity: { band: "sky", cap: 2 },
 };
 
 const ORDER: solo.SoloProducerId[] = [
@@ -255,6 +250,13 @@ export class FarmScene {
   update(view: FarmView): void {
     this.view = view;
     this.rngSeed = hashSeed(view.seed);
+  }
+
+  /** Which mark of a tier to draw, given the upgrades bought on it. */
+  private mark(id: solo.SoloProducerId): Art {
+    const marks = PRODUCER_MARKS[id];
+    const level = Math.max(0, Math.min(marks.length - 1, this.view.marks[id] ?? 0));
+    return marks[level] ?? marks[0];
   }
 
   /** A dig: a potato pops out of the field and lands on the pile. */
@@ -444,8 +446,9 @@ export class FarmScene {
       if (place.band !== "back") continue;
       const n = shownCount(this.view.working[id] ?? 0, place.cap);
       const brokenN = shownCount(this.view.broken[id] ?? 0, place.cap);
-      for (let i = 0; i < n; i++) queue.push({ art: place.art, dead: false });
-      for (let i = 0; i < brokenN; i++) queue.push({ art: place.art, dead: true });
+      const art = this.mark(id);
+      for (let i = 0; i < n; i++) queue.push({ art, dead: false });
+      for (let i = 0; i < brokenN; i++) queue.push({ art, dead: true });
     }
 
     // When the skyline is full, the *lowest* tiers give up their spot. A farm
@@ -489,8 +492,10 @@ export class FarmScene {
 
     // Crops next — everything else works on top of them.
     const plots = shownCount(this.view.working.plot ?? 0, PLACEMENT.plot.cap);
-    const plant = artCanvas(PLANT);
-    const wilted = artCanvas(PLANT_TIRED);
+    const plant = artCanvas(this.mark("plot"));
+    // Wilt keeps the mark's silhouette and loses its colour, so an upgraded bed
+    // still reads as an upgraded bed while it's struggling.
+    const wilted = artCanvas(withered(this.mark("plot")));
     const wiltShare = 1 - this.view.soil;
     const perRow = Math.max(4, Math.floor((SCENE_W - 12) / 15));
     for (let i = 0; i < plots; i++) {
@@ -508,7 +513,7 @@ export class FarmScene {
 
     // Standing kit: sprinklers, planted in the rows.
     const sprinklers = shownCount(this.view.working.irrigation ?? 0, PLACEMENT.irrigation.cap);
-    const sprinkler = artCanvas(SPRINKLER);
+    const sprinkler = artCanvas(this.mark("irrigation"));
     for (let i = 0; i < sprinklers; i++) {
       const x = 14 + i * 42;
       if (x + sprinkler.w > SCENE_W - 6) break;
@@ -522,7 +527,7 @@ export class FarmScene {
     ] as const) {
       const place = PLACEMENT[id];
       const n = shownCount(this.view.working[id] ?? 0, place.cap);
-      const sprite = artCanvas(place.art);
+      const sprite = artCanvas(this.mark(id));
       const span = SCENE_W + sprite.w;
       for (let i = 0; i < n; i++) {
         const x =
@@ -533,7 +538,7 @@ export class FarmScene {
 
     // Farmhands wander between the rows.
     const hands = shownCount(this.view.working.hand ?? 0, PLACEMENT.hand.cap);
-    const hand = artCanvas(FARMHAND);
+    const hand = artCanvas(this.mark("hand"));
     for (let i = 0; i < hands; i++) {
       const home = 16 + i * 27;
       const x = Math.round(home + Math.sin(t * 0.5 + i * 1.7) * 12);
@@ -550,7 +555,7 @@ export class FarmScene {
       if (place.band === "sky" || place.band === "back") continue;
       const brokenN = shownCount(this.view.broken[id] ?? 0, place.cap);
       for (let i = 0; i < brokenN; i++) {
-        const dead = artTinted(place.art, "#6b6b74", 0.62);
+        const dead = artTinted(this.mark(id), "#6b6b74", 0.62);
         if (deadX + dead.w > SCENE_W - 6) break;
         ctx.drawImage(dead.canvas, deadX, lane(0.99) - dead.h);
         deadX += dead.w + 3;
@@ -561,7 +566,7 @@ export class FarmScene {
     for (const id of ["seeder", "orbital", "singularity"] as const) {
       const place = PLACEMENT[id];
       const n = shownCount(this.view.working[id] ?? 0, place.cap);
-      const sprite = artCanvas(place.art);
+      const sprite = artCanvas(this.mark(id));
       for (let i = 0; i < n; i++) {
         if (place.speed) {
           const span = SCENE_W + sprite.w;

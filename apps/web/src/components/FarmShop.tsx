@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { P, format, solo, type Potatoes } from "@battle/sim";
 
+import { producerArt, upgradePreview } from "../marks.js";
+import { artUrl, type Art } from "../render/pixel.js";
+
 type BuyQty = 1 | 10 | "max";
 
 function Row({
@@ -11,6 +14,7 @@ function Row({
   affordable,
   onBuy,
   accent,
+  art,
 }: {
   name: string;
   blurb: string;
@@ -20,6 +24,8 @@ function Row({
   affordable: boolean;
   onBuy: () => void;
   accent?: string;
+  /** The thing itself, as it currently stands on your farm. */
+  art?: Art;
 }) {
   return (
     <button
@@ -27,6 +33,11 @@ function Row({
       onClick={onBuy}
       disabled={!affordable}
     >
+      {art && (
+        <span className="row-art">
+          <img className="pxicon" src={artUrl(art)} alt="" />
+        </span>
+      )}
       <span className="row-body">
         <span className="row-name">{name}</span>
         <span className="row-blurb">{blurb}</span>
@@ -87,6 +98,7 @@ export function GrowPanel({
               cost={format(cost)}
               meta={qty === "max" ? `buy ${n}` : undefined}
               affordable={P.gte(budget, cost)}
+              art={producerArt(farm, prod.id)}
               onBuy={() => dispatch({ type: "buy_producer", producer: prod.id, qty: n })}
             />
           );
@@ -104,6 +116,7 @@ export function GrowPanel({
             blurb={u.blurb}
             cost={format(u.cost)}
             affordable={P.gte(budget, u.cost)}
+            art={upgradePreview(farm, u)}
             onBuy={() => dispatch({ type: "buy_upgrade", upgrade: u.id })}
           />
         ))}

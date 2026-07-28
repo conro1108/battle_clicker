@@ -265,11 +265,23 @@ export const PLANT: Art = {
   palette: { g: "#4e8a3c", l: "#74b356", s: "#3e6b2e", d: "#8a5f3f" },
 };
 
-/** A plant that's given up: the same silhouette, gone dry. */
-export const PLANT_TIRED: Art = {
-  rows: PLANT.rows,
-  palette: { g: "#8d8a3a", l: "#a89b46", s: "#6b6428", d: "#8a5f3f" },
-};
+const WITHERED = new Map<Art, Art>();
+
+/**
+ * The same crop, gone dry. Keyed off whichever mark of the plot is planted, so
+ * a tired upgraded bed still reads as an upgraded bed — it's the colour that
+ * goes, not the plant.
+ */
+export function withered(art: Art): Art {
+  const hit = WITHERED.get(art);
+  if (hit) return hit;
+  const dried: Art = {
+    rows: art.rows,
+    palette: { ...art.palette, g: "#8d8a3a", l: "#a89b46", s: "#6b6428", w: "#d6cdb0" },
+  };
+  WITHERED.set(art, dried);
+  return dried;
+}
 
 // ---------------------------------------------------------------------------
 // The hoard — what a pile of potatoes turns into as it stops being a pile
@@ -544,3 +556,295 @@ export const SINGULARITY: Art = {
   ],
   palette: { p: "#8a6ad0", v: "#5b3fa0", n: "#1c1428" },
 };
+
+// ---------------------------------------------------------------------------
+// Marks — what a producer looks like once you've bought its upgrades
+// ---------------------------------------------------------------------------
+//
+// Every tier has exactly two `producer_mult` upgrades (`<id>_x2a`, `<id>_x2b`),
+// so each one gets three marks: as bought, then one per upgrade. Spending on a
+// tier should change something out in the field, not just a number in a panel.
+//
+// Where the silhouette can carry the change it does — an exhaust stack, an
+// unloading auger, a second sprinkler boom, a taller tower — because that reads
+// at a glance across the whole field. Where the thing is small or far away (the
+// sky tiers, the buildings on the back edge) the mark is a repaint, which is
+// all that survives at that size anyway.
+
+/** The same grid in a different finish. */
+function repaint(art: Art, palette: Record<string, string>): Art {
+  return { rows: art.rows, palette: { ...art.palette, ...palette } };
+}
+
+const PLANT_2: Art = {
+  rows: [
+    "..g.g.g..",
+    ".gglglgg.",
+    "gglllllgg",
+    "gglllllgg",
+    ".ggglggg.",
+    "..gsssg..",
+    ".ddddddd.",
+  ],
+  palette: PLANT.palette,
+};
+
+/** Potatoes really do flower, and it's the clearest "this bed is doing well". */
+const PLANT_3: Art = {
+  rows: [
+    "..w.w.w..",
+    "..gwgwg..",
+    ".gglglgg.",
+    "gglllllgg",
+    "gglllllgg",
+    ".ggglggg.",
+    "..gsssg..",
+    ".ddddddd.",
+  ],
+  palette: { ...PLANT.palette, w: "#efe4f6" },
+};
+
+const SPRINKLER_2: Art = {
+  rows: [
+    "...a.a.a.a.a...",
+    ".a...a...a...a.",
+    "a..mmmmmmmmm..a",
+    "...mmmmmmmmm...",
+    ".......m.......",
+    ".......m.......",
+    ".......m.......",
+    ".......m.......",
+    ".....kkkkk.....",
+    "....kkkkkkk....",
+  ],
+  palette: SPRINKLER.palette,
+};
+
+const SPRINKLER_3: Art = {
+  rows: [
+    "...a.a.a.a.a...",
+    ".a...a...a...a.",
+    "a..mmmmmmmmm..a",
+    "...mmmmmmmmm...",
+    "..mm...m...mm..",
+    "...m...m...m...",
+    "...m...m...m...",
+    ".......m.......",
+    ".....kkkkk.....",
+    "....kkkkkkk....",
+  ],
+  palette: SPRINKLER.palette,
+};
+
+/** Turbo Diesel: the stack is the whole joke, so it goes on the roof. */
+const TRACTOR_2: Art = {
+  rows: [
+    ".......k..........",
+    ".......k..........",
+    "...kkkkkkk........",
+    "..kbbbbbbk........",
+    "..kbggggbk........",
+    "..kbggggbk........",
+    "kkkbbbbbbkkkkkkk..",
+    "kbbbbbbbbbbbbbbk..",
+    "kbbbbbbbbbbbbbbk..",
+    "kkkkkkkkkkkkkkkk..",
+    ".kwwwwk...kwwk....",
+    "kwwwwwwk.kwwwwk...",
+    "kwwwwwwk.kwwwwk...",
+    ".kwwwwk...kwwk....",
+  ],
+  palette: TRACTOR.palette,
+};
+
+/** Autosteer: a beacon on the roof, and the paint job of something expensive. */
+const TRACTOR_3: Art = {
+  rows: [
+    ".......k..........",
+    ".....y.k..........",
+    "...kkkkkkk........",
+    "..kbbbbbbk........",
+    "..kbggggbk........",
+    "..kbggggbk........",
+    "kkkbbbbbbkkkkkkk..",
+    "kbbbbbbbbbbbbbbk..",
+    "kbbbbbbbbbbbbbbk..",
+    "kkkkkkkkkkkkkkkk..",
+    ".kwwwwk...kwwk....",
+    "kwwwwwwk.kwwwwk...",
+    "kwwwwwwk.kwwwwk...",
+    ".kwwwwk...kwwk....",
+  ],
+  palette: { ...TRACTOR.palette, b: "#c99a34", y: "#e05a3c" },
+};
+
+/** Wider Header: the unloading auger swung out over the field. */
+const COMBINE_2: Art = {
+  rows: [
+    "..................kkkk..",
+    "................kkkkk...",
+    "........kkkkkkkkkk......",
+    ".......kbbbbbbbk........",
+    ".......kbggggbbk........",
+    "kkkk...kbbbbbbbk........",
+    "kyyk..kkbbbbbbbkkkkkk...",
+    "kyyk.kbbbbbbbbbbbbbbk...",
+    "kyykkkbbbbbbbbbbbbbbk...",
+    "kyykkkbbbbbbbbbbbbbbk...",
+    "kyykkkkkkkkkkkkkkkkkk...",
+    "kkkk..kwwwwwwk..kwwk....",
+    "......kwwwwwwk..kwwk....",
+    ".....kkwwwwwwkk.kwwk....",
+    ".....kwwwwwwwwk.kwwk....",
+    "......kwwwwwwk...kk.....",
+  ],
+  palette: COMBINE.palette,
+};
+
+/** Night Shift Cab: work lights, on at any hour. */
+const COMBINE_3: Art = {
+  rows: [
+    "..................kkkk..",
+    "................kkkkk...",
+    "......llkkkkkkkkkk......",
+    ".......kbbbbbbbk........",
+    ".......kbggggbbk........",
+    "kkkk...kbbbbbbbk........",
+    "kyyk..kkbbbbbbbkkkkkk...",
+    "kyyk.kbbbbbbbbbbbbbbk...",
+    "kyykkkbbbbbbbbbbbbbbk...",
+    "kyykkkbbbbbbbbbbbbbbk...",
+    "kyykkkkkkkkkkkkkkkkkk...",
+    "kkkk..kwwwwwwk..kwwk....",
+    "......kwwwwwwk..kwwk....",
+    ".....kkwwwwwwkk.kwwk....",
+    ".....kwwwwwwwwk.kwwk....",
+    "......kwwwwwwk...kk.....",
+  ],
+  palette: { ...COMBINE.palette, l: "#ffe08a" },
+};
+
+/** Catalytic Cracking, then Continuous Flow: the flare stack gets serious. */
+const REFINERY_2: Art = {
+  rows: [
+    "...........f........",
+    "..........fff.......",
+    "...........kgk......",
+    "..kkkkkk...kgk......",
+    ".kmmmmmmk..kgk......",
+    ".kmmmmmmk..kgk..kkk.",
+    ".kmmmmmmk..kgk.kmmk.",
+    ".kmmmmmmkkkkgkkkmmk.",
+    ".kmmmmmmkmmmgmmmmmk.",
+    ".kmmmmmmkmmmmmmmmmk.",
+    ".kmmmmmmkmmmmmmmmmk.",
+    ".kkkkkkkkkkkkkkkkkk.",
+  ],
+  palette: { ...REFINERY.palette, f: "#f0913c" },
+};
+
+const REFINERY_3: Art = {
+  rows: [
+    "..........fff.......",
+    ".........fbbbf......",
+    "..........fff.......",
+    "...........kgk......",
+    "..kkkkkk...kgk......",
+    ".kmmmmmmk..kgk......",
+    ".kmmmmmmk..kgk..kkk.",
+    ".kmmmmmmk..kgk.kmmk.",
+    ".kmmmmmmkkkkgkkkmmk.",
+    ".kmmmmmmkmmmgmmmmmk.",
+    ".kmmmmmmkmmmmmmmmmk.",
+    ".kmmmmmmkmmmmmmmmmk.",
+    ".kkkkkkkkkkkkkkkkkk.",
+  ],
+  palette: { ...REFINERY.palette, f: "#f0913c", b: "#ffe08a" },
+};
+
+/** Full Spectrum LEDs, then Nutrient Telemetry: more lit floors, then more floors. */
+function tower(reps: number, palette: Record<string, string>): Art {
+  return {
+    rows: stack(
+      ["..kkkkkkkk..", ".kmmmmmmmmk.", "kmmmmmmmmmmk", "kkkkkkkkkkkk"],
+      ["kmggmmggmmmk", "kmggmmggmmmk", "kkkkkkkkkkkk"],
+      reps,
+      ["kmmmmmmmmmmk", "kmmmmmmmmmmk", "kkkkkkkkkkkk"],
+    ),
+    palette: { k: K, m: "#cfd6dc", ...palette },
+  };
+}
+const TOWER_2 = tower(8, { g: "#8ce06a" });
+const TOWER_3 = tower(11, { g: "#a8f07a", m: "#e2e8ee" });
+
+/** Silver Iodide, then a Jet Stream Permit: drizzle, then an actual storm. */
+const SEEDER_2: Art = {
+  rows: [
+    "....kkkkkk....",
+    "..kkcccccckk..",
+    ".kcccccccccck.",
+    "kcccccccccccck",
+    ".kcccccccccck.",
+    "..kkcccccckk..",
+    "....kmmmmk....",
+    "...aa.aa.aa...",
+    "..a..a..a..a..",
+  ],
+  palette: { ...SEEDER.palette, c: "#b9c3cc" },
+};
+
+const SEEDER_3: Art = {
+  rows: [
+    "....kkkkkk....",
+    "..kkcccccckk..",
+    ".kcccccccccck.",
+    "kcccccccccccck",
+    ".kcccccccccck.",
+    "..kkcccccckk..",
+    "....kmmmmk....",
+    "...aa.zz.aa...",
+    "..a...z...a...",
+    ".....zz.......",
+  ],
+  palette: { ...SEEDER.palette, c: "#8f9aa5", z: "#ffe066" },
+};
+
+/**
+ * Three marks per tier, indexed by how many of its two upgrades you own.
+ *
+ * The buildings on the back edge and everything in the sky are repaints: at the
+ * size they're drawn, a changed silhouette would just read as a different
+ * building, and the colour is the only thing that survives.
+ */
+export const PRODUCER_MARKS = {
+  plot: [PLANT, PLANT_2, PLANT_3],
+  hand: [
+    FARMHAND,
+    repaint(FARMHAND, { b: "#e08a3c", t: "#f2e3c8" }),
+    repaint(FARMHAND, { b: "#3f8f86", t: "#e0c04a" }),
+  ],
+  irrigation: [SPRINKLER, SPRINKLER_2, SPRINKLER_3],
+  tractor: [TRACTOR, TRACTOR_2, TRACTOR_3],
+  harvester: [COMBINE, COMBINE_2, COMBINE_3],
+  lab: [LAB, repaint(LAB, { g: "#7fe0a0" }), repaint(LAB, { g: "#c88fe6", w: "#eee8f4" })],
+  refinery: [REFINERY, REFINERY_2, REFINERY_3],
+  tower: [TOWER, TOWER_2, TOWER_3],
+  seeder: [SEEDER, SEEDER_2, SEEDER_3],
+  reactor: [
+    REACTOR,
+    repaint(REACTOR, { s: "#6fd8e6" }),
+    repaint(REACTOR, { s: "#ffd166", m: "#e6ecf2" }),
+  ],
+  orbital: [
+    SATELLITE,
+    repaint(SATELLITE, { b: "#6fa8dc", g: "#a4e884" }),
+    repaint(SATELLITE, { b: "#e0c04a", g: "#c6f5a0" }),
+  ],
+  singularity: [
+    SINGULARITY,
+    repaint(SINGULARITY, { p: "#b98ae6", v: "#7a5ac0" }),
+    repaint(SINGULARITY, { p: "#e0c04a", v: "#a8792c", n: "#120c1c" }),
+  ],
+} as const satisfies Record<string, readonly [Art, Art, Art]>;
+
+export type MarkedProducerId = keyof typeof PRODUCER_MARKS;
