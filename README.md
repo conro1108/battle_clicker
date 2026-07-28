@@ -41,6 +41,12 @@ npm test
   to price a farm with match content.
 - **`apps/web`** — Vite + React. Owns rendering and the local match runtime;
   no economy logic.
+- **`apps/web/src/render`** — the pixel-art layer. Art is authored as char grids
+  (`art.ts`), painted once into cached canvases (`pixel.ts`), and blitted onto a
+  low-res buffer that CSS scales up crisply (`farmScene.ts`). The scene is the
+  homestead screen: the field behind the fence is every producer you own, and
+  the yard in front of it is the potatoes you're holding, so the two numbers the
+  game is about are the picture rather than two figures in a panel.
 
 Commands go through `applyCommand(state, cmd, now)`, which is the single
 authority for mutations. The local runtime calls it directly; swapping that for

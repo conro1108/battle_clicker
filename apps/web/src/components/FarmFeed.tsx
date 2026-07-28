@@ -11,23 +11,15 @@ function ago(at: Millis, now: Millis): string {
 
 export function FarmFeed({ farm, now }: { farm: solo.FarmState; now: Millis }) {
   const entries = [...farm.log].reverse().slice(0, 40);
+  if (entries.length === 0) return <p className="muted">Quiet so far.</p>;
   return (
-    <section className="panel feed">
-      <header className="panel-head">
-        <h2>Field report</h2>
-      </header>
-      {entries.length === 0 ? (
-        <p className="muted">Quiet so far.</p>
-      ) : (
-        <ul className="feed-list">
-          {entries.map((e) => (
-            <li key={e.index} className={`feed-item feed-${e.tone}`}>
-              <span className="feed-time">{ago(e.at, now)}</span>
-              <span className="feed-text">{e.text}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    <ul className="feed-list">
+      {entries.map((e) => (
+        <li key={e.index} className={`feed-item feed-${e.tone}`}>
+          <span className="feed-time">{ago(e.at, now)}</span>
+          <span className="feed-text">{e.text}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

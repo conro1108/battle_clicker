@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { P, format, solo, type Potatoes } from "@battle/sim";
 
-type Tab = "grow" | "land" | "legacy";
 type BuyQty = 1 | 10 | "max";
 
 function Row({
@@ -40,7 +39,7 @@ function Row({
   );
 }
 
-function Grow({
+export function GrowPanel({
   farm,
   budget,
   dispatch,
@@ -113,7 +112,7 @@ function Grow({
   );
 }
 
-function Land({
+export function LandPanel({
   farm,
   budget,
   dispatch,
@@ -193,7 +192,7 @@ function Land({
   );
 }
 
-function Legacy({
+export function LegacyPanel({
   farm,
   dispatch,
 }: {
@@ -262,44 +261,5 @@ function Legacy({
         })}
       </div>
     </>
-  );
-}
-
-export function FarmShop({
-  farm,
-  budget,
-  dispatch,
-}: {
-  farm: solo.FarmState;
-  budget: Potatoes;
-  dispatch: (cmd: solo.FarmCommand) => void;
-}) {
-  const [tab, setTab] = useState<Tab>("grow");
-  const needsAttention = solo.brokenRate(farm) > 0 || farm.soil < 1;
-
-  return (
-    <section className="panel shop">
-      <header className="panel-head tabs">
-        <button className={tab === "grow" ? "on" : ""} onClick={() => setTab("grow")}>
-          Grow
-        </button>
-        <button className={tab === "land" ? "on" : ""} onClick={() => setTab("land")}>
-          Land
-          {needsAttention && <span className="tab-alert" aria-label="needs attention" />}
-        </button>
-        <button className={tab === "legacy" ? "on" : ""} onClick={() => setTab("legacy")}>
-          Legacy
-        </button>
-      </header>
-
-      {tab === "grow" && <Grow farm={farm} budget={budget} dispatch={dispatch} />}
-      {tab === "land" && <Land farm={farm} budget={budget} dispatch={dispatch} />}
-      {tab === "legacy" && <Legacy farm={farm} dispatch={dispatch} />}
-
-      <footer className="shop-foot">
-        <span className="muted">To spend</span>
-        <strong>{format(budget)}</strong>
-      </footer>
-    </section>
   );
 }

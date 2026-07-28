@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   P,
   clickYield,
   format,
   formatDuration,
   seconds,
+  solo,
   standings,
   type ScoringRule,
 } from "@battle/sim";
@@ -12,10 +13,13 @@ import {
 import { AwayReport } from "./components/AwayReport.js";
 import { Farm } from "./components/Farm.js";
 import { FarmFeed } from "./components/FarmFeed.js";
-import { FarmShop } from "./components/FarmShop.js";
+import { FarmScene, TitleScene, type FarmSceneHandle } from "./components/FarmScene.js";
+import { GrowPanel, LandPanel, LegacyPanel } from "./components/FarmShop.js";
+import { FarmStatus } from "./components/FarmStatus.js";
 import { Feed } from "./components/Feed.js";
-import { Homestead } from "./components/Homestead.js";
 import { Opponents } from "./components/Opponents.js";
+import { PxIcon } from "./components/PxIcon.js";
+import { Sheet } from "./components/Sheet.js";
 import { Shop } from "./components/Shop.js";
 import { hasSavedFarm, useFarm } from "./useFarm.js";
 import { YOU, useMatch, type MatchSetup } from "./useMatch.js";
@@ -66,6 +70,10 @@ function Home({ onGo }: { onGo: (screen: Screen) => void }) {
         Grow potatoes. The weather will have opinions about that.
       </p>
 
+      {/* Somebody's farm, running. A title screen for a game about a place
+          shouldn't be a page of type. */}
+      <TitleScene />
+
       <button className="start" onClick={() => onGo({ kind: "farm" })}>
         {returning ? "Back to your farm" : "Start your farm"}
       </button>
@@ -89,55 +97,168 @@ function Home({ onGo }: { onGo: (screen: Screen) => void }) {
 // The homestead
 // ---------------------------------------------------------------------------
 
+type FarmSheet = "status" | "grow" | "land" | "legacy" | "report";
+
+const NAV: { id: FarmSheet; label: string; icon: Parameters<typeof PxIcon>[0]["name"] }[] = [
+  { id: "status", label: "Farm", icon: "clipboard" },
+  { id: "grow", label: "Grow", icon: "basket" },
+  { id: "land", label: "Land", icon: "shield" },
+  { id: "legacy", label: "Legacy", icon: "sprout" },
+  { id: "report", label: "Report", icon: "cloud" },
+];
+
+/**
+ * The homestead screen: a HUD you can read at a glance, the farm itself filling
+ * everything between, and one verb at the bottom. Everything else is a sheet.
+ *
+ * The old layout put the farm's whole state in three columns of text and the
+ * farm itself nowhere. Now the two numbers you actually play against — what
+ * you've built and what you're holding — are the picture, and the panels are
+ * where you go to change them.
+ */
 function Homefarm({ onExit }: { onExit: () => void }) {
   const { farm, now, report, dismissReport, budget, pendingDigs, error, dig, dispatch, abandon } =
     useFarm();
-  useSpaceToDig(dig, report === null);
+  const [sheet, setSheet] = useState<FarmSheet | null>(null);
+  const sceneRef = useRef<FarmSceneHandle>(null);
+  const [pops, setPops] = useState<{ id: number; text: string }[]>([]);
+  const popId = useRef(0);
+
+  const perDig = solo.clickYield(farm);
+  const rate = solo.currentRate(farm);
+  const needsAttention = solo.brokenRate(farm) > 0 || farm.soil < 1;
+
+  const onDig = useCallback(() => {
+    dig();
+    sceneRef.current?.dig();
+    const id = popId.current++;
+    setPops((p) => [...p.slice(-6), { id, text: `+${format(solo.clickYield(farm))}` }]);
+    setTimeout(() => setPops((p) => p.filter((x) => x.id !== id)), 700);
+  }, [dig, farm]);
+
+  useSpaceToDig(onDig, report === null && sheet === null);
+
+  const soilPct = Math.round(farm.soil * 100);
 
   return (
-    <div className="app">
-
+    <div className="app farm-app">
+      <header className="hud">
+        <div className="hud-bank">
+          <PxIcon name="potato" size={22} />
+          <div>
+            <div className="hud-value">{format(budget)}</div>
+            <div className="hud-label">in the yard</div>
+          </div>
+        </div>
+        <div className="hud-side">
+          <div className="hud-rate">{format(rate)}/s</div>
+          <div className="soil" title="Soil health">
+            <div className="soil-track">
+              <div
+                className={`soil-fill ${farm.soil < 0.75 ? "low" : ""}`}
+                style={{ width: `${soilPct}%` }}
+              />
+            </div>
+            <span className={farm.soil < 1 ? "hurt" : "muted"}>soil {soilPct}%</span>
+          </div>
+        </div>
+      </header>
 
       {error && <div className="error">{error}</div>}
 
-      <main className="grid">
-        <Homestead
-          farm={farm}
-          now={now}
-          budget={budget}
-          pendingDigs={pendingDigs}
-          onDig={dig}
-        />
-        <FarmShop farm={farm} budget={budget} dispatch={dispatch} />
-        <div className="sidebar">
-          <FarmFeed farm={farm} now={now} />
-          <section className="panel ledger">
-            <header className="panel-head">
-              <h2>This farm</h2>
-            </header>
-            <dl className="stats">
-              <div>
-                <dt>Generation</dt>
-                <dd>{farm.generation}</dd>
-              </div>
-              <div>
-                <dt>Heirloom Seed</dt>
-                <dd>{farm.seeds}</dd>
-              </div>
-            </dl>
-            <button className="ghost danger" onClick={() => {
-              if (window.confirm("Plough it all under? This keeps nothing — not even seeds.")) {
-                abandon();
-              }
-            }}>
-              Plough it all under
-            </button>
-            <button className="ghost" onClick={onExit}>
-              Home
-            </button>
-          </section>
+      <FarmScene ref={sceneRef} farm={farm} hoard={budget} onDig={onDig} />
+
+      <div className="digbar">
+        <button className="dig" onClick={onDig}>
+          <PxIcon name="potato" size={20} />
+          <span className="dig-label">Dig</span>
+          <span className="dig-yield">+{format(perDig)}</span>
+        </button>
+        <div className="pops" aria-hidden>
+          {pops.map((p) => (
+            <span key={p.id} className="pop">
+              {p.text}
+            </span>
+          ))}
         </div>
-      </main>
+      </div>
+
+      <nav className="nav">
+        {NAV.map((item) => (
+          <button
+            key={item.id}
+            className={item.id === "land" && needsAttention ? "alert" : undefined}
+            onClick={() => setSheet(item.id)}
+          >
+            <PxIcon name={item.icon} size={22} />
+            <span>{item.label}</span>
+            {item.id === "land" && needsAttention && <span className="nav-dot" />}
+          </button>
+        ))}
+        <button onClick={onExit}>
+          <PxIcon name="house" size={22} />
+          <span>Home</span>
+        </button>
+      </nav>
+
+      {sheet === "status" && (
+        <Sheet title="Your farm" sub={`Generation ${farm.generation}`} onClose={() => setSheet(null)}>
+          <FarmStatus
+            farm={farm}
+            now={now}
+            budget={budget}
+            pendingDigs={pendingDigs}
+            onAbandon={() => {
+              abandon();
+              setSheet(null);
+            }}
+          />
+        </Sheet>
+      )}
+      {sheet === "grow" && (
+        <Sheet
+          title="Grow"
+          sub="More kit on the land, and the upgrades that make it worth more."
+          onClose={() => setSheet(null)}
+          foot={
+            <>
+              <span className="muted">To spend</span>
+              <strong>{format(budget)}</strong>
+            </>
+          }
+        >
+          <GrowPanel farm={farm} budget={budget} dispatch={dispatch} />
+        </Sheet>
+      )}
+      {sheet === "land" && (
+        <Sheet
+          title="Land"
+          sub="Repairs, and the buildings that mean fewer of them."
+          onClose={() => setSheet(null)}
+          foot={
+            <>
+              <span className="muted">To spend</span>
+              <strong>{format(budget)}</strong>
+            </>
+          }
+        >
+          <LandPanel farm={farm} budget={budget} dispatch={dispatch} />
+        </Sheet>
+      )}
+      {sheet === "legacy" && (
+        <Sheet
+          title="Legacy"
+          sub="Hand the farm down, or spend what the last one left you."
+          onClose={() => setSheet(null)}
+        >
+          <LegacyPanel farm={farm} dispatch={dispatch} />
+        </Sheet>
+      )}
+      {sheet === "report" && (
+        <Sheet title="Field report" sub="What the weather has been up to." onClose={() => setSheet(null)}>
+          <FarmFeed farm={farm} now={now} />
+        </Sheet>
+      )}
 
       {report && <AwayReport report={report} onDismiss={dismissReport} />}
     </div>
