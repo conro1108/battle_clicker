@@ -45,6 +45,9 @@ const YARD_SHARE = 0.23; // the hoard yard, front band — deep enough to stand 
 const FIELD_SHARE = 0.46; // the working field
 const MIN_SKY = 20;
 
+/** The shared outline ink, for the bits of the scene drawn as rects not art. */
+const INK = "#402e3a";
+
 const GRASS = "#6aa348";
 const GRASS_DARK = "#5b8f3d";
 const DIRT = "#8a5f3f";
@@ -357,11 +360,40 @@ function shownCount(owned: number, cap: number, spread = 2.4): number {
 
 // ---------------------------------------------------------------------------
 
-interface Flying {
+/**
+ * How a potato gets from where it was made to where it's kept.
+ *
+ * There used to be one answer to this and it was ballistics: everything on the
+ * farm threw its potatoes at the yard on a parabola, and a busy farm looked
+ * like a hailstorm. Nothing on a farm moves like that. So every tier now has
+ * plumbing instead — the machines auger into a trough, the sheds pipe it down,
+ * the hands carry it — and the only thing that leaves the ground unassisted is
+ * the one you dug up yourself.
+ */
+
+/** A potato on a chute or an auger: straight line, constant speed, no arc. */
+interface Haul {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  born: number;
+  dur: number;
+  /** Draw the chute it's sliding down. Augers have one; the trough spout is fixed. */
+  guide: boolean;
+}
+
+/** A potato inside the pipeline, measured as distance travelled along it. */
+interface Lump {
+  /** Where on the horizontal run it was fed in. */
+  from: number;
+  d: number;
+}
+
+/** A potato you turned up yourself: out of the soil, and gone into the sack. */
+interface Dug {
   x: number;
   y: number;
-  vx: number;
-  vy: number;
   born: number;
 }
 
@@ -383,8 +415,29 @@ interface Puff {
 
 const MAX_PUFFS = 40;
 
-/** Nothing on this canvas needs more potatoes than this in the air at once. */
-const MAX_FLYING = 20;
+/** How long a dug potato sits in the open before it's counted and gone. */
+const DUG_MS = 850;
+
+/**
+ * How much the trough holds before the machines are just tipping it over.
+ * Small on purpose: the level is drawn in six pixels, so a cap much past this
+ * means the first few potatoes in there round away to nothing showing.
+ */
+const TROUGH_CAP = 12;
+
+/**
+ * Seconds between potatoes going down the trough's spout, when the trough is
+ * empty. A full one empties four times faster, which is what stops the level
+ * from either pinning at the brim or never showing anything in there at all —
+ * it settles wherever the machines above it are actually keeping it.
+ */
+const TROUGH_DRAIN = 0.8;
+
+/** Buffer pixels a second, for a potato in the pipeline. */
+const PIPE_SPEED = 34;
+
+const MAX_HAULS = 24;
+const MAX_LUMPS = 18;
 
 /** How long a building takes to come out of the ground, or to go back into it. */
 const BUILD_MS = 520;
@@ -476,10 +529,22 @@ export class FarmScene {
   private ro?: ResizeObserver;
   private raf = 0;
   private sh = 200;
-  private t0 = performance.now();
+  /**
+   * Scene time, in seconds, accumulated a capped frame at a time rather than
+   * read off the wall clock.
+   *
+   * A backgrounded tab stops getting frames, and a scene clock derived from a
+   * fixed epoch comes back minutes ahead: every bed in the field is suddenly
+   * long overdue, every one of them lifts on the same frame, and switching back
+   * to the game greeted you with the entire harvest going off at once. The farm
+   * pauses with the tab now and picks up where it left off.
+   */
+  private clock = 0;
   private view: FarmView = EMPTY_VIEW;
   private rngSeed = 1;
-  private flying: Flying[] = [];
+  private hauls: Haul[] = [];
+  private lumps: Lump[] = [];
+  private dug: Dug[] = [];
   private puffs: Puff[] = [];
   /** The plants as laid out this frame. Deterministic, so an index is a place. */
   private beds: Bed[] = [];
@@ -491,6 +556,13 @@ export class FarmScene {
   /** When each bed was last cleared. Indexed the same as `beds`. */
   private planted: number[] = [];
   private hands: Hand[] = [];
+  /** What's sitting in the trough, 0..TROUGH_CAP, and the spout's metronome. */
+  private troughFill = 0;
+  private troughClock = 0;
+  /** This frame's trough, as `[x, w, ground]`. Null when nothing works the field. */
+  private troughBox: { x: number; w: number; y: number } | null = null;
+  /** How far right the pipeline reaches this frame. 0 when nothing feeds it. */
+  private pipeEnd = 0;
   private dt = 0;
   private lastFrame = performance.now();
   /**
@@ -541,28 +613,22 @@ export class FarmScene {
   }
 
   /**
-   * Throw a potato from somewhere on the farm onto the pile, on an arc that
-   * actually lands where it's aimed — the flight time is solved against
-   * `drawFlying`'s gravity rather than guessed, so potatoes from the back fence
-   * and potatoes from the front row both finish in the yard.
+   * A dig: a potato comes up out of the ground where you put your finger, sits
+   * in the open for a moment in a cloud of its own dirt, and is gone.
+   *
+   * It doesn't travel. Digging is the one thing on this farm you do with your
+   * hands, and the whole reward is seeing the thing come out of the soil at the
+   * spot you picked — carting it anywhere afterwards is the machines' job.
    */
-  private launch(x: number, y: number, landX: number, lift = 46): void {
-    if (this.flying.length > MAX_FLYING) return;
-    const vy = -lift - Math.random() * 26;
-    const drop = this.sh - 8 - y;
-    const flight = (-vy + Math.sqrt(vy * vy + 4 * 90 * drop)) / (2 * 90);
-    this.flying.push({ x, y, vx: (landX - x) / Math.max(0.35, flight), vy, born: performance.now() });
-  }
-
-  /**
-   * A dig: a potato pops out of the field and is thrown onto the loose pile —
-   * aimed at it, so the yard's rightmost column is visibly where digging goes.
-   */
-  dig(): void {
-    if (this.flying.length > 24) return;
-    const x = 20 + Math.random() * (SCENE_W - 60);
-    const y = this.fieldTop() + 20 + Math.random() * 30;
-    this.launch(x, y, 0.82 * SCENE_W + Math.random() * 14);
+  dig(at?: { x: number; y: number }): void {
+    if (this.dug.length > 14) return;
+    const top = this.fieldTop() + 8;
+    const floor = this.sh - 8;
+    const x = at ? Math.max(3, Math.min(SCENE_W - 8, Math.round(at.x))) : 20 + Math.random() * (SCENE_W - 60);
+    const y = at ? Math.max(top, Math.min(floor, Math.round(at.y))) : top + 12 + Math.random() * 30;
+    this.dug.push({ x: Math.round(x), y: Math.round(y), born: performance.now() });
+    this.puff(x, y, "dust", -10);
+    this.puff(x + 3, y, "dust", 10);
   }
 
   /** How ripe a bed is, 0..1, where 1 is ready to lift. */
@@ -572,11 +638,13 @@ export class FarmScene {
     return Math.min(1, (t - planted) / GROW_SECONDS);
   }
 
-  /** Clear a bed and start it again. Whatever lifted it gets one potato. */
-  private lift(i: number, t: number, toYard = true): void {
-    const bed = this.beds[i];
+  /**
+   * Clear a bed and start it again. Nothing is drawn coming off it: whatever
+   * lifted the bed is the thing that carries it, and a bed that went over and
+   * got tidied up off-screen shouldn't produce a potato out of thin air.
+   */
+  private lift(i: number, t: number): void {
     this.planted[i] = t;
-    if (bed && toYard) this.launch(bed.x + 3, bed.y - 6, 14 + Math.random() * (SCENE_W - 28), 28);
   }
 
   /**
@@ -635,8 +703,7 @@ export class FarmScene {
         }
         case "picking": {
           if (t < hand.until) break;
-          // Carried by hand, so no potato is thrown — they're taking it down.
-          this.lift(hand.target, t, false);
+          this.lift(hand.target, t);
           hand.carrying = true;
           hand.state = "back";
           break;
@@ -644,8 +711,8 @@ export class FarmScene {
         case "back": {
           if (this.walk(hand, hand.home, unload, dt)) {
             hand.carrying = false;
-            // Set down rather than thrown: a short hop onto the nearest pile.
-            this.launch(hand.home + 2, unload - 6, hand.home + 10, 12);
+            // Set down, not thrown. The dirt it kicks up is the whole event.
+            this.puff(hand.home + 2, unload - 1, "dust");
             hand.state = "resting";
             hand.target = -1;
             hand.until = t + REST_SECONDS + Math.random() * 2;
@@ -763,29 +830,33 @@ export class FarmScene {
 
   private draw(now: number): void {
     const ctx = this.ctx;
-    const t = (now - this.t0) / 1000;
     const dt = Math.min(0.1, (now - this.lastFrame) / 1000);
     this.dt = dt;
     this.lastFrame = now;
+    this.clock += dt;
+    const t = this.clock;
     const phase = phaseNow();
     const horizon = this.fieldTop();
     const yardY = this.yardTop();
 
     this.stepHoard(dt, now);
+    this.pipeEnd = 0;
 
     this.drawSky(phase, t, horizon);
     this.drawHills(phase, horizon);
     this.drawGround(horizon, yardY);
-    this.drawBack(t, horizon, phase);
+    this.drawBack(t, now, horizon, phase);
     this.drawField(t, now, horizon, yardY);
     this.drawPuffs(now, dt);
     this.drawFence(yardY);
+    this.drawPipeline(horizon, yardY, dt);
     this.drawHoard(now);
     // The hands walk between the two bands, so they're drawn after both — and
     // after the field has said where this frame's beds are.
     this.stepHands(t, dt, shownCount(this.view.working.hand ?? 0, PLACEMENT.hand.cap), yardY);
     this.drawHands(t);
-    this.drawFlying(now);
+    this.drawHauls(now);
+    this.drawDug(now);
     this.drawBundles(now);
 
     // Night everywhere except the yard's lamp-lit patch, so the hoard stays
@@ -893,7 +964,7 @@ export class FarmScene {
   }
 
   /** Buildings and the skyline: the far edge of the property. */
-  private drawBack(t: number, horizon: number, phase: Phase): void {
+  private drawBack(t: number, now: number, horizon: number, phase: Phase): void {
     const ctx = this.ctx;
     const baseline = horizon + 8;
 
@@ -953,16 +1024,94 @@ export class FarmScene {
           ctx.fillStyle = "#8ee0c0";
           ctx.fillRect(x + sprite.w - 3, baseline - Math.floor(sprite.h / 2), 1, 1);
         }
-        // And every so often — rarely — something it made is walked down to the
-        // yard. A trickle, not a conveyor: the back fence should read as a
-        // place that's busy, not as a number going up.
-        if (this.chance(0.05)) {
-          this.launch(x + Math.floor(sprite.w / 2), baseline - 4, 14 + Math.random() * (SCENE_W - 28), 30);
-        }
+        // Everything along the back edge stands on the pipeline, and every so
+        // often drops something into it. A trickle, not a conveyor: the far
+        // side of the property should read as a place that's busy.
+        this.pipeEnd = Math.max(this.pipeEnd, x + Math.floor(sprite.w / 2));
+        if (this.chance(0.3)) this.feedPipe(x + Math.floor(sprite.w / 2));
       }
       idx++;
       x += sprite.w + 2;
     }
+  }
+
+  // --- The pipeline --------------------------------------------------------
+  //
+  // Everything on the back edge is a building, and a building doesn't carry
+  // things. What it does is pipe them: one run along the foot of the sheds,
+  // one riser down the west side of the field, and a spout over the yard. You
+  // can see the potatoes moving inside it, which is the entire point — the
+  // industrial half of the ladder used to prove it was working by lobbing
+  // produce over the fence.
+
+  /** Height of the pipe's run above the field, measured off the back baseline. */
+  private pipeY(horizon: number): number {
+    return horizon + 10;
+  }
+
+  private feedPipe(from: number): void {
+    if (this.lumps.length >= MAX_LUMPS) return;
+    this.lumps.push({ from: Math.max(8, Math.round(from)), d: 0 });
+  }
+
+  private drawPipeline(horizon: number, yardY: number, dt: number): void {
+    const ctx = this.ctx;
+    const y = this.pipeY(horizon);
+    // Stops just inside the yard: any lower and the first crate you build
+    // stands in front of the spout.
+    const foot = yardY + 5;
+    const reach = this.lumps.reduce((m, l) => Math.max(m, l.from), this.pipeEnd);
+    if (reach <= 0) return;
+
+    // The run, the elbow and the riser, as one bent tube: dark edges, light
+    // body, and the body exactly as wide as a potato so the contents read.
+    const body = "#a8b0b8";
+    const edge = "#7f8891";
+    ctx.fillStyle = edge;
+    ctx.fillRect(1, y, reach, 1);
+    ctx.fillRect(1, y + 4, reach, 1);
+    ctx.fillRect(1, y, 1, foot - y);
+    ctx.fillRect(5, y, 1, foot - y);
+    ctx.fillStyle = body;
+    ctx.fillRect(2, y + 1, reach - 1, 3);
+    ctx.fillRect(2, y + 5, 3, foot - y - 5);
+    // A collar every so often, so a long riser isn't a featureless bar.
+    ctx.fillStyle = edge;
+    for (let cy = y + 12; cy < foot - 4; cy += 14) ctx.fillRect(1, cy, 5, 1);
+    // The mouth: an elbow turned out over the yard, open at the end, so the
+    // riser reads as delivering somewhere rather than just stopping at dirt.
+    ctx.fillStyle = edge;
+    ctx.fillRect(1, foot - 6, 11, 1);
+    ctx.fillRect(1, foot, 11, 1);
+    ctx.fillRect(11, foot - 6, 1, 3);
+    ctx.fillRect(11, foot - 1, 1, 2);
+    ctx.fillStyle = body;
+    ctx.fillRect(2, foot - 5, 10, 5);
+
+    const runTo = 3;
+    ctx.fillStyle = "#c98b4b";
+    this.lumps = this.lumps.filter((lump) => {
+      lump.d += PIPE_SPEED * dt;
+      const across = lump.from - runTo;
+      if (lump.d < across) {
+        ctx.fillRect(Math.round(lump.from - lump.d), y + 1, 3, 3);
+        return true;
+      }
+      const down = y + 1 + (lump.d - across);
+      if (down < foot - 5) {
+        ctx.fillRect(runTo - 1, Math.round(down), 3, 3);
+        return true;
+      }
+      // Round the elbow and out of the mouth, onto the pile. It's already in
+      // the yard's count — this is just the last thing you see it do.
+      const out = 2 + (down - (foot - 5));
+      if (out > 12) {
+        this.puff(12, foot - 1, "dust");
+        return false;
+      }
+      ctx.fillRect(Math.round(out), foot - 4, 3, 3);
+      return true;
+    });
   }
 
   private drawField(t: number, now: number, horizon: number, yardY: number): void {
@@ -1014,6 +1163,12 @@ export class FarmScene {
     this.beds.length = 0;
     this.rows.length = 0;
     this.drawTills(now);
+
+    // The trough gets sited before anything is drawn into it, because the
+    // machines above need to know where they're aiming.
+    const works =
+      (this.view.working.tractor ?? 0) + (this.view.working.harvester ?? 0) > 0 || this.troughFill > 0;
+    this.troughBox = works ? { x: 26, w: 112, y: lane(0.99) } : null;
 
     for (let r = 0; r < rowCount; r++) {
       const count = Math.min(perRow, plants - r * perRow);
@@ -1111,8 +1266,9 @@ export class FarmScene {
           }
         }
 
-        // Both of them lift what's ready under the header as they pass. The
-        // combine throws it out of the chute; the tractor just turns it up.
+        // Both of them lift what's ready under the header as they pass, and
+        // both of them unload the same way a real one does: an auger swung out
+        // over the trough, with the crop visibly going down it.
         const reach = id === "harvester" ? 6 : 2;
         for (let b = 0; b < this.beds.length; b++) {
           const bed = this.beds[b]!;
@@ -1120,7 +1276,7 @@ export class FarmScene {
           if (bed.x < x - reach || bed.x > x + sprite.w + reach) continue;
           if (this.ripeness(b, t) < 1) continue;
           this.planted[b] = t;
-          this.launch(x + 2, ground - sprite.h - 2, 14 + Math.random() * (SCENE_W - 28), 34);
+          this.unload(x + Math.floor(sprite.w / 2), ground - sprite.h + 3, now);
         }
       }
     }
@@ -1166,19 +1322,21 @@ export class FarmScene {
           }
         } else {
           // The singularity doesn't travel. It hangs there and breathes, and
-          // every few seconds something it made simply arrives in the yard.
+          // what it makes goes into the same pipeline as everything else the
+          // industrial half of the farm produces — it just doesn't need a shed
+          // to do it from.
           const y = 10 + i * 20 + (Math.sin(t * 0.9 + i) > 0 ? 1 : 0);
           const x = 20 + i * 44;
           this.drawPulse(x + sprite.w / 2, y + sprite.h / 2, t + i);
           ctx.drawImage(sprite.canvas, x, y);
-          if (this.chance(0.22)) {
-            this.launch(x + sprite.w / 2, y + sprite.h, 14 + Math.random() * (SCENE_W - 28), 20);
-          }
+          this.pipeEnd = Math.max(this.pipeEnd, x + Math.floor(sprite.w / 2));
+          if (this.chance(0.5)) this.feedPipe(x + Math.floor(sprite.w / 2));
         }
       }
     }
 
     this.stepSeeds(t);
+    this.stepTrough(now);
   }
 
   /** Furrow behind a tractor: fresh dark soil that grasses back over. */
@@ -1476,17 +1634,157 @@ export class FarmScene {
     }
   }
 
-  /** Dug potatoes, arcing out of the field and into the yard. */
-  private drawFlying(now: number): void {
+  // --- The trough ----------------------------------------------------------
+  //
+  // The field machines' answer to "where does it go". A tractor and a combine
+  // are the two things out there big enough to be carrying a load, and the
+  // load has to end up somewhere you can see: a trough across the headland,
+  // filled by auger from whatever's working the rows above it, emptying down a
+  // spout through the fence into the yard.
+
+  /** Fill the trough by one, with the auger that put it there. */
+  private unload(x: number, y: number, now: number): void {
+    const box = this.troughBox;
+    if (!box) return;
+    this.troughFill = Math.min(TROUGH_CAP, this.troughFill + 1);
+    if (this.hauls.length + 2 > MAX_HAULS) return;
+    // Aimed at the nearest part of the trough, so a machine at the left end
+    // isn't augering across the whole field.
+    const tx = Math.max(box.x + 6, Math.min(box.x + box.w - 10, x));
+    for (let n = 0; n < 2; n++) {
+      this.hauls.push({
+        x0: x,
+        y0: y,
+        // Two abreast rather than nose to tail: a spout throws a spread, and
+        // one potato behind another on the same line just reads as lag.
+        x1: tx + n * 3 - 1,
+        y1: box.y - 8,
+        born: now + n * 90,
+        dur: 480,
+        guide: true,
+      });
+    }
+  }
+
+  /** Drain a full trough into the yard, and draw the thing either way. */
+  private stepTrough(now: number): void {
+    const box = this.troughBox;
+    if (!box) return;
+    this.drawTrough(box);
+
+    this.troughClock += this.dt;
+    const interval = TROUGH_DRAIN * (1 - 0.75 * (this.troughFill / TROUGH_CAP));
+    while (this.troughClock >= interval) {
+      this.troughClock -= interval;
+      if (this.troughFill <= 0) {
+        this.troughClock = 0;
+        break;
+      }
+      this.troughFill--;
+      if (this.hauls.length >= MAX_HAULS) continue;
+      this.hauls.push({
+        x0: box.x + box.w - 3,
+        y0: box.y - 7,
+        x1: box.x + box.w + 9,
+        y1: this.yardTop() + 5,
+        born: now,
+        dur: 520,
+        guide: false,
+      });
+    }
+  }
+
+  private drawTrough(box: { x: number; w: number; y: number }): void {
+    const ctx = this.ctx;
+    const { x, w, y } = box;
+    const top = y - 9;
+
+    // Open-topped, so what's in it is the readable part. Walls and floor in
+    // the outline ink, planking inside, and two stubby legs under it.
+    ctx.fillStyle = "#5e3e29";
+    ctx.fillRect(x + 4, y - 2, 3, 3);
+    ctx.fillRect(x + w - 7, y - 2, 3, 3);
+    ctx.fillStyle = INK;
+    ctx.fillRect(x, top, 2, 9);
+    ctx.fillRect(x + w - 2, top, 2, 9);
+    ctx.fillRect(x, y - 2, w, 2);
+    // Lit planking with dark staves. A trough in the yard's own dark wood
+    // disappeared into the fence behind it and read as a bench.
+    ctx.fillStyle = "#a97a52";
+    ctx.fillRect(x + 2, top, w - 4, 7);
+    ctx.fillStyle = "#7a5237";
+    ctx.fillRect(x + 2, top, w - 4, 1);
+    ctx.fillStyle = "#5e3e29";
+    for (let sx = x + 8; sx < x + w - 6; sx += 14) ctx.fillRect(sx, top, 1, 7);
+
+    const depth = Math.min(6, Math.ceil((this.troughFill / TROUGH_CAP) * 6));
+    if (depth > 0) {
+      ctx.fillStyle = "#c98b4b";
+      ctx.fillRect(x + 2, y - 2 - depth, w - 4, depth);
+      ctx.fillStyle = "#e2b077";
+      for (let sx = x + 2; sx < x + w - 3; sx += 3) ctx.fillRect(sx, y - 2 - depth, 2, 1);
+    }
+
+    // The spout: out of the low end, through the fence, into the yard.
+    this.chuteLine(x + w - 3, y - 7, x + w + 9, this.yardTop() + 5, "#7f8891");
+  }
+
+  /**
+   * A chute, drawn as pixels stepped along the span rather than a stroked path
+   * — a stroked diagonal at this buffer size antialiases into a grey smear.
+   *
+   * `span` is how much of it to draw, as a fraction. The trough's spout is
+   * fixed plumbing and draws the whole thing; a combine's auger draws a stub,
+   * because the arm is bolted to the machine and the drop is the rest of it. A
+   * full-length line from a machine on the back row to the trough at the
+   * headland is sixty pixels of grey and reads as a lamppost.
+   */
+  private chuteLine(x0: number, y0: number, x1: number, y1: number, color: string, span = 1): void {
+    const ctx = this.ctx;
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const steps = Math.max(1, Math.round(Math.max(Math.abs(dx), Math.abs(dy)) * span));
+    const len = Math.max(1, Math.round(Math.max(Math.abs(dx), Math.abs(dy))));
+    ctx.fillStyle = color;
+    for (let i = 0; i <= steps; i++) {
+      const f = i / len;
+      ctx.fillRect(Math.round(x0 + dx * f), Math.round(y0 + dy * f) + 4, 2, 1);
+    }
+  }
+
+  /** Potatoes on an auger or a spout: straight line, constant speed, no arc. */
+  private drawHauls(now: number): void {
     const ctx = this.ctx;
     const sprite = artCanvas(POTATO_SPRITE);
-    const floor = this.sh - 8;
-    this.flying = this.flying.filter((f) => {
-      const age = (now - f.born) / 1000;
-      const x = f.x + f.vx * age;
-      const y = f.y + f.vy * age + 90 * age * age;
-      if (y > floor || x > SCENE_W) return false;
-      ctx.drawImage(sprite.canvas, Math.round(x), Math.round(y));
+    this.hauls = this.hauls.filter((h) => {
+      const p = (now - h.born) / h.dur;
+      if (p > 1) return false;
+      if (p < 0) return true;
+      if (h.guide) {
+        const reach = Math.max(Math.abs(h.x1 - h.x0), Math.abs(h.y1 - h.y0));
+        this.chuteLine(h.x0, h.y0, h.x1, h.y1, "#8f979f", Math.min(1, 9 / Math.max(1, reach)));
+      }
+      ctx.drawImage(
+        sprite.canvas,
+        Math.round(h.x0 + (h.x1 - h.x0) * p),
+        Math.round(h.y0 + (h.y1 - h.y0) * p),
+      );
+      return true;
+    });
+  }
+
+  /** What your own digging turns up: out of the soil, held a beat, gone. */
+  private drawDug(now: number): void {
+    const ctx = this.ctx;
+    const sprite = artCanvas(POTATO_SPRITE);
+    this.dug = this.dug.filter((d) => {
+      const age = now - d.born;
+      if (age > DUG_MS) return false;
+      const p = age / DUG_MS;
+      const lift = Math.round(5 * Math.min(1, p * 6));
+      ctx.globalAlpha = p > 0.6 ? Math.max(0, 1 - (p - 0.6) / 0.4) : 1;
+      ctx.drawImage(sprite.canvas, d.x, d.y - sprite.h - lift);
+      ctx.globalAlpha = 1;
       return true;
     });
   }

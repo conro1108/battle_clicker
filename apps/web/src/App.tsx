@@ -196,16 +196,20 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
   // still spoilers. It arrives in the nav the moment it's a real choice.
   const showSeeds = farm.seeds > 0 || farm.generation > 1 || solo.pendingSeeds(farm) > 0;
 
+  // Right to left in order of how often you reach for it. The far left of a
+  // bottom bar is the corner a thumb has to travel for, and Shop is where you
+  // go every time you can afford anything — so it gets the near end, and Seeds
+  // slots in at the far end where appearing later doesn't shuffle the rest.
   const nav: { id: FarmSheet; label: string; icon: Parameters<typeof PxIcon>[0]["name"] }[] = [
-    { id: "shop", label: "Shop", icon: "basket" },
-    { id: "weather", label: "Weather", icon: "cloud" },
     ...(showSeeds ? ([{ id: "seeds", label: "Seeds", icon: "sprout" }] as const) : []),
     { id: "books", label: "Books", icon: "clipboard" },
+    { id: "weather", label: "Weather", icon: "cloud" },
+    { id: "shop", label: "Shop", icon: "basket" },
   ];
 
-  const onDig = useCallback(() => {
+  const onDig = useCallback((at?: { x: number; y: number }) => {
     dig();
-    sceneRef.current?.dig();
+    sceneRef.current?.dig(at);
     setTaught((was) => {
       if (was) return was;
       try {
@@ -260,7 +264,7 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
           the label that says so and the number that says how hard, which is the
           part worth keeping around. */}
       <div className="digbar">
-        <button className="dig" onClick={onDig}>
+        <button className="dig" onClick={() => onDig()}>
           <PxIcon name="potato" size={16} />
           <span className="dig-label">Dig</span>
           <span className="dig-yield">+{format(perDig)}</span>

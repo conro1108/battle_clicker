@@ -13,8 +13,8 @@ import { producerMark } from "../marks.js";
 import { EMPTY_VIEW, FarmScene as Scene, type FarmView } from "../render/farmScene.js";
 
 export interface FarmSceneHandle {
-  /** Fling a potato onto the pile. Called on every dig. */
-  dig(): void;
+  /** Turn a potato up out of the ground. Somewhere in the field if unplaced. */
+  dig(at?: { x: number; y: number }): void;
 }
 
 /** The canvas and its rAF loop. React only ever hands it a view. */
@@ -45,7 +45,7 @@ const SceneCanvas = forwardRef<FarmSceneHandle, {
     sceneRef.current?.update(view);
   }, [view]);
 
-  useImperativeHandle(ref, () => ({ dig: () => sceneRef.current?.dig() }), []);
+  useImperativeHandle(ref, () => ({ dig: (at) => sceneRef.current?.dig(at) }), []);
 
   return <canvas ref={canvasRef} className="scene" onPointerDown={onPointerDown} />;
 });
@@ -60,7 +60,8 @@ const SceneCanvas = forwardRef<FarmSceneHandle, {
 export const FarmScene = forwardRef<FarmSceneHandle, {
   farm: solo.FarmState;
   hoard: Potatoes;
-  onDig: () => void;
+  /** Given where on the buffer you tapped, when the dig came from the scene. */
+  onDig: (at?: { x: number; y: number }) => void;
   /** Anything that belongs over the farm rather than beside it. */
   children?: ReactNode;
 }>(function FarmScene({ farm, hoard, onDig, children }, ref) {
@@ -86,7 +87,14 @@ export const FarmScene = forwardRef<FarmSceneHandle, {
         view={view}
         onPointerDown={(e) => {
           e.preventDefault();
-          onDig();
+          // Into buffer pixels, so the potato comes up under your finger
+          // rather than somewhere else on the farm.
+          const rect = e.currentTarget.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) return onDig();
+          onDig({
+            x: ((e.clientX - rect.left) / rect.width) * e.currentTarget.width,
+            y: ((e.clientY - rect.top) / rect.height) * e.currentTarget.height,
+          });
         }}
       />
       {children}
