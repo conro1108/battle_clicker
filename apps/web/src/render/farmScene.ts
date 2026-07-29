@@ -124,67 +124,143 @@ function mulberry32(seed: number): () => number {
 }
 
 // ---------------------------------------------------------------------------
-// The hoard's denominations
+// The hoard
 // ---------------------------------------------------------------------------
 
 /**
- * The yard reads the hoard the way you'd count out money: three denominations
- * side by side, each holding 0-9 of itself, each worth ten of the one to its
- * right. Loose potatoes on the right, then sacks, then crates, then silos.
+ * The yard is a high-water mark, not a number.
  *
- * That's the whole reason for the rework. The old yard drew one denomination
- * bunched into the bottom-right corner, so a hoard that had grown tenfold
- * looked about the same as one that hadn't. Digits move: every tenth potato
- * gets *bundled* into a sack in front of you, and every potato you spend comes
- * back out of one.
+ * The obvious way to draw a hoard is place value — loose ones, tens in sacks,
+ * hundreds in crates — and it reads beautifully right up until the moment you
+ * cross a thousand, when the whole yard empties out to make room for a single
+ * crate. Getting richer is the one thing that shouldn't clear the yard, and no
+ * amount of carry animation talks a player out of what they just watched.
  *
- * The ladder only has four rungs, so past a point the yard stops changing what
- * it's made of and starts changing what a sack is worth (`exp`). The numbers in
- * the HUD are there for anyone who wants the exact figure.
+ * So the yard stopped counting. Four rows, back to front, each holding ten of
+ * its own thing, each covering a stretch of magnitudes: the first ten potatoes
+ * are ten potatoes, then sacks carry you to ten thousand, crates to a billion,
+ * silos to the end of the price list. A row that has filled stays filled.
+ * Earning only ever adds; only spending takes anything away.
+ *
+ * The churn lives at the front, in loose potatoes counting 0-9 toward the next
+ * unit. That one *does* reset — but it resets by paying out something
+ * permanent, which is the good kind. Exact figures are in the HUD.
  */
-const HOARD_LADDER: Art[] = [POTATO_SPRITE, SACK, CRATE, SILO];
-
-interface HoardLayout {
-  /** Potatoes per unit of the smallest drawn denomination: 10^exp. */
-  exp: number;
-  /** Ladder index of the smallest drawn denomination. */
-  base: number;
-  /** 0-9 per denomination, smallest first. */
-  digits: [number, number, number];
+interface Rung {
+  art: Art;
+  cap: number;
+  /** Pixels between neighbours in the row, so nothing ever sits on anything. */
+  gap: number;
+  /** The stretch of magnitudes this row fills across, as log10 of the hoard. */
+  from: number;
+  to: number;
+  /** Off centre, where a row would otherwise run into the loose corner. */
+  nudge?: number;
 }
 
-function hoardLayout(amount: number): HoardLayout {
+const HOARD_RUNGS: Rung[] = [
+  // Linear rather than logarithmic: below ten, one potato is one potato. Held
+  // left, or a full row of it runs straight into the loose potatoes at the
+  // front right and the two read as one long strip of the same thing.
+  { art: POTATO_SPRITE, cap: 10, gap: 2, from: 0, to: 1, nudge: -22 },
+  { art: SACK, cap: 10, gap: 2, from: 1, to: 4 },
+  { art: CRATE, cap: 10, gap: 2, from: 4, to: 9 },
+  { art: SILO, cap: 10, gap: 3, from: 9, to: 18 },
+];
+
+/** How full one row is, 0..cap, as a fraction rather than a count. */
+function rungFill(i: number, amount: number): number {
+  const r = HOARD_RUNGS[i]!;
+  if (i === 0) return Math.max(0, Math.min(r.cap, amount));
+  const l = amount > 1 ? Math.log10(amount) : 0;
+  return Math.max(0, Math.min(r.cap, ((l - r.from) / (r.to - r.from)) * r.cap));
+}
+
+interface HoardLayout {
+  /** Units standing in each row, smallest first. */
+  rows: number[];
+  /** Everything in the yard. Moves one at a time, which is what gets animated. */
+  units: number;
+  /** 0-9 loose potatoes at the front: progress toward the next unit. */
+  loose: number;
+}
+
+export function hoardLayout(amount: number): HoardLayout {
   const a = Math.max(0, amount);
-  // Three digits of mantissa, so the yard always shows the top three orders of
-  // magnitude and the small cluster still ticks over at a rate you can watch.
-  const exp = a < 1000 ? 0 : Math.floor(Math.log10(a)) - 2;
-  const m = Math.floor(a / 10 ** exp);
-  // Two configurations only: potato/sack/crate up to 10k, sack/crate/silo above.
-  const base = Math.min(HOARD_LADDER.length - 3, Math.floor(exp / 2));
-  return { exp, base, digits: [m % 10, Math.floor(m / 10) % 10, Math.floor(m / 100) % 10] };
+  const rows: number[] = [];
+  let units = 0;
+  let loose = 0;
+  for (let i = 0; i < HOARD_RUNGS.length; i++) {
+    const fill = rungFill(i, a);
+    const whole = Math.floor(fill);
+    rows.push(whole);
+    units += whole;
+    // The rows' spans are contiguous, so exactly one of them is ever partly
+    // filled, and its remainder is what the loose potatoes are counting out.
+    // Not the first row, though — down there the yard is already exact.
+    if (i > 0 && fill > 0 && whole < HOARD_RUNGS[i]!.cap) loose = Math.floor((fill - whole) * 10);
+  }
+  return { rows, units, loose };
 }
 
 function sameLayout(a: HoardLayout, b: HoardLayout): boolean {
-  return (
-    a.exp === b.exp &&
-    a.base === b.base &&
-    a.digits[0] === b.digits[0] &&
-    a.digits[1] === b.digits[1] &&
-    a.digits[2] === b.digits[2]
-  );
+  return a.units === b.units && a.loose === b.loose;
 }
 
-/** Where each denomination stands, as a fraction of the buffer's width. */
-const HOARD_BANDS: [number, number][] = [
-  [0.75, 0.98], // smallest, right
-  [0.45, 0.75],
-  [0.01, 0.45], // largest, left — the widest, because its sprites are the widest
-];
+/** Which row the nth unit in the yard stands in, and which slot along it. */
+function unitPlace(n: number): { rung: number; j: number } {
+  let rung = 0;
+  let j = Math.max(0, n);
+  while (rung < HOARD_RUNGS.length - 1 && j >= HOARD_RUNGS[rung]!.cap) {
+    j -= HOARD_RUNGS[rung]!.cap;
+    rung++;
+  }
+  return { rung, j: Math.min(j, HOARD_RUNGS[rung]!.cap - 1) };
+}
 
 /**
- * One potato leaving the ones column and being carried into a sack, or the
- * reverse when you spend. Short-lived, purely cosmetic, and the only thing on
- * this canvas that interpolates a position — it still lands on whole pixels.
+ * Where a row's units stand. Fixed slots, spaced by the sprite's own width, so
+ * a row can't reflow as it fills and can't crowd itself once it's full — the
+ * old yard packed a rising count into a fixed band, which is how nine of
+ * anything ended up as a smear.
+ */
+const slotCache = new Map<number, number[]>();
+
+function rowSlots(i: number): number[] {
+  let slots = slotCache.get(i);
+  if (!slots) {
+    const r = HOARD_RUNGS[i]!;
+    const step = artCanvas(r.art).w + r.gap;
+    const width = step * r.cap - r.gap;
+    const left = Math.max(2, Math.round((SCENE_W - width) / 2) + (r.nudge ?? 0));
+    slots = Array.from({ length: r.cap }, (_, j) => left + j * step);
+    slotCache.set(i, slots);
+  }
+  return slots;
+}
+
+/**
+ * The loose potatoes, front-right — where a dug potato is thrown, so what you
+ * fling lands on the pile it's counting. Two courses, offsets from the yard's
+ * front baseline.
+ */
+function looseSlots(): { x: number; y: number }[] {
+  const h = artCanvas(POTATO_SPRITE).h;
+  return Array.from({ length: 9 }, (_, n) => {
+    const course = n >= 5 ? 1 : 0;
+    const k = n - course * 5;
+    return {
+      x: SCENE_W - 10 - (4 - k) * 9 + course * 4,
+      y: -h - course * 4 - (k % 2),
+    };
+  });
+}
+
+/**
+ * A handful of potatoes being carried into the unit they just added up to, or
+ * a unit coming apart because you spent it. Short-lived, purely cosmetic, and
+ * the only thing on this canvas that interpolates a position — it still lands
+ * on whole pixels.
  */
 interface Bundle {
   art: Art;
@@ -196,48 +272,6 @@ interface Bundle {
   dur: number;
   /** Rises and fades instead of travelling. Used for potatoes you spent. */
   poof: boolean;
-}
-
-/**
- * Where the 0-9 of one denomination stand inside their band. One course while
- * there are few, two once the row would have to overlap itself to fit — and
- * only if the yard is actually deep enough to stack that high, which on a short
- * screen it isn't.
- */
-function hoardSlots(
-  n: number,
-  sprite: { w: number; h: number },
-  x0: number,
-  x1: number,
-  baseline: number,
-  depth: number,
-): { x: number; y: number }[] {
-  const slots: { x: number; y: number }[] = [];
-  if (n <= 0) return slots;
-  const width = x1 - x0;
-  const twoCourse = n > 4 && sprite.h * 2 - 3 <= depth;
-  const bottomN = twoCourse ? Math.ceil(n * 0.62) : n;
-  const courses: [number, number][] = twoCourse
-    ? [
-        [bottomN, 0],
-        [n - bottomN, 1],
-      ]
-    : [[n, 0]];
-
-  for (const [count, course] of courses) {
-    if (count <= 0) continue;
-    const step =
-      count > 1 ? Math.max(2, Math.min(sprite.w + 1, Math.floor((width - sprite.w) / (count - 1)))) : 0;
-    const span = sprite.w + step * (count - 1);
-    const left = x0 + Math.max(0, Math.floor((width - span) / 2));
-    const y = baseline - sprite.h - course * Math.max(3, sprite.h - 3);
-    for (let i = 0; i < count; i++) {
-      // Loose potatoes sit unevenly; anything crated does not.
-      const jitter = sprite.h <= 6 ? i % 2 : 0;
-      slots.push({ x: left + i * step, y: y - jitter });
-    }
-  }
-  return slots;
 }
 
 // ---------------------------------------------------------------------------
@@ -1258,108 +1292,106 @@ export class FarmScene {
   }
 
   /**
+   * How far back in the yard a row stands. 0 is the loose potatoes at the front
+   * edge; each row above that steps back by the same amount, so the yard reads
+   * as depth rather than as a stack of shelves. On a short screen the steps
+   * tighten instead of the back rows walking off the top.
+   */
+  private station(i: number): number {
+    const step = Math.max(5, Math.min(9, Math.floor((this.sh - this.yardTop() - 12) / 4)));
+    return this.sh - 4 - i * step;
+  }
+
+  /**
    * What changed between two readings of the yard, staged as sprites in motion.
-   * A tens digit going up means ten of the smaller unit just got bundled; going
-   * down means one got broken open to pay for something.
+   * A unit gained means the loose potatoes at the front just added up to
+   * something and are being carried into it; a unit lost means you spent it.
    */
   private fireBundles(from: HoardLayout, to: HoardLayout, now: number): void {
-    if (now - this.lastBundleAt < 160 || this.bundles.length > 40) return;
+    if (to.units === from.units) return;
+    if (now - this.lastBundleAt < 140 || this.bundles.length > 30) return;
     this.lastBundleAt = now;
 
-    const rescaled = from.exp !== to.exp || from.base !== to.base;
-    const baseline = this.sh - 4;
-    const anchor = (i: number, layout: HoardLayout) => {
-      const art = HOARD_LADDER[layout.base + i] ?? HOARD_LADDER[HOARD_LADDER.length - 1]!;
-      const sprite = artCanvas(art);
-      const [a, b] = HOARD_BANDS[i]!;
-      return {
-        art,
-        x: Math.round(((a + b) / 2) * SCENE_W - sprite.w / 2),
-        y: baseline - sprite.h,
-      };
-    };
+    const gained = to.units > from.units;
+    // The unit that just appeared, or the one that just left — same slot either
+    // way, since rows fill and empty from the same end.
+    const place = unitPlace((gained ? to.units : from.units) - 1);
+    const art = HOARD_RUNGS[place.rung]!.art;
+    const sprite = artCanvas(art);
+    const x = rowSlots(place.rung)[place.j]!;
+    const y = this.station(place.rung + 1) - sprite.h;
 
-    // Changing scale is the loudest thing the yard ever does — everything you
-    // were looking at just became worth ten times less, so send a carry all the
-    // way up the ladder.
-    const pairs: [number, number][] = rescaled
-      ? [
-          [0, 1],
-          [1, 2],
-        ]
-      : [];
-    if (!rescaled) {
-      for (let i = 0; i < 2; i++) {
-        if (to.digits[i + 1]! > from.digits[i + 1]!) pairs.push([i, i + 1]);
-        else if (to.digits[i + 1]! < from.digits[i + 1]!) pairs.push([i + 1, i]);
-      }
-    }
-
-    for (const [src, dst] of pairs) {
-      const a = anchor(src, from);
-      const b = anchor(dst, to);
-      const count = src < dst ? 4 : 3;
-      for (let i = 0; i < count; i++) {
-        this.bundles.push({
-          art: a.art,
-          x0: a.x + (i - 1) * 4,
-          y0: a.y - (i % 2) * 3,
-          x1: b.x + (i % 3) * 2,
-          y1: b.y + 2,
-          born: now + i * 45,
-          dur: 380,
-          poof: false,
-        });
-      }
-    }
-
-    // Spending that doesn't carry still ought to cost you something visible.
-    if (pairs.length === 0 && to.digits[0]! < from.digits[0]!) {
-      const a = anchor(0, to);
+    if (!gained) {
       for (let i = 0; i < 2; i++) {
         this.bundles.push({
-          art: a.art,
-          x0: a.x + i * 6 - 3,
-          y0: a.y,
-          x1: a.x + i * 6 - 3,
-          y1: a.y - 9,
-          born: now + i * 60,
+          art,
+          x0: x + i * 3 - 1,
+          y0: y,
+          x1: x,
+          y1: y - 9,
+          born: now + i * 70,
           dur: 320,
           poof: true,
         });
       }
+      return;
+    }
+
+    // Carried from the front of the yard, where the loose ones were sitting a
+    // frame ago, so the reset of that little pile has somewhere to have gone.
+    const home = looseSlots()[4]!;
+    const base = this.station(0);
+    for (let i = 0; i < 3; i++) {
+      this.bundles.push({
+        art: POTATO_SPRITE,
+        x0: home.x - i * 6,
+        y0: base + home.y - (i % 2) * 3,
+        x1: x + i * 2,
+        y1: y + 2,
+        born: now + i * 70,
+        dur: 400,
+        poof: false,
+      });
     }
   }
 
   /**
-   * The yard: three columns of denominations, laid out left to right largest
-   * first, filling the width instead of huddling in one corner.
+   * The yard: four rows of stuff, back to front, plus whatever loose potatoes
+   * haven't been bundled yet.
    */
   private drawHoard(): void {
     const ctx = this.ctx;
-    const baseline = this.sh - 4;
     const layout = this.shownLayout;
 
     if (this.shown < 1) {
       // Empty yard, but not an empty frame — a couple of strays in the dirt.
       const spud = artCanvas(POTATO_SPRITE);
+      const baseline = this.station(0);
       ctx.drawImage(spud.canvas, SCENE_W - 22, baseline - spud.h);
       ctx.drawImage(spud.canvas, SCENE_W - 14, baseline - spud.h + 1);
       return;
     }
 
-    // Largest first so the smaller columns overlap it rather than being hidden
-    // behind it if a wide sprite runs past its band.
-    const depth = this.sh - this.yardTop() - 4;
-    for (let i = 2; i >= 0; i--) {
-      const art = HOARD_LADDER[layout.base + i] ?? HOARD_LADDER[HOARD_LADDER.length - 1]!;
-      const sprite = artCanvas(art);
-      const [a, b] = HOARD_BANDS[i]!;
-      const x0 = Math.round(a * SCENE_W) + 2;
-      const x1 = Math.round(b * SCENE_W) - 2;
-      for (const slot of hoardSlots(layout.digits[i]!, sprite, x0, x1, baseline, depth)) {
-        ctx.drawImage(sprite.canvas, slot.x, slot.y);
+    // Back row first, so the rows in front of it overlap it rather than the
+    // other way round — a silo is taller than the gap between two stations.
+    for (let i = HOARD_RUNGS.length - 1; i >= 0; i--) {
+      const n = layout.rows[i]!;
+      if (n <= 0) continue;
+      const sprite = artCanvas(HOARD_RUNGS[i]!.art);
+      const baseline = this.station(i + 1);
+      const slots = rowSlots(i);
+      for (let j = 0; j < n; j++) {
+        // Loose potatoes sit unevenly; anything crated does not.
+        const wobble = i === 0 ? j % 2 : 0;
+        ctx.drawImage(sprite.canvas, slots[j]!, baseline - sprite.h - wobble);
       }
+    }
+
+    const spud = artCanvas(POTATO_SPRITE);
+    const baseline = this.station(0);
+    const loose = looseSlots();
+    for (let j = 0; j < layout.loose; j++) {
+      ctx.drawImage(spud.canvas, loose[j]!.x, baseline + loose[j]!.y);
     }
   }
 
