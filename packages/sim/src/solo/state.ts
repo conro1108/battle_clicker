@@ -67,7 +67,14 @@ export type FarmCommand =
   | { type: "repair"; producer: SoloProducerId }
   | { type: "restore_soil" }
   | { type: "buy_perk"; perk: PerkId }
-  | { type: "prestige" };
+  | { type: "prestige" }
+  /**
+   * A cheat, and named like one. `dig` is deliberately capped so a batched
+   * flush can't be forged, which also makes it useless for filling a yard up to
+   * look at it. This pays out the same way a dig does — every multiplier you
+   * own applies — and writes itself into the log so a save that used it says so.
+   */
+  | { type: "dev_grant"; digs: number };
 
 export type FarmResult =
   | { ok: true; farm: FarmState; entries: FarmLogEntry[] }

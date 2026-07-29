@@ -267,6 +267,23 @@ describe("prestige", () => {
   });
 });
 
+describe("dev grant", () => {
+  it("pays out where a capped dig can't, and says so in the log", () => {
+    const farm = developedFarm("grant");
+    const digs = 10_000;
+    const res = applyFarmCommand(farm, { type: "dev_grant", digs }, farm.checkpointAt);
+    expect(res.ok).toBe(true);
+    const next = (res as { farm: FarmState }).farm;
+
+    // A `dig` of the same size is clamped to a flush's worth; this isn't.
+    const dug = applyFarmCommand(farm, { type: "dig", count: digs }, farm.checkpointAt);
+    expect((dug as { farm: FarmState }).farm.potatoes).toBeLessThan(next.potatoes);
+
+    const entries = (res as { entries: { text: string }[] }).entries;
+    expect(entries.some((e) => e.text.startsWith("dev:"))).toBe(true);
+  });
+});
+
 describe("saving", () => {
   it("round-trips a farm exactly", () => {
     const farm = developedFarm("save");

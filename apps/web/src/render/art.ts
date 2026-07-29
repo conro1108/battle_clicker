@@ -319,16 +319,19 @@ export const SACK: Art = {
 
 export const CRATE: Art = {
   rows: [
-    ".pp.pp.pp.pp..",
-    "kkkkkkkkkkkkkk",
-    "kwwwwwwwwwwwwk",
-    "kwvvwwwwwwvvwk",
-    "kwwwwwwwwwwwwk",
-    "kkkkkkkkkkkkkk",
-    "kwwwwwwwwwwwwk",
-    "kwwvvwwwwvvwwk",
-    "kwwwwwwwwwwwwk",
-    "kkkkkkkkkkkkkk",
+    "..pp.pp.pp.pp..",
+    ".pp.pp.pp.pp.p.",
+    "kkkkkkkkkkkkkkk",
+    "kwwwwwwwwwwwwwk",
+    "kwvvwwwwwwvvwwk",
+    "kwwwwwwwwwwwwwk",
+    "kkkkkkkkkkkkkkk",
+    "kwwwwwwwwwwwwwk",
+    "kwwvvwwwwvvwwwk",
+    "kwwwwwwwwwwwwwk",
+    "kkkkkkkkkkkkkkk",
+    "kwwwwwwwwwwwwwk",
+    "kkkkkkkkkkkkkkk",
   ],
   palette: { k: K, w: "#a97a52", v: "#7a5237", p: "#c98b4b" },
 };
@@ -345,6 +348,11 @@ function stack(cap: string[], body: string[], reps: number, base: string[]): str
   return rows;
 }
 
+/**
+ * The yard's silo is deliberately squat: it has to stand in a band about twenty
+ * pixels deep next to crates and sacks, and a true-height grain silo would eat
+ * the field above it.
+ */
 export const SILO: Art = {
   rows: stack(
     [
@@ -355,7 +363,7 @@ export const SILO: Art = {
       "kkkkkkkkkkkkk",
     ],
     ["kmmsmmmmmmmmk", "kmmsmmmmmmmmk", "kmmsmmmmmmmmk", "kkkkkkkkkkkkk"],
-    4,
+    3,
     ["kmmsmmmmmmmmk", "kmmsmmmmmmmmk", "kkkkkkkkkkkkk"],
   ),
   palette: { k: K, ...METAL },

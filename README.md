@@ -3,14 +3,15 @@
 A potato clicker where every purchase competes for the same currency, and
 something is always working against you.
 
-There are two modes, and the front door leads to the first one:
+The app opens onto your farm. There are two modes; the second one lives behind
+the House door in the bottom nav, along with the dev tooling:
 
 - **Your farm** — the persistent single-player homestead. Twelve tiers, forty
   upgrades, a prestige loop, and weather that damages your land permanently
   whether or not the tab is open. This is where development is going.
 - **Versus a bot** — the original head-to-head prototype from
   [VISION.md](VISION.md), where the thing working against you is another player
-  spending their own potatoes to do it. Still playable, parked behind a menu.
+  spending their own potatoes to do it. Still playable, parked in the house.
 
 Both run entirely in the browser — no Supabase, no auth, no network. The backend
 in [STACK.md](STACK.md) is deliberately not built yet, but both sims are already
@@ -46,7 +47,10 @@ npm test
   low-res buffer that CSS scales up crisply (`farmScene.ts`). The scene is the
   homestead screen: the field behind the fence is every producer you own, and
   the yard in front of it is the potatoes you're holding, so the two numbers the
-  game is about are the picture rather than two figures in a panel.
+  game is about are the picture rather than two figures in a panel. The yard
+  counts the hoard out like money — three denominations side by side, each worth
+  ten of the one to its right — and bundles ten of one into one of the next as
+  you cross it, in either direction.
 
 Commands go through `applyCommand(state, cmd, now)`, which is the single
 authority for mutations. The local runtime calls it directly; swapping that for

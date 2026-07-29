@@ -59,6 +59,11 @@ function useSpaceToDig(dig: () => void, enabled = true) {
 // Home
 // ---------------------------------------------------------------------------
 
+/**
+ * The splash, and nothing else. You see this once — the moment you have a farm,
+ * the app opens straight onto it, because a homestead game whose front door is
+ * a menu makes you ask for your farm every time instead of just being there.
+ */
 function Home({ onGo }: { onGo: (screen: Screen) => void }) {
   const returning = hasSavedFarm();
   return (
@@ -80,15 +85,6 @@ function Home({ onGo }: { onGo: (screen: Screen) => void }) {
       <p className="muted small home-note">
         A farm you keep. It grows while you're gone — and so does everything that's wrong with it.
       </p>
-
-      {/* Versus is the older idea and still the more finished one, but it isn't
-          what this is anymore. Kept reachable, kept out of the way. */}
-      <div className="home-aside">
-        <button className="ghost" onClick={() => onGo({ kind: "versus-lobby" })}>
-          Versus a bot
-        </button>
-        <span className="muted small">Experimental — the head-to-head prototype.</span>
-      </div>
     </div>
   );
 }
@@ -97,7 +93,7 @@ function Home({ onGo }: { onGo: (screen: Screen) => void }) {
 // The homestead
 // ---------------------------------------------------------------------------
 
-type FarmSheet = "status" | "grow" | "land" | "legacy" | "report";
+type FarmSheet = "status" | "grow" | "land" | "legacy" | "report" | "backroom";
 
 const NAV: { id: FarmSheet; label: string; icon: Parameters<typeof PxIcon>[0]["name"] }[] = [
   { id: "status", label: "Farm", icon: "clipboard" },
@@ -105,7 +101,65 @@ const NAV: { id: FarmSheet; label: string; icon: Parameters<typeof PxIcon>[0]["n
   { id: "land", label: "Land", icon: "shield" },
   { id: "legacy", label: "Legacy", icon: "sprout" },
   { id: "report", label: "Report", icon: "cloud" },
+  { id: "backroom", label: "House", icon: "house" },
 ];
+
+/**
+ * Everything that isn't the farm: the parked head-to-head prototype and the
+ * handful of levers that exist for poking at the game rather than playing it.
+ * One door, clearly labelled, out of the way of the loop.
+ */
+function BackRoom({
+  onVersus,
+  onTitle,
+  dispatch,
+}: {
+  onVersus: () => void;
+  onTitle: () => void;
+  dispatch: (cmd: solo.FarmCommand) => void;
+}) {
+  return (
+    <div className="backroom">
+      <section>
+        <h3>Versus a bot</h3>
+        <p className="muted small">
+          The older head-to-head prototype: two farms, one clock, and upgrades that reach across the
+          table. Parked, but it still runs.
+        </p>
+        <button className="ghost" onClick={onVersus}>
+          Open the lobby
+        </button>
+      </section>
+
+      <section>
+        <h3>Dev tooling</h3>
+        <p className="muted small">
+          Shortcuts for looking at the game rather than playing it. These are real digs, so they
+          respect every multiplier you own — and they will absolutely ruin your save's pacing.
+        </p>
+        <div className="choices">
+          {([
+            ["+100 digs", 100],
+            ["+10k digs", 10_000],
+            ["+1M digs", 1_000_000],
+          ] as const).map(([label, digs]) => (
+            <button key={digs} className="ghost" onClick={() => dispatch({ type: "dev_grant", digs })}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <h3>Title screen</h3>
+        <p className="muted small">Your farm keeps running. This just goes back to the front door.</p>
+        <button className="ghost" onClick={onTitle}>
+          Back to the title
+        </button>
+      </section>
+    </div>
+  );
+}
 
 /**
  * The homestead screen: a HUD you can read at a glance, the farm itself filling
@@ -116,7 +170,7 @@ const NAV: { id: FarmSheet; label: string; icon: Parameters<typeof PxIcon>[0]["n
  * you've built and what you're holding — are the picture, and the panels are
  * where you go to change them.
  */
-function Homefarm({ onExit }: { onExit: () => void }) {
+function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
   const { farm, now, report, dismissReport, budget, pendingDigs, error, dig, dispatch, abandon } =
     useFarm();
   const [sheet, setSheet] = useState<FarmSheet | null>(null);
@@ -195,10 +249,6 @@ function Homefarm({ onExit }: { onExit: () => void }) {
             {item.id === "land" && needsAttention && <span className="nav-dot" />}
           </button>
         ))}
-        <button onClick={onExit}>
-          <PxIcon name="house" size={20} />
-          <span>Home</span>
-        </button>
       </nav>
 
       {sheet === "status" && (
@@ -257,6 +307,20 @@ function Homefarm({ onExit }: { onExit: () => void }) {
       {sheet === "report" && (
         <Sheet title="Field report" sub="What the weather has been up to." onClose={() => setSheet(null)}>
           <FarmFeed farm={farm} now={now} />
+        </Sheet>
+      )}
+
+      {sheet === "backroom" && (
+        <Sheet
+          title="The house"
+          sub="Side doors: the versus prototype, and the levers that aren't the game."
+          onClose={() => setSheet(null)}
+        >
+          <BackRoom
+            onVersus={() => onGo({ kind: "versus-lobby" })}
+            onTitle={() => onGo({ kind: "home" })}
+            dispatch={dispatch}
+          />
         </Sheet>
       )}
 
@@ -442,16 +506,20 @@ function Match({ setup, onExit }: { setup: MatchSetup; onExit: () => void }) {
 }
 
 export function App() {
-  const [screen, setScreen] = useState<Screen>({ kind: "home" });
+  // A farm you already own is the app. The splash is for the one session where
+  // you don't have one yet.
+  const [screen, setScreen] = useState<Screen>(() =>
+    hasSavedFarm() ? { kind: "farm" } : { kind: "home" },
+  );
 
   switch (screen.kind) {
     case "farm":
-      return <Homefarm onExit={() => setScreen({ kind: "home" })} />;
+      return <Homefarm onGo={setScreen} />;
     case "versus-lobby":
       return (
         <VersusLobby
           onStart={(setup) => setScreen({ kind: "versus", setup })}
-          onBack={() => setScreen({ kind: "home" })}
+          onBack={() => setScreen({ kind: "farm" })}
         />
       );
     case "versus":

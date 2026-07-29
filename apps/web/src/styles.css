@@ -574,6 +574,28 @@ input {
   font-size: 1.05rem;
 }
 
+/* --- The back room ------------------------------------------------------- */
+
+.backroom {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.backroom section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+.backroom h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--wood-dark);
+}
+.backroom p {
+  margin: 0;
+}
+
 /* --- Shop rows ----------------------------------------------------------- */
 
 .rows {

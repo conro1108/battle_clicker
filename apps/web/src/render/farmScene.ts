@@ -37,8 +37,8 @@ import { artCanvas, artTinted, type Art } from "./pixel.js";
 
 export const SCENE_W = 176;
 
-const YARD_SHARE = 0.19; // the hoard yard, front band
-const FIELD_SHARE = 0.5; // the working field
+const YARD_SHARE = 0.23; // the hoard yard, front band — deep enough to stand a silo in
+const FIELD_SHARE = 0.46; // the working field
 const MIN_SKY = 20;
 
 const GRASS = "#6aa348";
@@ -122,31 +122,116 @@ function mulberry32(seed: number): () => number {
 // ---------------------------------------------------------------------------
 
 /**
- * A pile of potatoes stops reading as a pile somewhere around a thousand, so
- * the yard changes unit as it fills: loose potatoes, then sacks, then crates,
- * then silos. `decades` is how many orders of magnitude that unit is asked to
- * cover before the next one takes over, which is what keeps the pile visibly
- * growing early instead of saturating in the first minute.
+ * The yard reads the hoard the way you'd count out money: three denominations
+ * side by side, each holding 0-9 of itself, each worth ten of the one to its
+ * right. Loose potatoes on the right, then sacks, then crates, then silos.
+ *
+ * That's the whole reason for the rework. The old yard drew one denomination
+ * bunched into the bottom-right corner, so a hoard that had grown tenfold
+ * looked about the same as one that hadn't. Digits move: every tenth potato
+ * gets *bundled* into a sack in front of you, and every potato you spend comes
+ * back out of one.
+ *
+ * The ladder only has four rungs, so past a point the yard stops changing what
+ * it's made of and starts changing what a sack is worth (`exp`). The numbers in
+ * the HUD are there for anyone who wants the exact figure.
  */
-interface HoardTier {
-  art: Art;
-  min: number;
-  decades: number;
-  max: number;
-  gap: number;
+const HOARD_LADDER: Art[] = [POTATO_SPRITE, SACK, CRATE, SILO];
+
+interface HoardLayout {
+  /** Potatoes per unit of the smallest drawn denomination: 10^exp. */
+  exp: number;
+  /** Ladder index of the smallest drawn denomination. */
+  base: number;
+  /** 0-9 per denomination, smallest first. */
+  digits: [number, number, number];
 }
 
-const HOARD_TIERS: HoardTier[] = [
-  { art: SILO, min: 1e9, decades: 6, max: 5, gap: 3 },
-  { art: CRATE, min: 1e5, decades: 4, max: 6, gap: 2 },
-  { art: SACK, min: 1e2, decades: 3, max: 6, gap: 2 },
-  { art: POTATO_SPRITE, min: 1, decades: 2, max: 10, gap: 1 },
+function hoardLayout(amount: number): HoardLayout {
+  const a = Math.max(0, amount);
+  // Three digits of mantissa, so the yard always shows the top three orders of
+  // magnitude and the small cluster still ticks over at a rate you can watch.
+  const exp = a < 1000 ? 0 : Math.floor(Math.log10(a)) - 2;
+  const m = Math.floor(a / 10 ** exp);
+  // Two configurations only: potato/sack/crate up to 10k, sack/crate/silo above.
+  const base = Math.min(HOARD_LADDER.length - 3, Math.floor(exp / 2));
+  return { exp, base, digits: [m % 10, Math.floor(m / 10) % 10, Math.floor(m / 100) % 10] };
+}
+
+function sameLayout(a: HoardLayout, b: HoardLayout): boolean {
+  return (
+    a.exp === b.exp &&
+    a.base === b.base &&
+    a.digits[0] === b.digits[0] &&
+    a.digits[1] === b.digits[1] &&
+    a.digits[2] === b.digits[2]
+  );
+}
+
+/** Where each denomination stands, as a fraction of the buffer's width. */
+const HOARD_BANDS: [number, number][] = [
+  [0.75, 0.98], // smallest, right
+  [0.45, 0.75],
+  [0.01, 0.45], // largest, left — the widest, because its sprites are the widest
 ];
 
-function hoardCount(tier: HoardTier, amount: number): number {
-  const decades = Math.log10(Math.max(1, amount) / tier.min);
-  const n = 1 + Math.floor((decades / tier.decades) * (tier.max - 1));
-  return Math.max(1, Math.min(tier.max, n));
+/**
+ * One potato leaving the ones column and being carried into a sack, or the
+ * reverse when you spend. Short-lived, purely cosmetic, and the only thing on
+ * this canvas that interpolates a position — it still lands on whole pixels.
+ */
+interface Bundle {
+  art: Art;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  born: number;
+  dur: number;
+  /** Rises and fades instead of travelling. Used for potatoes you spent. */
+  poof: boolean;
+}
+
+/**
+ * Where the 0-9 of one denomination stand inside their band. One course while
+ * there are few, two once the row would have to overlap itself to fit — and
+ * only if the yard is actually deep enough to stack that high, which on a short
+ * screen it isn't.
+ */
+function hoardSlots(
+  n: number,
+  sprite: { w: number; h: number },
+  x0: number,
+  x1: number,
+  baseline: number,
+  depth: number,
+): { x: number; y: number }[] {
+  const slots: { x: number; y: number }[] = [];
+  if (n <= 0) return slots;
+  const width = x1 - x0;
+  const twoCourse = n > 4 && sprite.h * 2 - 3 <= depth;
+  const bottomN = twoCourse ? Math.ceil(n * 0.62) : n;
+  const courses: [number, number][] = twoCourse
+    ? [
+        [bottomN, 0],
+        [n - bottomN, 1],
+      ]
+    : [[n, 0]];
+
+  for (const [count, course] of courses) {
+    if (count <= 0) continue;
+    const step =
+      count > 1 ? Math.max(2, Math.min(sprite.w + 1, Math.floor((width - sprite.w) / (count - 1)))) : 0;
+    const span = sprite.w + step * (count - 1);
+    const left = x0 + Math.max(0, Math.floor((width - span) / 2));
+    const y = baseline - sprite.h - course * Math.max(3, sprite.h - 3);
+    for (let i = 0; i < count; i++) {
+      // Loose potatoes sit unevenly; anything crated does not.
+      const jitter = sprite.h <= 6 ? i % 2 : 0;
+      slots.push({ x: left + i * step, y: y - jitter });
+    }
+  }
+  return slots;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +311,16 @@ export class FarmScene {
   private view: FarmView = EMPTY_VIEW;
   private rngSeed = 1;
   private flying: Flying[] = [];
+  private lastFrame = performance.now();
+  /**
+   * The hoard the yard is currently showing, which chases the real one rather
+   * than snapping to it. This is what makes spending *look* like spending:
+   * buy a tractor and you watch the crates come back apart.
+   */
+  private shown = -1;
+  private shownLayout = hoardLayout(0);
+  private bundles: Bundle[] = [];
+  private lastBundleAt = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -259,17 +354,21 @@ export class FarmScene {
     return marks[level] ?? marks[0];
   }
 
-  /** A dig: a potato pops out of the field and lands on the pile. */
+  /**
+   * A dig: a potato pops out of the field and is thrown onto the loose pile —
+   * aimed at it, so the yard's rightmost column is visibly where digging goes.
+   */
   dig(): void {
     if (this.flying.length > 24) return;
     const rng = Math.random;
-    this.flying.push({
-      x: 30 + rng() * (SCENE_W - 70),
-      y: this.fieldTop() + 20 + rng() * 30,
-      vx: 26 + rng() * 22,
-      vy: -46 - rng() * 26,
-      born: performance.now(),
-    });
+    const x = 20 + rng() * (SCENE_W - 60);
+    const y = this.fieldTop() + 20 + rng() * 30;
+    const vy = -46 - rng() * 26;
+    // Time to fall from here to the yard floor under `drawFlying`'s gravity.
+    const drop = this.sh - 8 - y;
+    const flight = (-vy + Math.sqrt(vy * vy + 4 * 90 * drop)) / (2 * 90);
+    const land = 0.82 * SCENE_W + rng() * 14;
+    this.flying.push({ x, y, vx: (land - x) / Math.max(0.35, flight), vy, born: performance.now() });
   }
 
   start(): void {
@@ -293,7 +392,7 @@ export class FarmScene {
    * empty sky — the farm should get the screen, not the weather.
    */
   private yardTop(): number {
-    return this.sh - Math.max(28, Math.round(this.sh * YARD_SHARE));
+    return this.sh - Math.max(34, Math.round(this.sh * YARD_SHARE));
   }
 
   private fieldTop(): number {
@@ -305,9 +404,13 @@ export class FarmScene {
   private draw(now: number): void {
     const ctx = this.ctx;
     const t = (now - this.t0) / 1000;
+    const dt = Math.min(0.1, (now - this.lastFrame) / 1000);
+    this.lastFrame = now;
     const phase = phaseNow();
     const horizon = this.fieldTop();
     const yardY = this.yardTop();
+
+    this.stepHoard(dt, now);
 
     this.drawSky(phase, t, horizon);
     this.drawHills(phase, horizon);
@@ -315,8 +418,9 @@ export class FarmScene {
     this.drawBack(t, horizon, phase);
     this.drawField(t, horizon, yardY);
     this.drawFence(yardY);
-    this.drawHoard(yardY);
+    this.drawHoard();
     this.drawFlying(now);
+    this.drawBundles(now);
 
     // Night everywhere except the yard's lamp-lit patch, so the hoard stays
     // readable at 2am — the one thing you came back to look at.
@@ -590,71 +694,163 @@ export class FarmScene {
     }
   }
 
-  /**
-   * The pile. Right-aligned and built from the biggest denomination the hoard
-   * has earned, with a scatter of the next one down in front so the yard never
-   * looks like a single lonely silo.
-   */
-  private drawHoard(yardY: number): void {
-    const ctx = this.ctx;
-    const amount = this.view.hoard;
-    const baseline = this.sh - 4;
+  // --- The hoard -----------------------------------------------------------
 
-    if (amount < 1) {
-      // Empty yard, but not an empty frame — a few stray potatoes in the dirt.
+  /**
+   * Move the shown hoard toward the real one and fire off whatever that
+   * transition should look like. Exponential chase, so a small dig is a nudge
+   * and a big purchase is a visible drain rather than a jump cut.
+   */
+  private stepHoard(dt: number, now: number): void {
+    const target = Math.max(0, this.view.hoard);
+    if (this.shown < 0) {
+      // First frame after mount: adopt the hoard rather than animating up from
+      // zero, or every reload replays your whole farm's history at you.
+      this.shown = target;
+      this.shownLayout = hoardLayout(target);
+      return;
+    }
+
+    const k = 1 - Math.exp(-dt * 3.2);
+    const gap = target - this.shown;
+    this.shown += gap * k;
+    // Snap once it's close, so the digits settle instead of creeping forever.
+    if (Math.abs(gap) < Math.max(0.5, target * 1e-4)) this.shown = target;
+
+    const next = hoardLayout(this.shown);
+    if (!sameLayout(next, this.shownLayout)) {
+      this.fireBundles(this.shownLayout, next, now);
+      this.shownLayout = next;
+    }
+
+    const cutoff = now - 900;
+    if (this.bundles.length > 0) this.bundles = this.bundles.filter((b) => b.born + b.dur > cutoff);
+  }
+
+  /**
+   * What changed between two readings of the yard, staged as sprites in motion.
+   * A tens digit going up means ten of the smaller unit just got bundled; going
+   * down means one got broken open to pay for something.
+   */
+  private fireBundles(from: HoardLayout, to: HoardLayout, now: number): void {
+    if (now - this.lastBundleAt < 160 || this.bundles.length > 40) return;
+    this.lastBundleAt = now;
+
+    const rescaled = from.exp !== to.exp || from.base !== to.base;
+    const baseline = this.sh - 4;
+    const anchor = (i: number, layout: HoardLayout) => {
+      const art = HOARD_LADDER[layout.base + i] ?? HOARD_LADDER[HOARD_LADDER.length - 1]!;
+      const sprite = artCanvas(art);
+      const [a, b] = HOARD_BANDS[i]!;
+      return {
+        art,
+        x: Math.round(((a + b) / 2) * SCENE_W - sprite.w / 2),
+        y: baseline - sprite.h,
+      };
+    };
+
+    // Changing scale is the loudest thing the yard ever does — everything you
+    // were looking at just became worth ten times less, so send a carry all the
+    // way up the ladder.
+    const pairs: [number, number][] = rescaled
+      ? [
+          [0, 1],
+          [1, 2],
+        ]
+      : [];
+    if (!rescaled) {
+      for (let i = 0; i < 2; i++) {
+        if (to.digits[i + 1]! > from.digits[i + 1]!) pairs.push([i, i + 1]);
+        else if (to.digits[i + 1]! < from.digits[i + 1]!) pairs.push([i + 1, i]);
+      }
+    }
+
+    for (const [src, dst] of pairs) {
+      const a = anchor(src, from);
+      const b = anchor(dst, to);
+      const count = src < dst ? 4 : 3;
+      for (let i = 0; i < count; i++) {
+        this.bundles.push({
+          art: a.art,
+          x0: a.x + (i - 1) * 4,
+          y0: a.y - (i % 2) * 3,
+          x1: b.x + (i % 3) * 2,
+          y1: b.y + 2,
+          born: now + i * 45,
+          dur: 380,
+          poof: false,
+        });
+      }
+    }
+
+    // Spending that doesn't carry still ought to cost you something visible.
+    if (pairs.length === 0 && to.digits[0]! < from.digits[0]!) {
+      const a = anchor(0, to);
+      for (let i = 0; i < 2; i++) {
+        this.bundles.push({
+          art: a.art,
+          x0: a.x + i * 6 - 3,
+          y0: a.y,
+          x1: a.x + i * 6 - 3,
+          y1: a.y - 9,
+          born: now + i * 60,
+          dur: 320,
+          poof: true,
+        });
+      }
+    }
+  }
+
+  /**
+   * The yard: three columns of denominations, laid out left to right largest
+   * first, filling the width instead of huddling in one corner.
+   */
+  private drawHoard(): void {
+    const ctx = this.ctx;
+    const baseline = this.sh - 4;
+    const layout = this.shownLayout;
+
+    if (this.shown < 1) {
+      // Empty yard, but not an empty frame — a couple of strays in the dirt.
       const spud = artCanvas(POTATO_SPRITE);
       ctx.drawImage(spud.canvas, SCENE_W - 22, baseline - spud.h);
       ctx.drawImage(spud.canvas, SCENE_W - 14, baseline - spud.h + 1);
       return;
     }
 
-    const tierIndex = Math.max(
-      0,
-      HOARD_TIERS.findIndex((t) => amount >= t.min),
-    );
-    const tier = HOARD_TIERS[tierIndex] ?? HOARD_TIERS[HOARD_TIERS.length - 1]!;
-    const n = hoardCount(tier, amount);
-
-    if (tier.art === POTATO_SPRITE) {
-      this.drawPile(POTATO_SPRITE, n, SCENE_W - 8, baseline);
-    } else {
-      const sprite = artCanvas(tier.art);
-      // Silos stand in a row; sacks and crates get stacked two deep, because a
-      // single line of them stops reading as "a lot" long before the row runs
-      // out of yard.
-      const bottom = tier.art === SILO ? n : Math.ceil(n * 0.6);
-      const step = sprite.w + tier.gap;
-      let x = SCENE_W - 4 - sprite.w;
-      for (let i = 0; i < bottom && x >= 4; i++, x -= step) {
-        ctx.drawImage(sprite.canvas, x, baseline - sprite.h);
+    // Largest first so the smaller columns overlap it rather than being hidden
+    // behind it if a wide sprite runs past its band.
+    const depth = this.sh - this.yardTop() - 4;
+    for (let i = 2; i >= 0; i--) {
+      const art = HOARD_LADDER[layout.base + i] ?? HOARD_LADDER[HOARD_LADDER.length - 1]!;
+      const sprite = artCanvas(art);
+      const [a, b] = HOARD_BANDS[i]!;
+      const x0 = Math.round(a * SCENE_W) + 2;
+      const x1 = Math.round(b * SCENE_W) - 2;
+      for (const slot of hoardSlots(layout.digits[i]!, sprite, x0, x1, baseline, depth)) {
+        ctx.drawImage(sprite.canvas, slot.x, slot.y);
       }
-      // The upper course sits in the valleys of the lower one.
-      let upX = SCENE_W - 4 - sprite.w - Math.floor(step / 2);
-      for (let i = bottom; i < n && upX >= 4; i++, upX -= step) {
-        ctx.drawImage(sprite.canvas, upX, baseline - sprite.h * 2 + 1);
-      }
-      // Garnish from one rung down, spilled in front of the stack.
-      const under = HOARD_TIERS[tierIndex + 1];
-      if (under) this.drawPile(under.art, 4, Math.max(20, x + step + 6), baseline);
     }
   }
 
-  /** A rough triangular heap, laid right-to-left from `rightX`. */
-  private drawPile(art: Art, n: number, rightX: number, baseline: number): void {
+  /** Potatoes being carried between columns, drawn over the columns themselves. */
+  private drawBundles(now: number): void {
     const ctx = this.ctx;
-    const sprite = artCanvas(art);
-    let placed = 0;
-    let row = 0;
-    while (placed < n) {
-      const inRow = Math.max(1, Math.ceil(Math.sqrt(n)) - row);
-      for (let i = 0; i < inRow && placed < n; i++, placed++) {
-        const x = rightX - sprite.w - i * (sprite.w - 1) - row * 2;
-        const y = baseline - sprite.h - row * (sprite.h - 1);
-        if (x < 2) return;
-        ctx.drawImage(sprite.canvas, x, y);
+    for (const b of this.bundles) {
+      const p = (now - b.born) / b.dur;
+      if (p < 0 || p > 1) continue;
+      const sprite = artCanvas(b.art);
+      if (b.poof) {
+        ctx.globalAlpha = 1 - p;
+        ctx.drawImage(sprite.canvas, b.x0, Math.round(b.y0 + (b.y1 - b.y0) * p));
+        ctx.globalAlpha = 1;
+        continue;
       }
-      row++;
-      if (row > 4) return;
+      // Ease out, with a hop over the gap — a flat lerp reads as a slide.
+      const e = 1 - (1 - p) * (1 - p);
+      const x = Math.round(b.x0 + (b.x1 - b.x0) * e);
+      const y = Math.round(b.y0 + (b.y1 - b.y0) * e - Math.sin(p * Math.PI) * 11);
+      ctx.drawImage(sprite.canvas, x, y);
     }
   }
 

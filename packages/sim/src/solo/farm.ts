@@ -186,6 +186,20 @@ export function applyFarmCommand(f0: FarmState, cmd: FarmCommand, now: Millis): 
       break;
     }
 
+    case "dev_grant": {
+      const digs = Math.max(0, Math.floor(cmd.digs));
+      if (digs === 0) return fail("Nothing to grant.");
+      const gained = P.mul(clickYield(farm), digs);
+      farm = {
+        ...farm,
+        potatoes: P.add(farm.potatoes, gained),
+        harvested: P.add(farm.harvested, gained),
+        lifetimeHarvested: P.add(farm.lifetimeHarvested, gained),
+      };
+      note(`dev: granted ${digs} digs' worth.`, "neutral");
+      break;
+    }
+
     case "buy_producer": {
       const producer = SOLO_PRODUCER_BY_ID[cmd.producer];
       if (!producer) return fail("No such producer.");
