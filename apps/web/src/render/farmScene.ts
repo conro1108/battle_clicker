@@ -108,6 +108,11 @@ function hashSeed(s: string): number {
   return h >>> 0;
 }
 
+/** The fractional part, always positive. Used for cheap per-index hashing. */
+function fract(x: number): number {
+  return ((x % 1) + 1) % 1;
+}
+
 function mulberry32(seed: number): () => number {
   let a = seed;
   return () => {
@@ -257,7 +262,7 @@ interface Placement {
 }
 
 const PLACEMENT: Record<solo.SoloProducerId, Placement> = {
-  plot: { band: "field", cap: 40, spread: 5.5 },
+  plot: { band: "field", cap: 95, spread: 9 },
   hand: { band: "walk", cap: 6 },
   irrigation: { band: "field", cap: 4 },
   // Slow. A tractor that crosses the screen in fifteen seconds is a tractor
@@ -369,12 +374,36 @@ interface Hand {
   carrying: boolean;
 }
 
-/** A bed, as drawn this frame. Ground point, not top-left. */
+/** One plant in a row, as drawn this frame. Ground point, not top-left. */
 interface Bed {
   x: number;
   y: number;
-  /** Wilted beds are skipped: nothing there is worth walking out for. */
+  /** Which crop row it stands in. */
+  row: number;
+  /** Wilted plants are skipped: nothing there is worth walking out for. */
   dry: boolean;
+}
+
+/** A crop row's extent, so everything else on the farm can work *with* it. */
+interface Row {
+  y: number;
+  left: number;
+  right: number;
+}
+
+/** How deep the field can get planted before it stops adding rows. */
+const FIELD_ROWS = 5;
+
+/** How long a tractor's furrow stays fresh behind it. */
+const TILL_MS = 4500;
+
+/** Seed dropped from a cloud seeder, on its way down to a specific plant. */
+interface Seed {
+  x: number;
+  y: number;
+  vy: number;
+  /** Index into `beds`. The drop is aimed, so it visibly does something. */
+  crop: number;
 }
 
 export class FarmScene {
@@ -388,8 +417,13 @@ export class FarmScene {
   private rngSeed = 1;
   private flying: Flying[] = [];
   private puffs: Puff[] = [];
-  /** The beds as laid out this frame. Deterministic, so an index is a place. */
+  /** The plants as laid out this frame. Deterministic, so an index is a place. */
   private beds: Bed[] = [];
+  /** This frame's crop rows. Rigs stand beside these; machines drive along them. */
+  private rows: Row[] = [];
+  /** Fresh furrow behind a tractor, fading. */
+  private tills: { x: number; y: number; born: number }[] = [];
+  private seeds: Seed[] = [];
   /** When each bed was last cleared. Indexed the same as `beds`. */
   private planted: number[] = [];
   private hands: Hand[] = [];
@@ -604,7 +638,7 @@ export class FarmScene {
     }
   }
 
-  private puff(x: number, y: number, kind: "dust" | "steam" | "water"): void {
+  private puff(x: number, y: number, kind: "dust" | "steam" | "water", vx?: number): void {
     if (this.puffs.length >= MAX_PUFFS) return;
     const spec = {
       dust: { color: "#b79a72", vx: -6, vy: -5, dur: 620, size: 2 },
@@ -614,7 +648,7 @@ export class FarmScene {
     this.puffs.push({
       x,
       y,
-      vx: spec.vx + (Math.random() - 0.5) * 8,
+      vx: (vx ?? spec.vx) + (Math.random() - 0.5) * 8,
       vy: spec.vy - Math.random() * 4,
       born: performance.now(),
       dur: spec.dur,
@@ -674,7 +708,7 @@ export class FarmScene {
     this.drawHills(phase, horizon);
     this.drawGround(horizon, yardY);
     this.drawBack(t, horizon, phase);
-    this.drawField(t, horizon, yardY);
+    this.drawField(t, now, horizon, yardY);
     this.drawPuffs(now, dt);
     this.drawFence(yardY);
     this.drawHoard();
@@ -829,6 +863,7 @@ export class FarmScene {
     }
 
     let x = left;
+    let idx = 0;
     for (const item of queue) {
       const sprite = item.dead ? artTinted(item.art, "#6b6b74", 0.6) : artCanvas(item.art);
       if (x + sprite.w > right) break;
@@ -837,6 +872,18 @@ export class FarmScene {
         // The stack runs, which is how you tell it from a dead one at a glance
         // without reading the colour.
         if (this.chance(0.45)) this.puff(x + 2, baseline - sprite.h - 1, "steam");
+        // Windows and panel lights, blinking on their own phase. A row of
+        // identical silhouettes standing perfectly still reads as a printed
+        // backdrop; a couple of moving pixels each reads as a night shift.
+        const beat = Math.sin(t * 1.4 + idx * 2.3);
+        if (beat > 0.1) {
+          ctx.fillStyle = beat > 0.75 ? "#fff0b8" : "#ffd782";
+          ctx.fillRect(x + 2, baseline - sprite.h + 2, 2, 1);
+        }
+        if (Math.sin(t * 0.9 + idx * 1.1) > 0.4) {
+          ctx.fillStyle = "#8ee0c0";
+          ctx.fillRect(x + sprite.w - 3, baseline - Math.floor(sprite.h / 2), 1, 1);
+        }
         // And every so often — rarely — something it made is walked down to the
         // yard. A trickle, not a conveyor: the back fence should read as a
         // place that's busy, not as a number going up.
@@ -844,11 +891,12 @@ export class FarmScene {
           this.launch(x + Math.floor(sprite.w / 2), baseline - 4, 14 + Math.random() * (SCENE_W - 28), 30);
         }
       }
+      idx++;
       x += sprite.w + 2;
     }
   }
 
-  private drawField(t: number, horizon: number, yardY: number): void {
+  private drawField(t: number, now: number, horizon: number, yardY: number): void {
     const ctx = this.ctx;
     const rng = mulberry32(this.rngSeed);
     const top = horizon + 12;
@@ -868,109 +916,142 @@ export class FarmScene {
       ctx.drawImage(sprite.canvas, x, y);
     }
 
-    // Crops next — everything else works on top of them.
+    // The field.
     //
-    // Every bed runs its own slow clock: seedling, coming up, grown, ready to
-    // lift. Left ready too long and the farm gets to it without you, which is
-    // what keeps a field with nobody working it from freezing solid.
-    const plots = shownCount(this.view.working.plot ?? 0, PLACEMENT.plot.cap, PLACEMENT.plot.spread);
+    // Plants stand shoulder to shoulder in continuous rows on one worked strip
+    // of soil, and the rows fill in as you buy land. That's the difference
+    // between a field of potatoes and a scattering of window boxes, which is
+    // what evenly-spaced individual beds looked like however many there were.
+    const plants = shownCount(this.view.working.plot ?? 0, PLACEMENT.plot.cap, PLACEMENT.plot.spread);
     const stages = cropStages(this.mark("plot"));
     const plant = artCanvas(this.mark("plot"));
     const wiltShare = 1 - this.view.soil;
-    // Laid out as an actual field: rows of beds at a fixed spacing, each row
-    // centred, filling in row by row as you buy more land. The old grid ran
-    // four deep before it started a second column, so a farm with seven beds
-    // put them all in the left-hand corner and left you looking at grass.
-    const bedRows = Math.min(4, Math.max(1, Math.ceil(plots / 8)));
-    const perBedRow = Math.ceil(plots / bedRows);
-    const span = SCENE_W - 14 - plant.w;
-    const gap =
-      perBedRow > 1
-        ? Math.max(plant.w + 2, Math.min(plant.w + 9, Math.floor(span / (perBedRow - 1))))
-        : 0;
-    const runLeft = 7 + Math.round((span - gap * (perBedRow - 1)) / 2);
+    const step = plant.w + 1;
+    const marginX = 10;
+    const usable = SCENE_W - marginX * 2;
+    // Capped well short of the full width, so the field grows as a block —
+    // deeper as well as wider. Letting one row run the whole screen before
+    // starting a second made a big farm look like a hedge.
+    const maxPerRow = Math.max(3, Math.min(Math.floor(usable / step), 13));
+    const rowCount = Math.max(0, Math.min(FIELD_ROWS, Math.ceil(plants / maxPerRow)));
+    // Evened out across however many rows that comes to, so the last row isn't
+    // a stub hanging off the bottom of the block.
+    const perRow = rowCount > 0 ? Math.min(maxPerRow, Math.ceil(plants / rowCount)) : 0;
+
+    // Rows sit in the back three-quarters, leaving headland at the front for
+    // the machines to turn on and the hands to walk down.
+    const rowGround = (r: number) => lane(0.1 + (r * 0.62) / (FIELD_ROWS - 1));
+
     this.beds.length = 0;
-    for (let i = 0; i < plots; i++) {
-      const row = Math.floor(i / perBedRow);
-      const col = i % perBedRow;
-      const x = runLeft + col * gap + Math.floor(rng() * 3) - 1;
-      const y = lane(0.06 + row * 0.2) + Math.floor(rng() * 3);
-      const dry = rng() < wiltShare;
-      if (x + plant.w > SCENE_W - 4) continue;
+    this.rows.length = 0;
+    this.drawTills(now);
 
-      // Beds are bottom-aligned to where a full-grown plant used to stand, so
-      // the shorter stages grow up out of the soil instead of down from the air.
-      const ground = y + plant.h;
-      const index = this.beds.length;
-      this.beds.push({ x, y: ground, dry });
+    for (let r = 0; r < rowCount; r++) {
+      const count = Math.min(perRow, plants - r * perRow);
+      if (count <= 0) break;
+      const width = count * step - 1;
+      const left = marginX + Math.round((usable - width) / 2);
+      const ground = rowGround(r);
+      this.rows.push({ y: ground, left, right: left + width });
 
-      // Every bed is a worked patch of soil whatever's standing on it. Without
-      // this the field goes back to being lawn every time a crop is lifted —
-      // the land you bought should be visible as land, not only as plants.
-      ctx.fillStyle = dry ? "#8a7a3c" : DIRT;
-      ctx.fillRect(x - 1, ground - 2, plant.w + 2, 3);
+      // One continuous worked strip per row, drawn before the plants standing
+      // on it. Lifting a crop leaves soil behind, not lawn.
+      ctx.fillStyle = this.view.soil < 0.7 ? "#8a7a3c" : DIRT;
+      ctx.fillRect(left - 2, ground - 2, width + 4, 3);
       ctx.fillStyle = DIRT_DARK;
-      ctx.fillRect(x - 1, ground + 1, plant.w + 2, 1);
-      // Staggered on first sight, so a farm doesn't come up as one green wave.
-      // `Math.random` rather than the seeded stream: consuming that here would
-      // shift every layout decision after it on the frame this bed first drew.
-      this.planted[index] ??= t - Math.random() * GROW_SECONDS;
+      ctx.fillRect(left - 2, ground + 1, width + 4, 1);
 
-      const age = t - this.planted[index]!;
-      const stage = age >= GROW_SECONDS ? 3 : age >= GROW_SECONDS * 0.6 ? 2 : age >= GROW_SECONDS * 0.25 ? 1 : 0;
-      // Wilt keeps the mark's silhouette and loses its colour, so an upgraded
-      // bed still reads as an upgraded bed while it's struggling.
-      const art = stages[stage]!;
-      const sprite = artCanvas(dry ? withered(art) : art);
-      // A 1px sway on a slow sine, offset per plant — enough that the field
-      // isn't a still photograph, cheap enough to run at 60fps.
-      const sway = Math.sin(t * 1.3 + i) > 0.6 ? 1 : 0;
-      ctx.drawImage(sprite.canvas, x + sway, ground - sprite.h);
+      for (let c = 0; c < count; c++) {
+        const i = r * perRow + c;
+        const x = left + c * step;
+        // Deterministic per plant rather than drawn from the layout's rng
+        // stream, so wilt doesn't reshuffle when the field changes size.
+        const dry = fract(Math.sin(i * 12.9898) * 43758.5453) < wiltShare;
+        this.beds.push({ x, y: ground, row: r, dry });
 
-      if (!dry && age > GROW_SECONDS + RIPE_SECONDS) this.lift(index, t);
-    }
+        // Neighbours ripen together: the stagger is a smooth function of where
+        // the plant stands, so the field comes on in patches like a real one
+        // instead of flickering at random.
+        this.planted[i] ??= t - GROW_SECONDS * (0.5 + 0.5 * Math.sin(c * 0.7 + r * 2.1));
 
-    // Standing kit: sprinklers, planted in the rows.
-    const sprinklers = shownCount(this.view.working.irrigation ?? 0, PLACEMENT.irrigation.cap);
-    const sprinkler = artCanvas(this.mark("irrigation"));
-    for (let i = 0; i < sprinklers; i++) {
-      const x = 14 + i * 42;
-      if (x + sprinkler.w > SCENE_W - 6) break;
-      const y = lane(0.2) - sprinkler.h;
-      ctx.drawImage(sprinkler.canvas, x, y);
-      // A rig that isn't throwing water is a pole. Droplets sweep with a slow
-      // sine, so the arc reads as one head turning rather than a static spray.
-      if (this.chance(3.5)) {
-        const swing = Math.sin(t * 0.9 + i) * 7;
-        this.puff(x + 6 + swing, y + 2, "water");
+        const age = t - this.planted[i]!;
+        const stage =
+          age >= GROW_SECONDS ? 3 : age >= GROW_SECONDS * 0.6 ? 2 : age >= GROW_SECONDS * 0.25 ? 1 : 0;
+        // Wilt keeps the mark's silhouette and loses its colour, so an upgraded
+        // bed still reads as an upgraded bed while it's struggling.
+        const art = stages[stage]!;
+        const sprite = artCanvas(dry ? withered(art) : art);
+        // A 1px sway on a slow sine, offset along the row — the whole field
+        // leans together in a wave, which is cheap and reads as wind.
+        const sway = Math.sin(t * 1.1 + c * 0.4 + r) > 0.6 ? 1 : 0;
+        ctx.drawImage(sprite.canvas, x + sway, ground - sprite.h);
+
+        if (!dry && age > GROW_SECONDS + RIPE_SECONDS) this.lift(i, t);
       }
     }
 
-    // Machines drive; that's the difference between owning one and it working.
-    for (const [id, at] of [
-      ["tractor", 0.44],
-      ["harvester", 0.66],
+    // Irrigation stands at the ends of the rows it waters, alternating sides,
+    // and throws across them. A rig in the middle of nowhere was just a pole.
+    const sprinklers = shownCount(this.view.working.irrigation ?? 0, PLACEMENT.irrigation.cap);
+    const sprinkler = artCanvas(this.mark("irrigation"));
+    for (let i = 0; i < sprinklers; i++) {
+      const row = this.rows[i % Math.max(1, this.rows.length)];
+      const side = i % 2 === 0 ? 1 : -1;
+      const x = row
+        ? side > 0
+          ? Math.min(SCENE_W - sprinkler.w - 2, row.right + 3)
+          : Math.max(2, row.left - sprinkler.w - 3)
+        : 14 + i * 42;
+      const ground = row ? row.y : lane(0.2);
+      ctx.drawImage(sprinkler.canvas, x, ground - sprinkler.h);
+      // Droplets sweep out over the crop on a slow sine, so the arc reads as
+      // one head turning rather than a static spray.
+      if (this.chance(5)) {
+        const reach = 10 + (0.5 + 0.5 * Math.sin(t * 0.8 + i)) * 22;
+        this.puff(x + sprinkler.w / 2, ground - sprinkler.h + 2, "water", -side * reach);
+      }
+    }
+
+    // Machines work the rows: they drive the headland just in front of a row,
+    // reach back over it, and something happens to the crop as they pass.
+    for (const [id, fallback] of [
+      ["tractor", 0.5],
+      ["harvester", 0.78],
     ] as const) {
       const place = PLACEMENT[id];
       const n = shownCount(this.view.working[id] ?? 0, place.cap);
       const sprite = artCanvas(this.mark(id));
       const span = SCENE_W + sprite.w;
       for (let i = 0; i < n; i++) {
-        const x =
-          Math.floor((((t * place.speed! + (i * span) / n) % span) + span) % span) - sprite.w;
-        const ground = lane(at);
+        // The combine takes the rows from the front, the tractor from the back,
+        // so on a farm with two rows they aren't nose to tail on the same one.
+        // With nothing planted they fall back to their own lanes on open grass.
+        const pick =
+          id === "harvester" ? this.rows.length - 1 - (i % Math.max(1, this.rows.length)) : i % Math.max(1, this.rows.length);
+        const row = this.rows.length > (id === "harvester" && this.rows.length < 2 ? 1 : 0) ? this.rows[pick] : undefined;
+        const ground = row ? row.y + 5 : lane(fallback);
+        const x = Math.floor((((t * place.speed! + (i * span) / n) % span) + span) % span) - sprite.w;
         ctx.drawImage(sprite.canvas, x, ground - sprite.h);
-        // Dust off the back wheels. A machine that leaves nothing behind it is
-        // a machine parked in a field.
         if (this.chance(2.5)) this.puff(x + 1, ground - 2, "dust");
-        // And it works what it drives over: any ripe bed under the header comes
-        // up as it passes. That's the difference between a tractor crossing a
-        // field and a tractor farming one.
+
+        if (id === "tractor") {
+          // A tractor ploughs. The furrow it leaves is the whole reason to
+          // watch one cross a field.
+          if (this.tills.length < 90 && this.chance(14)) {
+            this.tills.push({ x: x + 1, y: ground - 1, born: now });
+          }
+        }
+
+        // Both of them lift what's ready under the header as they pass. The
+        // combine throws it out of the chute; the tractor just turns it up.
+        const reach = id === "harvester" ? 6 : 2;
         for (let b = 0; b < this.beds.length; b++) {
           const bed = this.beds[b]!;
-          if (bed.dry || Math.abs(bed.y - ground) > 10) continue;
-          if (bed.x < x || bed.x > x + sprite.w) continue;
-          if (this.ripeness(b, t) >= 1) this.lift(b, t);
+          if (bed.dry || Math.abs(bed.y - (ground - 5)) > 3) continue;
+          if (bed.x < x - reach || bed.x > x + sprite.w + reach) continue;
+          if (this.ripeness(b, t) < 1) continue;
+          this.planted[b] = t;
+          this.launch(x + 2, ground - sprite.h - 2, 14 + Math.random() * (SCENE_W - 28), 34);
         }
       }
     }
@@ -991,7 +1072,8 @@ export class FarmScene {
       }
     }
 
-    // The sky tiers, above everything on the ground.
+    // The sky tiers, above everything on the ground — and each of them doing
+    // its own job to the field below rather than sliding past it.
     for (const id of ["seeder", "orbital", "singularity"] as const) {
       const place = PLACEMENT[id];
       const n = shownCount(this.view.working[id] ?? 0, place.cap);
@@ -999,16 +1081,123 @@ export class FarmScene {
       for (let i = 0; i < n; i++) {
         if (place.speed) {
           const span = SCENE_W + sprite.w;
-          const x =
-            Math.floor((((t * place.speed + i * 80) % span) + span) % span) - sprite.w;
-          ctx.drawImage(sprite.canvas, x, 6 + i * 14);
+          const x = Math.floor((((t * place.speed + i * 80) % span) + span) % span) - sprite.w;
+          const y = 6 + i * 14;
+          ctx.drawImage(sprite.canvas, x, y);
+
+          if (id === "seeder") {
+            // It seeds. Each drop is aimed at a plant and brings it on — the
+            // tier that says "the weather works for you now" ought to be
+            // visibly doing something to the weather's job.
+            if (this.seeds.length < 20 && this.chance(1.1)) this.dropSeed(x + sprite.w / 2, y + sprite.h);
+          } else {
+            // The greenhouse runs a grow-light down onto the rows in sweeps.
+            const cycle = (t * 0.14 + i * 0.37) % 1;
+            if (cycle < 0.22) this.drawBeam(x + sprite.w / 2, y + sprite.h, t, cycle / 0.22);
+          }
         } else {
-          // The singularity doesn't travel. It hangs there and breathes.
+          // The singularity doesn't travel. It hangs there and breathes, and
+          // every few seconds something it made simply arrives in the yard.
           const y = 10 + i * 20 + (Math.sin(t * 0.9 + i) > 0 ? 1 : 0);
-          ctx.drawImage(sprite.canvas, 20 + i * 44, y);
+          const x = 20 + i * 44;
+          this.drawPulse(x + sprite.w / 2, y + sprite.h / 2, t + i);
+          ctx.drawImage(sprite.canvas, x, y);
+          if (this.chance(0.22)) {
+            this.launch(x + sprite.w / 2, y + sprite.h, 14 + Math.random() * (SCENE_W - 28), 20);
+          }
         }
       }
     }
+
+    this.stepSeeds(t);
+  }
+
+  /** Furrow behind a tractor: fresh dark soil that grasses back over. */
+  private drawTills(now: number): void {
+    const ctx = this.ctx;
+    this.tills = this.tills.filter((till) => {
+      const age = now - till.born;
+      if (age > TILL_MS) return false;
+      ctx.globalAlpha = 0.55 * (1 - age / TILL_MS);
+      ctx.fillStyle = DIRT_DARK;
+      ctx.fillRect(Math.round(till.x), Math.round(till.y), 3, 2);
+      ctx.globalAlpha = 1;
+      return true;
+    });
+  }
+
+  /** Aim a seed at a plant that could use one. */
+  private dropSeed(x: number, y: number): void {
+    if (this.beds.length === 0) return;
+    // The least-grown plant in range, so a drop visibly changes something.
+    let pick = Math.floor(Math.random() * this.beds.length);
+    for (let i = 0; i < 4; i++) {
+      const other = Math.floor(Math.random() * this.beds.length);
+      if ((this.planted[other] ?? 0) > (this.planted[pick] ?? 0)) pick = other;
+    }
+    this.seeds.push({ x, y, vy: 26 + Math.random() * 10, crop: pick });
+  }
+
+  /** Seeds falling, and what they do when they land. */
+  private stepSeeds(t: number): void {
+    const ctx = this.ctx;
+    ctx.fillStyle = "#e6d78a";
+    this.seeds = this.seeds.filter((seed) => {
+      seed.y += seed.vy * this.dt;
+      const bed = this.beds[seed.crop];
+      if (!bed || seed.y >= bed.y) {
+        if (bed) {
+          // Brought on by a quarter of its cycle, and a puff where it landed.
+          this.planted[seed.crop] = Math.min(t, (this.planted[seed.crop] ?? t) - GROW_SECONDS * 0.25);
+          this.puff(bed.x + 3, bed.y - 2, "water");
+        }
+        return false;
+      }
+      // Drift toward the plant it's aimed at, so the drop reads as deliberate.
+      seed.x += (bed.x + 3 - seed.x) * Math.min(1, this.dt * 1.6);
+      ctx.fillRect(Math.round(seed.x), Math.round(seed.y), 1, 2);
+      return true;
+    });
+  }
+
+  /** A grow-light sweeping down from an orbital greenhouse onto the rows. */
+  private drawBeam(x: number, y: number, t: number, progress: number): void {
+    const ctx = this.ctx;
+    const row = this.rows[this.rows.length - 1];
+    const floor = row ? row.y : this.yardTop() - 6;
+    if (floor <= y) return;
+    // Fades in and out over the sweep rather than snapping on.
+    ctx.globalAlpha = 0.16 * Math.sin(progress * Math.PI);
+    ctx.fillStyle = "#d8f5b0";
+    const half = 3;
+    ctx.fillRect(Math.round(x) - half, Math.round(y), half * 2, Math.round(floor - y));
+    ctx.globalAlpha = 1;
+    // Anything under it comes on a little, which is the point of the thing.
+    if (this.chance(3)) {
+      for (let b = 0; b < this.beds.length; b++) {
+        const bed = this.beds[b]!;
+        if (Math.abs(bed.x + 3 - x) > half + 2) continue;
+        this.planted[b] = Math.min(t, (this.planted[b] ?? t) - GROW_SECONDS * 0.06);
+      }
+    }
+  }
+
+  /** The singularity, breathing. Four points on the grid, no rotation. */
+  private drawPulse(cx: number, cy: number, t: number): void {
+    const ctx = this.ctx;
+    const phase = (t * 0.55) % 1;
+    const r = Math.round(4 + phase * 9);
+    ctx.globalAlpha = 0.5 * (1 - phase);
+    ctx.fillStyle = "#c9a4f0";
+    for (const [dx, dy] of [
+      [0, -r],
+      [0, r],
+      [-r, 0],
+      [r, 0],
+    ] as const) {
+      ctx.fillRect(Math.round(cx + dx), Math.round(cy + dy), 1, 1);
+    }
+    ctx.globalAlpha = 1;
   }
 
   /** Dust, steam and water, drawn between the field and the fence. */
