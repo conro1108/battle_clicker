@@ -21,14 +21,17 @@ import type { solo } from "@battle/sim";
 
 import {
   BARN,
+  BARROW,
   CLOUD,
   CRATE,
+  ELEVATOR,
   FENCE,
   cropStages,
   FLOWERS,
   POTATO_SPRITE,
   PRODUCER_MARKS,
   SACK,
+  SHED,
   SILO,
   TREE,
   TUFT,
@@ -128,132 +131,145 @@ function mulberry32(seed: number): () => number {
 // ---------------------------------------------------------------------------
 
 /**
- * The yard is a high-water mark, not a number.
+ * The yard doesn't count your potatoes. It shows what you've built with them.
  *
- * The obvious way to draw a hoard is place value — loose ones, tens in sacks,
- * hundreds in crates — and it reads beautifully right up until the moment you
- * cross a thousand, when the whole yard empties out to make room for a single
- * crate. Getting richer is the one thing that shouldn't clear the yard, and no
- * amount of carry animation talks a player out of what they just watched.
+ * Two earlier goes at this both counted, and counting is the problem. Place
+ * value emptied the whole yard every time you crossed a power of ten. Rows of
+ * units fixed that but replaced it with a bar chart: forty identical sprites
+ * where the only difference between a millionaire and a billionaire was three
+ * more crates in the same strip.
  *
- * So the yard stopped counting. Four rows, back to front, each holding ten of
- * its own thing, each covering a stretch of magnitudes: the first ten potatoes
- * are ten potatoes, then sacks carry you to ten thousand, crates to a billion,
- * silos to the end of the price list. A row that has filled stays filled.
- * Earning only ever adds; only spending takes anything away.
+ * So: a build-out. The yard passes through a fixed sequence of stages, each
+ * arriving at a threshold and each *adding one thing* to a spot that is its
+ * spot forever — a sack, then another, then a crate, a barrow, a shed, a silo,
+ * eventually a grain elevator standing over the fence line. You don't read the
+ * yard, you recognise it. Between stages the working heap grows, so there's
+ * always something moving, and it's the heap that gets hauled into whatever
+ * arrives next.
  *
- * The churn lives at the front, in loose potatoes counting 0-9 toward the next
- * unit. That one *does* reset — but it resets by paying out something
- * permanent, which is the good kind. Exact figures are in the HUD.
+ * Thresholds are roughly one stage per four-and-a-bit times richer. That's
+ * granular enough that clearing out your bank for an upgrade visibly costs you
+ * a building or two, and you watch them come back.
  */
-interface Rung {
+interface Prop {
   art: Art;
-  cap: number;
-  /** Pixels between neighbours in the row, so nothing ever sits on anything. */
-  gap: number;
-  /** The stretch of magnitudes this row fills across, as log10 of the hoard. */
-  from: number;
-  to: number;
-  /** Off centre, where a row would otherwise run into the loose corner. */
-  nudge?: number;
+  /** Left edge, in buffer pixels. */
+  x: number;
+  /** Which depth station it stands on: 0 is the front edge of the yard. */
+  row: number;
 }
 
-const HOARD_RUNGS: Rung[] = [
-  // Linear rather than logarithmic: below ten, one potato is one potato. Held
-  // left, or a full row of it runs straight into the loose potatoes at the
-  // front right and the two read as one long strip of the same thing.
-  { art: POTATO_SPRITE, cap: 10, gap: 2, from: 0, to: 1, nudge: -22 },
-  { art: SACK, cap: 10, gap: 2, from: 1, to: 4 },
-  { art: CRATE, cap: 10, gap: 2, from: 4, to: 9 },
-  { art: SILO, cap: 10, gap: 3, from: 9, to: 18 },
+interface Stage {
+  /** Potatoes on hand at which this stage arrives. */
+  at: number;
+  /** How big the working heap grows before the next stage takes it away. */
+  heap: number;
+  /** The one thing this stage puts in the yard. The early stages are heap only. */
+  add?: Prop;
+}
+
+const p = (art: Art, x: number, row: number): Prop => ({ art, x, row });
+
+/**
+ * The build-out, in order. Positions are hand-placed rather than generated:
+ * the left of the yard is the working end (sacks, crates, sheds), the right is
+ * the heap with the tall stuff standing behind it.
+ *
+ * It runs out at around a hundred trillion, which is past the last thing on the
+ * price list. A yard with everything in it is a fine place for the ladder to
+ * stop.
+ */
+export const YARD: Stage[] = [
+  { at: 0, heap: 3 },
+  { at: 3, heap: 6 },
+  { at: 10, heap: 10 },
+  { at: 30, heap: 15 },
+  { at: 80, heap: 21 },
+  { at: 200, heap: 21, add: p(SACK, 6, 0) },
+  { at: 900, heap: 21, add: p(SACK, 20, 0) },
+  { at: 4e3, heap: 21, add: p(CRATE, 2, 1) },
+  { at: 2e4, heap: 21, add: p(BARROW, 36, 0) },
+  { at: 8e4, heap: 21, add: p(SACK, 52, 0) },
+  { at: 3e5, heap: 21, add: p(CRATE, 20, 1) },
+  { at: 1.5e6, heap: 21, add: p(SHED, 8, 2) },
+  { at: 6e6, heap: 21, add: p(SILO, 90, 3) },
+  { at: 3e7, heap: 21, add: p(CRATE, 38, 1) },
+  { at: 1.2e8, heap: 21, add: p(SACK, 68, 0) },
+  { at: 5e8, heap: 21, add: p(SILO, 106, 3) },
+  { at: 2e9, heap: 21, add: p(CRATE, 56, 1) },
+  { at: 1e10, heap: 21, add: p(ELEVATOR, 52, 3) },
+  { at: 4e10, heap: 21, add: p(CRATE, 74, 1) },
+  { at: 2e11, heap: 21, add: p(SILO, 122, 3) },
+  { at: 8e11, heap: 21, add: p(CRATE, 92, 1) },
+  { at: 3e12, heap: 21, add: p(SHED, 40, 2) },
+  { at: 1.5e13, heap: 21, add: p(SILO, 138, 3) },
+  { at: 6e13, heap: 21, add: p(ELEVATOR, 28, 3) },
 ];
 
-/** How full one row is, 0..cap, as a fraction rather than a count. */
-function rungFill(i: number, amount: number): number {
-  const r = HOARD_RUNGS[i]!;
-  if (i === 0) return Math.max(0, Math.min(r.cap, amount));
-  const l = amount > 1 ? Math.log10(amount) : 0;
-  return Math.max(0, Math.min(r.cap, ((l - r.from) / (r.to - r.from)) * r.cap));
+interface YardLayout {
+  /** Index into YARD. Everything up to and including it is standing. */
+  stage: number;
+  /** Potatoes in the working heap, 0..the stage's cap. */
+  heap: number;
 }
 
-interface HoardLayout {
-  /** Units standing in each row, smallest first. */
-  rows: number[];
-  /** Everything in the yard. Moves one at a time, which is what gets animated. */
-  units: number;
-  /** 0-9 loose potatoes at the front: progress toward the next unit. */
-  loose: number;
-}
-
-export function hoardLayout(amount: number): HoardLayout {
+export function yardLayout(amount: number): YardLayout {
   const a = Math.max(0, amount);
-  const rows: number[] = [];
-  let units = 0;
-  let loose = 0;
-  for (let i = 0; i < HOARD_RUNGS.length; i++) {
-    const fill = rungFill(i, a);
-    const whole = Math.floor(fill);
-    rows.push(whole);
-    units += whole;
-    // The rows' spans are contiguous, so exactly one of them is ever partly
-    // filled, and its remainder is what the loose potatoes are counting out.
-    // Not the first row, though — down there the yard is already exact.
-    if (i > 0 && fill > 0 && whole < HOARD_RUNGS[i]!.cap) loose = Math.floor((fill - whole) * 10);
+  let stage = 0;
+  while (stage + 1 < YARD.length && a >= YARD[stage + 1]!.at) stage++;
+
+  const here = YARD[stage]!;
+  const next = YARD[stage + 1];
+  let frac = 1;
+  if (next) {
+    // The first stage counts potatoes; every stage after it counts magnitudes,
+    // because that's the only scale on which the later ones are the same size.
+    frac =
+      stage === 0
+        ? a / next.at
+        : (Math.log10(a) - Math.log10(here.at)) / (Math.log10(next.at) - Math.log10(here.at));
   }
-  return { rows, units, loose };
+  return { stage, heap: Math.max(0, Math.min(here.heap, Math.floor(frac * here.heap))) };
 }
 
-function sameLayout(a: HoardLayout, b: HoardLayout): boolean {
-  return a.units === b.units && a.loose === b.loose;
-}
-
-/** Which row the nth unit in the yard stands in, and which slot along it. */
-function unitPlace(n: number): { rung: number; j: number } {
-  let rung = 0;
-  let j = Math.max(0, n);
-  while (rung < HOARD_RUNGS.length - 1 && j >= HOARD_RUNGS[rung]!.cap) {
-    j -= HOARD_RUNGS[rung]!.cap;
-    rung++;
-  }
-  return { rung, j: Math.min(j, HOARD_RUNGS[rung]!.cap - 1) };
+function sameLayout(a: YardLayout, b: YardLayout): boolean {
+  return a.stage === b.stage && a.heap === b.heap;
 }
 
 /**
- * Where a row's units stand. Fixed slots, spaced by the sprite's own width, so
- * a row can't reflow as it fills and can't crowd itself once it's full — the
- * old yard packed a rising count into a fixed band, which is how nine of
- * anything ended up as a smear.
+ * The working heap: a mound, front-right, where every dug potato is already
+ * being thrown. Six wide at the base, each course half a potato in from the one
+ * below, and the potatoes overlapping by a pixel — a heap of anything touches
+ * itself, and spaced out on a grid it reads as a row of items instead.
+ *
+ * Courses fill from the middle outward, so three potatoes are a small pile
+ * rather than the left end of a big one.
  */
-const slotCache = new Map<number, number[]>();
+const HEAP_BASE = 6;
+const HEAP_X = 121;
+const HEAP_STEP = 6;
+export const HEAP_CAP = (HEAP_BASE * (HEAP_BASE + 1)) / 2;
 
-function rowSlots(i: number): number[] {
-  let slots = slotCache.get(i);
-  if (!slots) {
-    const r = HOARD_RUNGS[i]!;
-    const step = artCanvas(r.art).w + r.gap;
-    const width = step * r.cap - r.gap;
-    const left = Math.max(2, Math.round((SCENE_W - width) / 2) + (r.nudge ?? 0));
-    slots = Array.from({ length: r.cap }, (_, j) => left + j * step);
-    slotCache.set(i, slots);
+let heapCache: { x: number; y: number }[] | null = null;
+
+function heapSlots(): { x: number; y: number }[] {
+  if (!heapCache) {
+    const h = artCanvas(POTATO_SPRITE).h;
+    heapCache = [];
+    for (let course = 0; course < HEAP_BASE; course++) {
+      const n = HEAP_BASE - course;
+      const order = Array.from({ length: n }, (_, i) => i).sort(
+        (a, b) => Math.abs(a - (n - 1) / 2) - Math.abs(b - (n - 1) / 2),
+      );
+      for (const i of order) {
+        heapCache.push({
+          x: HEAP_X + course * 3 + i * HEAP_STEP,
+          y: -h - course * 3 - (i % 2),
+        });
+      }
+    }
   }
-  return slots;
-}
-
-/**
- * The loose potatoes, front-right — where a dug potato is thrown, so what you
- * fling lands on the pile it's counting. Two courses, offsets from the yard's
- * front baseline.
- */
-function looseSlots(): { x: number; y: number }[] {
-  const h = artCanvas(POTATO_SPRITE).h;
-  return Array.from({ length: 9 }, (_, n) => {
-    const course = n >= 5 ? 1 : 0;
-    const k = n - course * 5;
-    return {
-      x: SCENE_W - 10 - (4 - k) * 9 + course * 4,
-      y: -h - course * 4 - (k % 2),
-    };
-  });
+  return heapCache;
 }
 
 /**
@@ -370,6 +386,20 @@ const MAX_PUFFS = 40;
 /** Nothing on this canvas needs more potatoes than this in the air at once. */
 const MAX_FLYING = 20;
 
+/** How long a building takes to come out of the ground, or to go back into it. */
+const BUILD_MS = 520;
+
+/**
+ * How much of an arriving building is still underground, in pixels, `age`
+ * milliseconds in. Rising eases out so it lands rather than stops; sinking is
+ * linear, because something you can no longer afford shouldn't linger.
+ */
+export function buildHidden(age: number, up: boolean, height: number): number {
+  const t = Math.max(0, Math.min(1, age / BUILD_MS));
+  const shown = up ? 1 - (1 - t) * (1 - t) : 1 - t;
+  return Math.round((1 - shown) * height);
+}
+
 // ---------------------------------------------------------------------------
 // The crop cycle, and the people who work it
 // ---------------------------------------------------------------------------
@@ -469,9 +499,14 @@ export class FarmScene {
    * buy a tractor and you watch the crates come back apart.
    */
   private shown = -1;
-  private shownLayout = hoardLayout(0);
+  private shownLayout = yardLayout(0);
   private bundles: Bundle[] = [];
-  private lastBundleAt = 0;
+  /**
+   * Stages part-way through arriving or leaving, as stage index to the moment
+   * it started. A prop on this list is drawn sliding out of or down into the
+   * ground rather than just standing there.
+   */
+  private building = new Map<number, { born: number; up: boolean }>();
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -745,7 +780,7 @@ export class FarmScene {
     this.drawField(t, now, horizon, yardY);
     this.drawPuffs(now, dt);
     this.drawFence(yardY);
-    this.drawHoard();
+    this.drawHoard(now);
     // The hands walk between the two bands, so they're drawn after both — and
     // after the field has said where this frame's beds are.
     this.stepHands(t, dt, shownCount(this.view.working.hand ?? 0, PLACEMENT.hand.cap), yardY);
@@ -1271,99 +1306,102 @@ export class FarmScene {
       // First frame after mount: adopt the hoard rather than animating up from
       // zero, or every reload replays your whole farm's history at you.
       this.shown = target;
-      this.shownLayout = hoardLayout(target);
+      this.shownLayout = yardLayout(target);
       return;
     }
 
     const k = 1 - Math.exp(-dt * 3.2);
     const gap = target - this.shown;
     this.shown += gap * k;
-    // Snap once it's close, so the digits settle instead of creeping forever.
+    // Snap once it's close, so the heap settles instead of creeping forever.
     if (Math.abs(gap) < Math.max(0.5, target * 1e-4)) this.shown = target;
 
-    const next = hoardLayout(this.shown);
+    const next = yardLayout(this.shown);
     if (!sameLayout(next, this.shownLayout)) {
-      this.fireBundles(this.shownLayout, next, now);
+      if (next.stage !== this.shownLayout.stage) this.turnStage(this.shownLayout.stage, next.stage, now);
       this.shownLayout = next;
     }
 
     const cutoff = now - 900;
     if (this.bundles.length > 0) this.bundles = this.bundles.filter((b) => b.born + b.dur > cutoff);
+    for (const [stage, run] of this.building) {
+      if (run.born + BUILD_MS < now) this.building.delete(stage);
+    }
   }
 
   /**
-   * How far back in the yard a row stands. 0 is the loose potatoes at the front
-   * edge; each row above that steps back by the same amount, so the yard reads
-   * as depth rather than as a stack of shelves. On a short screen the steps
-   * tighten instead of the back rows walking off the top.
+   * How far back in the yard something stands. 0 is the heap at the front edge;
+   * each station back steps by the same amount, so the yard reads as depth
+   * rather than as a stack of shelves. On a short screen the steps tighten
+   * instead of the back row walking off the top.
    */
   private station(i: number): number {
     const step = Math.max(5, Math.min(9, Math.floor((this.sh - this.yardTop() - 12) / 4)));
     return this.sh - 4 - i * step;
   }
 
+  /** Where a prop's feet are, once it's finished arriving. */
+  private propFoot(prop: Prop): number {
+    return this.station(prop.row);
+  }
+
   /**
-   * What changed between two readings of the yard, staged as sprites in motion.
-   * A unit gained means the loose potatoes at the front just added up to
-   * something and are being carried into it; a unit lost means you spent it.
+   * Crossing a threshold. Going up, the heap gets carried into whatever just
+   * arrived and the new thing rises out of the ground behind a cloud of its own
+   * dust; going down, it sinks back into the ground it came out of. Either way
+   * the stage that moved is the loudest thing on the canvas for half a second,
+   * because it's the only part of the yard that ever changes shape.
    */
-  private fireBundles(from: HoardLayout, to: HoardLayout, now: number): void {
-    if (to.units === from.units) return;
-    if (now - this.lastBundleAt < 140 || this.bundles.length > 30) return;
-    this.lastBundleAt = now;
+  private turnStage(from: number, to: number, now: number): void {
+    const up = to > from;
+    // A purchase can drop several stages at once. Each one gets its own moment,
+    // stacked up in sequence, so a big spend reads as a demolition rather than
+    // as everything blinking out on the same frame.
+    const moved: number[] = [];
+    for (let s = Math.min(from, to) + 1; s <= Math.max(from, to); s++) moved.push(s);
+    if (!up) moved.reverse();
 
-    const gained = to.units > from.units;
-    // The unit that just appeared, or the one that just left — same slot either
-    // way, since rows fill and empty from the same end.
-    const place = unitPlace((gained ? to.units : from.units) - 1);
-    const art = HOARD_RUNGS[place.rung]!.art;
-    const sprite = artCanvas(art);
-    const x = rowSlots(place.rung)[place.j]!;
-    const y = this.station(place.rung + 1) - sprite.h;
-
-    if (!gained) {
-      for (let i = 0; i < 2; i++) {
+    for (const [i, stage] of moved.entries()) {
+      const prop = YARD[stage]?.add;
+      if (!prop) continue;
+      const born = now + i * 120;
+      this.building.set(stage, { born, up });
+      const sprite = artCanvas(prop.art);
+      const foot = this.propFoot(prop);
+      // Dust at the feet, thrown outward — the same puffs the machines use.
+      for (let d = 0; d < 4; d++) {
+        this.puff(prop.x + 2 + (d * sprite.w) / 3, foot - 2, "dust", d < 2 ? -14 : 14);
+      }
+      if (!up || this.bundles.length > 24) continue;
+      // The heap, going into it. Three potatoes is enough to read as "that pile
+      // went in there" without burying the thing that just arrived.
+      const heap = heapSlots();
+      const base = this.station(0);
+      for (let n = 0; n < 3; n++) {
+        const slot = heap[n * 3]!;
         this.bundles.push({
-          art,
-          x0: x + i * 3 - 1,
-          y0: y,
-          x1: x,
-          y1: y - 9,
-          born: now + i * 70,
-          dur: 320,
-          poof: true,
+          art: POTATO_SPRITE,
+          x0: slot.x,
+          y0: base + slot.y,
+          x1: prop.x + Math.floor(sprite.w / 2) - 3 + n * 2,
+          y1: foot - sprite.h + 2,
+          born: born + n * 80,
+          dur: 420,
+          poof: false,
         });
       }
-      return;
-    }
-
-    // Carried from the front of the yard, where the loose ones were sitting a
-    // frame ago, so the reset of that little pile has somewhere to have gone.
-    const home = looseSlots()[4]!;
-    const base = this.station(0);
-    for (let i = 0; i < 3; i++) {
-      this.bundles.push({
-        art: POTATO_SPRITE,
-        x0: home.x - i * 6,
-        y0: base + home.y - (i % 2) * 3,
-        x1: x + i * 2,
-        y1: y + 2,
-        born: now + i * 70,
-        dur: 400,
-        poof: false,
-      });
     }
   }
 
   /**
-   * The yard: four rows of stuff, back to front, plus whatever loose potatoes
-   * haven't been bundled yet.
+   * The yard: everything built so far, back stations first, and the working
+   * heap in front of the lot.
    */
-  private drawHoard(): void {
+  private drawHoard(now: number): void {
     const ctx = this.ctx;
     const layout = this.shownLayout;
 
-    if (this.shown < 1) {
+    if (this.shown < 1 && this.building.size === 0) {
       // Empty yard, but not an empty frame — a couple of strays in the dirt.
       const spud = artCanvas(POTATO_SPRITE);
       const baseline = this.station(0);
@@ -1372,27 +1410,49 @@ export class FarmScene {
       return;
     }
 
-    // Back row first, so the rows in front of it overlap it rather than the
-    // other way round — a silo is taller than the gap between two stations.
-    for (let i = HOARD_RUNGS.length - 1; i >= 0; i--) {
-      const n = layout.rows[i]!;
-      if (n <= 0) continue;
-      const sprite = artCanvas(HOARD_RUNGS[i]!.art);
-      const baseline = this.station(i + 1);
-      const slots = rowSlots(i);
-      for (let j = 0; j < n; j++) {
-        // Loose potatoes sit unevenly; anything crated does not.
-        const wobble = i === 0 ? j % 2 : 0;
-        ctx.drawImage(sprite.canvas, slots[j]!, baseline - sprite.h - wobble);
+    // Back to front, so a silo is behind the crates rather than sitting on
+    // them — nothing here is drawn scaled, so depth is only ever draw order.
+    for (let row = 3; row >= 0; row--) {
+      for (let stage = 0; stage < YARD.length; stage++) {
+        const prop = YARD[stage]?.add;
+        if (!prop || prop.row !== row) continue;
+        const run = this.building.get(stage);
+        if (stage > layout.stage && !run) continue;
+        this.drawProp(prop, run, now);
       }
     }
 
     const spud = artCanvas(POTATO_SPRITE);
     const baseline = this.station(0);
-    const loose = looseSlots();
-    for (let j = 0; j < layout.loose; j++) {
-      ctx.drawImage(spud.canvas, loose[j]!.x, baseline + loose[j]!.y);
+    const heap = heapSlots();
+    for (let j = 0; j < layout.heap; j++) {
+      ctx.drawImage(spud.canvas, heap[j]!.x, baseline + heap[j]!.y);
     }
+  }
+
+  /**
+   * One thing in the yard, standing or in the middle of arriving. Arrivals rise
+   * out of the ground: the sprite is clipped to the footprint it will end up
+   * occupying and slid up into it, which costs a clip rect but keeps every
+   * pixel of the art on the grid.
+   */
+  private drawProp(prop: Prop, run: { born: number; up: boolean } | undefined, now: number): void {
+    const ctx = this.ctx;
+    const sprite = artCanvas(prop.art);
+    const top = this.propFoot(prop) - sprite.h;
+    if (!run) {
+      ctx.drawImage(sprite.canvas, prop.x, top);
+      return;
+    }
+
+    const hidden = buildHidden(now - run.born, run.up, sprite.h);
+    if (hidden >= sprite.h) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(prop.x, top, sprite.w, sprite.h);
+    ctx.clip();
+    ctx.drawImage(sprite.canvas, prop.x, top + hidden);
+    ctx.restore();
   }
 
   /** Potatoes being carried between columns, drawn over the columns themselves. */

@@ -404,6 +404,74 @@ export const SILO: Art = {
   palette: { k: K, ...METAL },
 };
 
+/**
+ * A barrow of potatoes: the first thing in the yard that isn't just potatoes,
+ * and the first hint that this is becoming an operation.
+ */
+export const BARROW: Art = {
+  rows: [
+    "....pp.pp....",
+    "..ppplpppdp..",
+    ".kkkkkkkkkkk.",
+    ".kwwwwwwwwwk.",
+    ".kwvwwwwwvwk.",
+    ".kwwwwwwwwwk.",
+    ".kkkkkkkkkkk.",
+    "..k.......k..",
+    ".kkk.....kkk.",
+    "kkvkk...kkvkk",
+    ".kkk.....kkk.",
+  ],
+  palette: { k: K, ...POTATO, ...WOOD },
+};
+
+/** A storage shed. Wide and low, so it reads as a step up from a crate. */
+export const SHED: Art = {
+  rows: [
+    "....kkkkkkkkkkkkkkkkkkk....",
+    "..kkmmmmmmmmmmmmmmmmmmmkk..",
+    ".kmmmmmmmmmmmmmmmmmmmmmmmk.",
+    "kmmmmmmmmmmmmmmmmmmmmmmmmmk",
+    "kkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "kwwwwwwwwwwwwwwwwwwwwwwwwwk",
+    "kwvwwwwwwwwwwwwwwwwwwwwwvwk",
+    "kwwwwwwwwwwwwwwwwwwwwwwwwwk",
+    "kwwkkkkkkkkkkkkkkkkkkkkkwwk",
+    "kwwkvvvvvvvvvvvvvvvvvvvkwwk",
+    "kwwkvvvvvvvvvvvvvvvvvvvkwwk",
+    "kwwkvvvvvvvvvvvvvvvvvvvkwwk",
+    "kwwkvvvvvvvvvvvvvvvvvvvkwwk",
+    "kwwkvvvvvvvvvvvvvvvvvvvkwwk",
+    "kkkkkkkkkkkkkkkkkkkkkkkkkkk",
+  ],
+  palette: { k: K, ...METAL, ...WOOD },
+};
+
+/**
+ * A grain elevator, and the tallest thing you will ever own. Deliberately
+ * taller than the yard is deep — the last few rungs of the build-out have to
+ * clear the fence line or there's nothing left to be impressed by.
+ */
+export const ELEVATOR: Art = {
+  rows: stack(
+    [
+      "......kkkkkkk......",
+      "....kkmmmmmmmkk....",
+      "...kmmmmmmmmmmmk...",
+      "...kmmsmmmmmmmmk...",
+      "...kkkkkkkkkkkkk...",
+      "..kmmmmmmmmmmmmmk..",
+      ".kmmmmmmmmmmmmmmmk.",
+      "kmmmmmmmmmmmmmmmmmk",
+      "kkkkkkkkkkkkkkkkkkk",
+    ],
+    ["kmmsmmmmmmmmmmmsmmk", "kmmsmmmmmmmmmmmsmmk", "kmmsmmmmmmmmmmmsmmk", "kkkkkkkkkkkkkkkkkkk"],
+    4,
+    ["kmmsmmmmmmmmmmmsmmk", "kmmsmmmmmmmmmmmsmmk", "kkkkkkkkkkkkkkkkkkk"],
+  ),
+  palette: { k: K, ...METAL },
+};
+
 // ---------------------------------------------------------------------------
 // Producers — one silhouette per rung of the ladder
 // ---------------------------------------------------------------------------
