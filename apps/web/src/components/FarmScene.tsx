@@ -68,8 +68,6 @@ export const FarmScene = forwardRef<FarmSceneHandle, {
     const working: FarmView["working"] = {};
     const broken: FarmView["broken"] = {};
     const marks: FarmView["marks"] = {};
-    const shares: FarmView["shares"] = {};
-    let total = 0;
     for (const prod of solo.SOLO_PRODUCERS) {
       const owned = farm.producers[prod.id] ?? 0;
       const dead = solo.brokenCount(farm, prod.id);
@@ -77,20 +75,8 @@ export const FarmScene = forwardRef<FarmSceneHandle, {
       if (dead > 0) broken[prod.id] = dead;
       const level = producerMark(farm, prod.id);
       if (level > 0) marks[prod.id] = level;
-      const rate = solo.producerRate(farm, prod.id);
-      if (rate > 0) {
-        shares[prod.id] = rate;
-        total += rate;
-      }
     }
-    // Normalised, because the scene shares out a fixed cadence of potatoes
-    // rather than drawing a rate it couldn't possibly draw.
-    if (total > 0) {
-      for (const id of Object.keys(shares) as solo.SoloProducerId[]) {
-        shares[id] = shares[id]! / total;
-      }
-    }
-    return { ...EMPTY_VIEW, working, broken, marks, shares, soil: farm.soil, hoard, seed: farm.seed };
+    return { ...EMPTY_VIEW, working, broken, marks, soil: farm.soil, hoard, seed: farm.seed };
   }, [farm, hoard]);
 
   return (
@@ -112,7 +98,6 @@ export const FarmScene = forwardRef<FarmSceneHandle, {
 const DEMO_VIEW: FarmView = {
   ...EMPTY_VIEW,
   working: { plot: 9, hand: 2, irrigation: 1, tractor: 1 },
-  shares: { plot: 0.3, hand: 0.2, irrigation: 0.2, tractor: 0.3 },
   hoard: 400,
   seed: "title",
 };

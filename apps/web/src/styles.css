@@ -363,7 +363,8 @@ input {
   position: absolute;
   left: 0;
   right: 0;
-  top: 38%;
+  /* Low enough to sit on open grass rather than across the crop rows. */
+  top: 54%;
   margin: 0;
   text-align: center;
   pointer-events: none;

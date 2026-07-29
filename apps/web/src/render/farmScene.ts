@@ -24,6 +24,7 @@ import {
   CLOUD,
   CRATE,
   FENCE,
+  cropStages,
   FLOWERS,
   POTATO_SPRITE,
   PRODUCER_MARKS,
@@ -58,15 +59,6 @@ export interface FarmView {
    * field, not just a number in a panel.
    */
   marks: Partial<Record<solo.SoloProducerId, number>>;
-  /**
-   * Each producer's share of what the farm currently makes, summing to ~1.
-   *
-   * This is what decides who is visibly shipping potatoes. A farm carried by
-   * three refineries shouldn't be drawing your attention to the potato plots
-   * still sitting in the front row — whatever is actually paying the bills is
-   * the thing you should see working.
-   */
-  shares: Partial<Record<solo.SoloProducerId, number>>;
   /** 0..1. Drags the field's colour and wilts a share of the crop. */
   soil: number;
   /** Potatoes on hand. Drives the whole yard. */
@@ -79,7 +71,6 @@ export const EMPTY_VIEW: FarmView = {
   working: {},
   broken: {},
   marks: {},
-  shares: {},
   soil: 1,
   hoard: 0,
   seed: "0",
@@ -257,20 +248,28 @@ interface Placement {
   cap: number;
   /** Drives across the field rather than standing in it. */
   speed?: number;
+  /**
+   * How fast the drawn count climbs with the owned count. Crops are cheap to
+   * draw and a field is *made of* them, so beds get a much steeper curve than
+   * machines — a dozen plants reads as a farm, a dozen combines reads as a mess.
+   */
+  spread?: number;
 }
 
 const PLACEMENT: Record<solo.SoloProducerId, Placement> = {
-  plot: { band: "field", cap: 30 },
+  plot: { band: "field", cap: 40, spread: 5.5 },
   hand: { band: "walk", cap: 6 },
   irrigation: { band: "field", cap: 4 },
-  tractor: { band: "field", cap: 3, speed: 11 },
-  harvester: { band: "field", cap: 2, speed: 8 },
+  // Slow. A tractor that crosses the screen in fifteen seconds is a tractor
+  // working a field; one that does it in five is a toy being pushed along.
+  tractor: { band: "field", cap: 3, speed: 6 },
+  harvester: { band: "field", cap: 2, speed: 4.5 },
   lab: { band: "back", cap: 3 },
   refinery: { band: "back", cap: 2 },
   tower: { band: "back", cap: 4 },
-  seeder: { band: "sky", cap: 3, speed: 5 },
+  seeder: { band: "sky", cap: 3, speed: 2.5 },
   reactor: { band: "back", cap: 2 },
-  orbital: { band: "sky", cap: 2, speed: 14 },
+  orbital: { band: "sky", cap: 2, speed: 7 },
   singularity: { band: "sky", cap: 2 },
 };
 
@@ -295,10 +294,10 @@ const ORDER: solo.SoloProducerId[] = [
  * logarithmic: the first few are one-for-one and after that it takes a
  * doubling to add another silhouette.
  */
-function shownCount(owned: number, cap: number): number {
+function shownCount(owned: number, cap: number, spread = 2.4): number {
   if (owned <= 0) return 0;
   if (owned <= 4) return Math.min(owned, cap);
-  return Math.min(cap, 4 + Math.floor(Math.log2(owned / 4) * 2.4));
+  return Math.min(cap, 4 + Math.floor(Math.log2(owned / 4) * spread));
 }
 
 // ---------------------------------------------------------------------------
@@ -327,23 +326,55 @@ interface Puff {
   size: number;
 }
 
-const MAX_PUFFS = 70;
-
-/**
- * How many potatoes a second the whole farm is seen to ship, however much it
- * actually makes. A rate this is *not* — production spans fourteen orders of
- * magnitude and the eye spans about one. It's a share-out: the cadence is
- * fixed, and `shares` decides whose potato each one is.
- */
-const MOTES_PER_SEC = 5.5;
+const MAX_PUFFS = 40;
 
 /** Nothing on this canvas needs more potatoes than this in the air at once. */
-const MAX_FLYING = 44;
+const MAX_FLYING = 20;
 
-/** A spawn point, in buffer pixels, where a producer's output comes out of it. */
-interface Vent {
+// ---------------------------------------------------------------------------
+// The crop cycle, and the people who work it
+// ---------------------------------------------------------------------------
+//
+// The farm is scenery, not a readout. None of what follows is derived from your
+// production rate and none of it feeds back into it — the field grows on its
+// own clock and the hands walk at their own pace whether you're making twelve
+// potatoes a second or twelve trillion. What it's for is having somewhere to
+// look: a farm that idles is still a farm doing something.
+
+/** How long a bed takes to come up. Long, on purpose — this is a place, not a slot machine. */
+const GROW_SECONDS = 46;
+
+/** How long a ripe bed stands before the farm gets to it without you watching. */
+const RIPE_SECONDS = 14;
+
+/** Buffer pixels a second. A farmhand crosses the field in about five. */
+const HAND_SPEED = 14;
+const PICK_SECONDS = 1.8;
+const REST_SECONDS = 2.4;
+
+/**
+ * One farmhand, working. They pick the bed that's been ready longest, carry it
+ * down to the yard, drop it on the pile and walk back for another.
+ */
+interface Hand {
   x: number;
   y: number;
+  /** Where in the yard this one unloads. Spread out, so they don't queue. */
+  home: number;
+  state: "resting" | "out" | "picking" | "back";
+  /** Index into the drawn beds. -1 while resting. */
+  target: number;
+  /** Wall time at which a timed state ends. */
+  until: number;
+  carrying: boolean;
+}
+
+/** A bed, as drawn this frame. Ground point, not top-left. */
+interface Bed {
+  x: number;
+  y: number;
+  /** Wilted beds are skipped: nothing there is worth walking out for. */
+  dry: boolean;
 }
 
 export class FarmScene {
@@ -357,13 +388,11 @@ export class FarmScene {
   private rngSeed = 1;
   private flying: Flying[] = [];
   private puffs: Puff[] = [];
-  /**
-   * Where each producer's output comes out of it, rebuilt every frame as the
-   * bands draw themselves. Machines move, so asking the drawing code where
-   * things ended up is the only way a potato leaves the right tractor.
-   */
-  private vents = new Map<solo.SoloProducerId, Vent[]>();
-  private moteAcc = 0;
+  /** The beds as laid out this frame. Deterministic, so an index is a place. */
+  private beds: Bed[] = [];
+  /** When each bed was last cleared. Indexed the same as `beds`. */
+  private planted: number[] = [];
+  private hands: Hand[] = [];
   private dt = 0;
   private lastFrame = performance.now();
   /**
@@ -433,54 +462,146 @@ export class FarmScene {
     this.launch(x, y, 0.82 * SCENE_W + Math.random() * 14);
   }
 
-  /**
-   * The farm shipping its own potatoes. Every frame, a fixed cadence of motes
-   * is shared out across the producers by how much of your income each one is
-   * responsible for, and each mote leaves from wherever that producer happens
-   * to be standing this frame.
-   *
-   * This is the whole point of the pass: the yard used to grow with nothing
-   * visibly filling it, so a farm you'd spent a day building looked exactly as
-   * busy as an empty one.
-   */
-  private emitMotes(dt: number): void {
-    const ids: solo.SoloProducerId[] = [];
-    let total = 0;
-    for (const [id, vents] of this.vents) {
-      const share = this.view.shares[id] ?? 0;
-      if (share <= 0 || vents.length === 0) continue;
-      ids.push(id);
-      total += share;
-    }
-    if (total <= 0) return;
+  /** How ripe a bed is, 0..1, where 1 is ready to lift. */
+  private ripeness(i: number, t: number): number {
+    const planted = this.planted[i];
+    if (planted === undefined) return 0;
+    return Math.min(1, (t - planted) / GROW_SECONDS);
+  }
 
-    this.moteAcc += dt * MOTES_PER_SEC;
-    while (this.moteAcc >= 1) {
-      this.moteAcc -= 1;
-      let pick = Math.random() * total;
-      let chosen = ids[ids.length - 1]!;
-      for (const id of ids) {
-        pick -= this.view.shares[id] ?? 0;
-        if (pick <= 0) {
-          chosen = id;
+  /** Clear a bed and start it again. Whatever lifted it gets one potato. */
+  private lift(i: number, t: number, toYard = true): void {
+    const bed = this.beds[i];
+    this.planted[i] = t;
+    if (bed && toYard) this.launch(bed.x + 3, bed.y - 6, 14 + Math.random() * (SCENE_W - 28), 28);
+  }
+
+  /**
+   * The farmhands, going about it.
+   *
+   * Each one walks out to whichever bed has been ready longest, spends a moment
+   * pulling it, carries the potato down to the yard, drops it on the pile and
+   * walks back. Nothing here is fast and nothing here is synchronised — the
+   * point is that there's always somebody halfway across the field.
+   */
+  private stepHands(t: number, dt: number, count: number, yardY: number): void {
+    const unload = yardY + Math.round((this.sh - yardY) * 0.42);
+
+    while (this.hands.length > count) this.hands.pop();
+    while (this.hands.length < count) {
+      const i = this.hands.length;
+      this.hands.push({
+        x: 16 + i * 27,
+        y: unload,
+        home: 16 + i * 27,
+        state: "resting",
+        target: -1,
+        // Staggered, so they don't all set off on the same frame like a chorus.
+        until: t + i * 1.9,
+        carrying: false,
+      });
+    }
+
+    for (const hand of this.hands) {
+      switch (hand.state) {
+        case "resting": {
+          if (t < hand.until) break;
+          const target = this.claimBed(t);
+          if (target < 0) {
+            // Nothing ready and nothing growing: try again shortly.
+            hand.until = t + 1.5;
+            break;
+          }
+          hand.target = target;
+          hand.state = "out";
+          break;
+        }
+        case "out": {
+          const bed = this.beds[hand.target];
+          if (!bed) {
+            hand.state = "resting";
+            hand.target = -1;
+            hand.until = t + 0.5;
+            break;
+          }
+          if (this.walk(hand, bed.x + 1, bed.y, dt)) {
+            hand.state = "picking";
+            hand.until = t + PICK_SECONDS;
+          }
+          break;
+        }
+        case "picking": {
+          if (t < hand.until) break;
+          // Carried by hand, so no potato is thrown — they're taking it down.
+          this.lift(hand.target, t, false);
+          hand.carrying = true;
+          hand.state = "back";
+          break;
+        }
+        case "back": {
+          if (this.walk(hand, hand.home, unload, dt)) {
+            hand.carrying = false;
+            // Set down rather than thrown: a short hop onto the nearest pile.
+            this.launch(hand.home + 2, unload - 6, hand.home + 10, 12);
+            hand.state = "resting";
+            hand.target = -1;
+            hand.until = t + REST_SECONDS + Math.random() * 2;
+          }
           break;
         }
       }
-      const vents = this.vents.get(chosen)!;
-      const vent = vents[Math.floor(Math.random() * vents.length)]!;
-      // Anywhere in the yard, unlike a dig — the yard fills from the whole farm.
-      this.launch(vent.x, vent.y, 12 + Math.random() * (SCENE_W - 24), 34);
     }
   }
 
-  /** Record where a producer's output leaves it, for this frame only. */
-  private vent(id: solo.SoloProducerId, x: number, y: number): void {
-    let list = this.vents.get(id);
-    if (!list) {
-      list = [];
-      this.vents.set(id, list);
+  /**
+   * The bed that's been ready longest and isn't already somebody's job. Wilted
+   * beds are passed over — there's nothing under them worth the walk, which is
+   * the soil bar showing up as behaviour rather than a number.
+   */
+  private claimBed(t: number): number {
+    let best = -1;
+    let bestRipe = 0.55;
+    for (let i = 0; i < this.beds.length; i++) {
+      if (this.beds[i]!.dry) continue;
+      if (this.hands.some((h) => h.target === i)) continue;
+      const ripe = this.ripeness(i, t);
+      if (ripe > bestRipe) {
+        bestRipe = ripe;
+        best = i;
+      }
     }
-    list.push({ x, y });
+    return best;
+  }
+
+  /** Step a hand toward a point. True once it's there. */
+  private walk(hand: Hand, tx: number, ty: number, dt: number): boolean {
+    const dx = tx - hand.x;
+    const dy = ty - hand.y;
+    const d = Math.hypot(dx, dy);
+    if (d < 1.5) {
+      hand.x = tx;
+      hand.y = ty;
+      return true;
+    }
+    const step = Math.min(d, HAND_SPEED * dt);
+    hand.x += (dx / d) * step;
+    hand.y += (dy / d) * step;
+    return false;
+  }
+
+  private drawHands(t: number): void {
+    const ctx = this.ctx;
+    const sprite = artCanvas(this.mark("hand"));
+    const spud = artCanvas(POTATO_SPRITE);
+    for (const hand of this.hands) {
+      const moving = hand.state === "out" || hand.state === "back";
+      // A 1px bob while walking, and a deeper stoop while pulling a bed.
+      const bob = moving ? Math.floor(t * 4) % 2 : hand.state === "picking" ? 2 : 0;
+      const x = Math.round(hand.x);
+      const y = Math.round(hand.y) - sprite.h + bob;
+      ctx.drawImage(sprite.canvas, x, y);
+      if (hand.carrying) ctx.drawImage(spud.canvas, x + 1, y - 4);
+    }
   }
 
   private puff(x: number, y: number, kind: "dust" | "steam" | "water"): void {
@@ -548,8 +669,6 @@ export class FarmScene {
     const yardY = this.yardTop();
 
     this.stepHoard(dt, now);
-    // Rebuilt from scratch as the bands draw: everything on this farm moves.
-    this.vents.clear();
 
     this.drawSky(phase, t, horizon);
     this.drawHills(phase, horizon);
@@ -559,9 +678,10 @@ export class FarmScene {
     this.drawPuffs(now, dt);
     this.drawFence(yardY);
     this.drawHoard();
-    // Motes are emitted only once the bands have said where everything is, so
-    // a potato always leaves the machine as it stands in *this* frame.
-    this.emitMotes(dt);
+    // The hands walk between the two bands, so they're drawn after both — and
+    // after the field has said where this frame's beds are.
+    this.stepHands(t, dt, shownCount(this.view.working.hand ?? 0, PLACEMENT.hand.cap), yardY);
+    this.drawHands(t);
     this.drawFlying(now);
     this.drawBundles(now);
 
@@ -714,11 +834,15 @@ export class FarmScene {
       if (x + sprite.w > right) break;
       ctx.drawImage(sprite.canvas, x, baseline - sprite.h);
       if (!item.dead) {
-        // Potatoes leave a plant by the loading door, at its foot.
-        this.vent(item.id, x + Math.floor(sprite.w / 2), baseline - 3);
-        // And the stack runs, which is how you tell it from a dead one at a
-        // glance without reading the colour.
-        if (this.chance(1.1)) this.puff(x + 2, baseline - sprite.h - 1, "steam");
+        // The stack runs, which is how you tell it from a dead one at a glance
+        // without reading the colour.
+        if (this.chance(0.45)) this.puff(x + 2, baseline - sprite.h - 1, "steam");
+        // And every so often — rarely — something it made is walked down to the
+        // yard. A trickle, not a conveyor: the back fence should read as a
+        // place that's busy, not as a number going up.
+        if (this.chance(0.05)) {
+          this.launch(x + Math.floor(sprite.w / 2), baseline - 4, 14 + Math.random() * (SCENE_W - 28), 30);
+        }
       }
       x += sprite.w + 2;
     }
@@ -745,27 +869,65 @@ export class FarmScene {
     }
 
     // Crops next — everything else works on top of them.
-    const plots = shownCount(this.view.working.plot ?? 0, PLACEMENT.plot.cap);
+    //
+    // Every bed runs its own slow clock: seedling, coming up, grown, ready to
+    // lift. Left ready too long and the farm gets to it without you, which is
+    // what keeps a field with nobody working it from freezing solid.
+    const plots = shownCount(this.view.working.plot ?? 0, PLACEMENT.plot.cap, PLACEMENT.plot.spread);
+    const stages = cropStages(this.mark("plot"));
     const plant = artCanvas(this.mark("plot"));
-    // Wilt keeps the mark's silhouette and loses its colour, so an upgraded bed
-    // still reads as an upgraded bed while it's struggling.
-    const wilted = artCanvas(withered(this.mark("plot")));
     const wiltShare = 1 - this.view.soil;
-    const perRow = Math.max(4, Math.floor((SCENE_W - 12) / 15));
+    // Laid out as an actual field: rows of beds at a fixed spacing, each row
+    // centred, filling in row by row as you buy more land. The old grid ran
+    // four deep before it started a second column, so a farm with seven beds
+    // put them all in the left-hand corner and left you looking at grass.
+    const bedRows = Math.min(4, Math.max(1, Math.ceil(plots / 8)));
+    const perBedRow = Math.ceil(plots / bedRows);
+    const span = SCENE_W - 14 - plant.w;
+    const gap =
+      perBedRow > 1
+        ? Math.max(plant.w + 2, Math.min(plant.w + 9, Math.floor(span / (perBedRow - 1))))
+        : 0;
+    const runLeft = 7 + Math.round((span - gap * (perBedRow - 1)) / 2);
+    this.beds.length = 0;
     for (let i = 0; i < plots; i++) {
-      const row = i % 4;
-      const col = Math.floor(i / 4);
-      const x = 6 + (col % perRow) * 15 + (row % 2) * 7 + Math.floor(rng() * 3);
-      const y = lane(0.04 + row * 0.2) + Math.floor(rng() * 3);
-      if (x + plant.w > SCENE_W - 4) continue;
+      const row = Math.floor(i / perBedRow);
+      const col = i % perBedRow;
+      const x = runLeft + col * gap + Math.floor(rng() * 3) - 1;
+      const y = lane(0.06 + row * 0.2) + Math.floor(rng() * 3);
       const dry = rng() < wiltShare;
-      const sprite = dry ? wilted : plant;
+      if (x + plant.w > SCENE_W - 4) continue;
+
+      // Beds are bottom-aligned to where a full-grown plant used to stand, so
+      // the shorter stages grow up out of the soil instead of down from the air.
+      const ground = y + plant.h;
+      const index = this.beds.length;
+      this.beds.push({ x, y: ground, dry });
+
+      // Every bed is a worked patch of soil whatever's standing on it. Without
+      // this the field goes back to being lawn every time a crop is lifted —
+      // the land you bought should be visible as land, not only as plants.
+      ctx.fillStyle = dry ? "#8a7a3c" : DIRT;
+      ctx.fillRect(x - 1, ground - 2, plant.w + 2, 3);
+      ctx.fillStyle = DIRT_DARK;
+      ctx.fillRect(x - 1, ground + 1, plant.w + 2, 1);
+      // Staggered on first sight, so a farm doesn't come up as one green wave.
+      // `Math.random` rather than the seeded stream: consuming that here would
+      // shift every layout decision after it on the frame this bed first drew.
+      this.planted[index] ??= t - Math.random() * GROW_SECONDS;
+
+      const age = t - this.planted[index]!;
+      const stage = age >= GROW_SECONDS ? 3 : age >= GROW_SECONDS * 0.6 ? 2 : age >= GROW_SECONDS * 0.25 ? 1 : 0;
+      // Wilt keeps the mark's silhouette and loses its colour, so an upgraded
+      // bed still reads as an upgraded bed while it's struggling.
+      const art = stages[stage]!;
+      const sprite = artCanvas(dry ? withered(art) : art);
       // A 1px sway on a slow sine, offset per plant — enough that the field
       // isn't a still photograph, cheap enough to run at 60fps.
       const sway = Math.sin(t * 1.3 + i) > 0.6 ? 1 : 0;
-      ctx.drawImage(sprite.canvas, x + sway, y);
-      // A wilted bed is not lifting anything. That's the soil bar, made literal.
-      if (!dry) this.vent("plot", x + sway + 3, y + plant.h - 2);
+      ctx.drawImage(sprite.canvas, x + sway, ground - sprite.h);
+
+      if (!dry && age > GROW_SECONDS + RIPE_SECONDS) this.lift(index, t);
     }
 
     // Standing kit: sprinklers, planted in the rows.
@@ -778,11 +940,10 @@ export class FarmScene {
       ctx.drawImage(sprinkler.canvas, x, y);
       // A rig that isn't throwing water is a pole. Droplets sweep with a slow
       // sine, so the arc reads as one head turning rather than a static spray.
-      if (this.chance(9)) {
-        const swing = Math.sin(t * 1.6 + i) * 7;
+      if (this.chance(3.5)) {
+        const swing = Math.sin(t * 0.9 + i) * 7;
         this.puff(x + 6 + swing, y + 2, "water");
       }
-      this.vent("irrigation", x + 6, lane(0.2) - 2);
     }
 
     // Machines drive; that's the difference between owning one and it working.
@@ -801,22 +962,17 @@ export class FarmScene {
         ctx.drawImage(sprite.canvas, x, ground - sprite.h);
         // Dust off the back wheels. A machine that leaves nothing behind it is
         // a machine parked in a field.
-        if (this.chance(7)) this.puff(x + 1, ground - 2, "dust");
-        this.vent(id, x + sprite.w - 3, ground - 4);
+        if (this.chance(2.5)) this.puff(x + 1, ground - 2, "dust");
+        // And it works what it drives over: any ripe bed under the header comes
+        // up as it passes. That's the difference between a tractor crossing a
+        // field and a tractor farming one.
+        for (let b = 0; b < this.beds.length; b++) {
+          const bed = this.beds[b]!;
+          if (bed.dry || Math.abs(bed.y - ground) > 10) continue;
+          if (bed.x < x || bed.x > x + sprite.w) continue;
+          if (this.ripeness(b, t) >= 1) this.lift(b, t);
+        }
       }
-    }
-
-    // Farmhands wander between the rows.
-    const hands = shownCount(this.view.working.hand ?? 0, PLACEMENT.hand.cap);
-    const hand = artCanvas(this.mark("hand"));
-    for (let i = 0; i < hands; i++) {
-      const home = 16 + i * 27;
-      const x = Math.round(home + Math.sin(t * 0.5 + i * 1.7) * 12);
-      const bob = Math.floor(t * 3 + i) % 2;
-      const y = lane(0.84) - hand.h + bob;
-      ctx.drawImage(hand.canvas, x, y);
-      // Out of their hands, at chest height — they're carrying it, not digging.
-      this.vent("hand", x + 3, y + 4);
     }
 
     // Everything broken is parked in one row along the fence, greyed out. One
@@ -845,15 +1001,11 @@ export class FarmScene {
           const span = SCENE_W + sprite.w;
           const x =
             Math.floor((((t * place.speed + i * 80) % span) + span) % span) - sprite.w;
-          const y = 6 + i * 14;
-          ctx.drawImage(sprite.canvas, x, y);
-          this.vent(id, x + Math.floor(sprite.w / 2), y + sprite.h);
+          ctx.drawImage(sprite.canvas, x, 6 + i * 14);
         } else {
           // The singularity doesn't travel. It hangs there and breathes.
           const y = 10 + i * 20 + (Math.sin(t * 0.9 + i) > 0 ? 1 : 0);
-          const x = 20 + i * 44;
-          ctx.drawImage(sprite.canvas, x, y);
-          this.vent(id, x + Math.floor(sprite.w / 2), y + sprite.h);
+          ctx.drawImage(sprite.canvas, 20 + i * 44, y);
         }
       }
     }

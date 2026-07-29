@@ -283,6 +283,41 @@ export function withered(art: Art): Art {
   return dried;
 }
 
+const CROP_STAGES = new Map<Art, Art[]>();
+
+/**
+ * A bed part-grown: four stages from just-planted to ready to lift.
+ *
+ * Derived from whichever mark is planted rather than authored four times over,
+ * so an upgraded bed still grows through the same cycle in its own silhouette
+ * and adding a fourth plot mark doesn't mean drawing three more pictures.
+ *
+ * The early stages are the *bottom* slice of the full plant, which only reads
+ * as growth if the caller bottom-aligns them — a crop that grows downward out
+ * of the air is worse than no crop cycle at all.
+ */
+export function cropStages(art: Art): readonly Art[] {
+  const hit = CROP_STAGES.get(art);
+  if (hit) return hit;
+
+  const rows = art.rows;
+  const n = rows.length;
+  const slice = (from: number): Art => ({ rows: rows.slice(from), palette: art.palette });
+
+  // Ripe: potatoes showing through the soil at the base. Every other filled
+  // pixel of the bottom row, so it reads as lumps rather than a stripe.
+  const base = rows[n - 1] ?? "";
+  const lifted = [...base].map((c, i) => (c !== "." && i % 2 === 1 ? "o" : c)).join("");
+  const ripe: Art = {
+    rows: [...rows.slice(0, n - 1), lifted],
+    palette: { ...art.palette, o: "#c98b4b" },
+  };
+
+  const stages = [slice(n - 3), slice(Math.max(1, Math.floor(n * 0.4))), art, ripe];
+  CROP_STAGES.set(art, stages);
+  return stages;
+}
+
 // ---------------------------------------------------------------------------
 // The hoard — what a pile of potatoes turns into as it stops being a pile
 // ---------------------------------------------------------------------------
