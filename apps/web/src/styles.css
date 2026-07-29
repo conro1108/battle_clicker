@@ -358,27 +358,57 @@ input {
   cursor: pointer;
 }
 
+/* One sentence over the farm, until the first dig retires it for good. */
+.tap-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 38%;
+  margin: 0;
+  text-align: center;
+  pointer-events: none;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #fff8ec;
+  text-shadow: 0 2px 0 rgba(40, 26, 16, 0.65);
+  animation: hint-breathe 2s ease-in-out infinite;
+}
+@keyframes hint-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 /* --- Dig ----------------------------------------------------------------- */
 
+/* Deliberately small. The scene is the dig button; this is the label that says
+   so, plus the number telling you what a dig is currently worth — which is the
+   one thing the scene can't show you. */
 .digbar {
   position: relative;
   flex-shrink: 0;
-  padding: 6px 14px 7px;
+  display: flex;
+  justify-content: center;
+  padding: 5px 14px 6px;
   background: var(--cream);
   border-top: 3px solid var(--wood);
 }
 
 .dig {
-  width: 100%;
   background: var(--accent);
   border-color: var(--wood-dark);
   color: #fff8ec;
-  font-size: 1.05rem;
-  padding: 9px 14px;
+  font-size: 0.9rem;
+  padding: 5px 18px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
+  gap: 8px;
   letter-spacing: 0.04em;
 }
 .dig-label {
@@ -544,6 +574,18 @@ input {
 .sheet-sub {
   margin: 4px 0 0;
   font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+/* Divides a sheet that carries more than one subject — the weather tab holds
+   both the bill and the log of what caused it. */
+.sheet-section {
+  margin: 22px 0 8px;
+  padding-top: 12px;
+  border-top: 3px solid var(--wood);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: var(--ink-soft);
 }
 .sheet-close {

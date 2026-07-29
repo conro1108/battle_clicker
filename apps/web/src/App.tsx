@@ -93,16 +93,26 @@ function Home({ onGo }: { onGo: (screen: Screen) => void }) {
 // The homestead
 // ---------------------------------------------------------------------------
 
-type FarmSheet = "status" | "grow" | "land" | "legacy" | "report" | "backroom";
+/**
+ * The four things you can open, named after what's inside them.
+ *
+ * The old set was Grow / Land / Legacy / Report / Farm / House — six tabs, and
+ * the first three were interchangeable-sounding words that didn't say which one
+ * sold you a tractor and which one fixed it. These are the nouns the game
+ * already uses on the panels themselves.
+ */
+type FarmSheet = "shop" | "weather" | "seeds" | "books";
 
-const NAV: { id: FarmSheet; label: string; icon: Parameters<typeof PxIcon>[0]["name"] }[] = [
-  { id: "status", label: "Farm", icon: "clipboard" },
-  { id: "grow", label: "Grow", icon: "basket" },
-  { id: "land", label: "Land", icon: "shield" },
-  { id: "legacy", label: "Legacy", icon: "sprout" },
-  { id: "report", label: "Report", icon: "cloud" },
-  { id: "backroom", label: "House", icon: "house" },
-];
+/** How often the tap hint is worth showing: once, ever. */
+const TAUGHT_KEY = "potatoes-inc:taught-tap";
+
+function wasTaught(): boolean {
+  try {
+    return localStorage.getItem(TAUGHT_KEY) === "1";
+  } catch {
+    return true;
+  }
+}
 
 /**
  * Everything that isn't the farm: the parked head-to-head prototype and the
@@ -177,14 +187,34 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
   const sceneRef = useRef<FarmSceneHandle>(null);
   const [pops, setPops] = useState<{ id: number; text: string }[]>([]);
   const popId = useRef(0);
+  const [taught, setTaught] = useState(wasTaught);
 
   const perDig = solo.clickYield(farm);
   const rate = solo.currentRate(farm);
   const needsAttention = solo.brokenRate(farm) > 0 || farm.soil < 1;
+  // Nothing to hand down and nothing handed down yet means the whole idea is
+  // still spoilers. It arrives in the nav the moment it's a real choice.
+  const showSeeds = farm.seeds > 0 || farm.generation > 1 || solo.pendingSeeds(farm) > 0;
+
+  const nav: { id: FarmSheet; label: string; icon: Parameters<typeof PxIcon>[0]["name"] }[] = [
+    { id: "shop", label: "Shop", icon: "basket" },
+    { id: "weather", label: "Weather", icon: "cloud" },
+    ...(showSeeds ? ([{ id: "seeds", label: "Seeds", icon: "sprout" }] as const) : []),
+    { id: "books", label: "Books", icon: "clipboard" },
+  ];
 
   const onDig = useCallback(() => {
     dig();
     sceneRef.current?.dig();
+    setTaught((was) => {
+      if (was) return was;
+      try {
+        localStorage.setItem(TAUGHT_KEY, "1");
+      } catch {
+        // A blocked localStorage just means the hint comes back. Harmless.
+      }
+      return true;
+    });
     const id = popId.current++;
     setPops((p) => [...p.slice(-6), { id, text: `+${format(solo.clickYield(farm))}` }]);
     setTimeout(() => setPops((p) => p.filter((x) => x.id !== id)), 700);
@@ -220,11 +250,18 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
 
       {error && <div className="error">{error}</div>}
 
-      <FarmScene ref={sceneRef} farm={farm} hoard={budget} onDig={onDig} />
+      <FarmScene ref={sceneRef} farm={farm} hoard={budget} onDig={onDig}>
+        {/* The whole scene digs, which is not something a farm looks like it
+            does. One sentence, once, and then never again. */}
+        {!taught && <p className="tap-hint">Tap the farm to dig</p>}
+      </FarmScene>
 
+      {/* The button is no longer the way you dig — the scene is. What's left is
+          the label that says so and the number that says how hard, which is the
+          part worth keeping around. */}
       <div className="digbar">
         <button className="dig" onClick={onDig}>
-          <PxIcon name="potato" size={20} />
+          <PxIcon name="potato" size={16} />
           <span className="dig-label">Dig</span>
           <span className="dig-yield">+{format(perDig)}</span>
         </button>
@@ -238,36 +275,22 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
       </div>
 
       <nav className="nav">
-        {NAV.map((item) => (
+        {nav.map((item) => (
           <button
             key={item.id}
-            className={item.id === "land" && needsAttention ? "alert" : undefined}
+            className={item.id === "weather" && needsAttention ? "alert" : undefined}
             onClick={() => setSheet(item.id)}
           >
             <PxIcon name={item.icon} size={20} />
             <span>{item.label}</span>
-            {item.id === "land" && needsAttention && <span className="nav-dot" />}
+            {item.id === "weather" && needsAttention && <span className="nav-dot" />}
           </button>
         ))}
       </nav>
 
-      {sheet === "status" && (
-        <Sheet title="Your farm" sub={`Generation ${farm.generation}`} onClose={() => setSheet(null)}>
-          <FarmStatus
-            farm={farm}
-            now={now}
-            budget={budget}
-            pendingDigs={pendingDigs}
-            onAbandon={() => {
-              abandon();
-              setSheet(null);
-            }}
-          />
-        </Sheet>
-      )}
-      {sheet === "grow" && (
+      {sheet === "shop" && (
         <Sheet
-          title="Grow"
+          title="Shop"
           sub="More kit on the land, and the upgrades that make it worth more."
           onClose={() => setSheet(null)}
           foot={
@@ -280,10 +303,13 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
           <GrowPanel farm={farm} budget={budget} dispatch={dispatch} />
         </Sheet>
       )}
-      {sheet === "land" && (
+      {/* Damage, defence and the log of what caused it are one subject, and
+          splitting them across two tabs meant reading the report in one place
+          and paying for it in another. */}
+      {sheet === "weather" && (
         <Sheet
-          title="Land"
-          sub="Repairs, and the buildings that mean fewer of them."
+          title="Weather"
+          sub="What it broke, what it costs, and what stops it next time."
           onClose={() => setSheet(null)}
           foot={
             <>
@@ -293,29 +319,39 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
           }
         >
           <LandPanel farm={farm} budget={budget} dispatch={dispatch} />
+          <h3 className="sheet-section">Field report</h3>
+          <FarmFeed farm={farm} now={now} />
         </Sheet>
       )}
-      {sheet === "legacy" && (
+      {sheet === "seeds" && (
         <Sheet
-          title="Legacy"
+          title="Seeds"
           sub="Hand the farm down, or spend what the last one left you."
           onClose={() => setSheet(null)}
         >
           <LegacyPanel farm={farm} dispatch={dispatch} />
         </Sheet>
       )}
-      {sheet === "report" && (
-        <Sheet title="Field report" sub="What the weather has been up to." onClose={() => setSheet(null)}>
-          <FarmFeed farm={farm} now={now} />
-        </Sheet>
-      )}
-
-      {sheet === "backroom" && (
+      {sheet === "books" && (
         <Sheet
-          title="The house"
-          sub="Side doors: the versus prototype, and the levers that aren't the game."
+          title="The books"
+          sub={`Generation ${farm.generation}`}
           onClose={() => setSheet(null)}
         >
+          <FarmStatus
+            farm={farm}
+            now={now}
+            budget={budget}
+            pendingDigs={pendingDigs}
+            onAbandon={() => {
+              abandon();
+              setSheet(null);
+            }}
+          />
+          {/* The side doors used to hold a sixth of the bottom bar for a
+              parked prototype and three dev buttons. They live at the back of
+              the ledger now, which is about what they're worth. */}
+          <h3 className="sheet-section">Side doors</h3>
           <BackRoom
             onVersus={() => onGo({ kind: "versus-lobby" })}
             onTitle={() => onGo({ kind: "home" })}
