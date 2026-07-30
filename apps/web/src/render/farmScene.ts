@@ -20,7 +20,6 @@
 import type { solo } from "@battle/sim";
 
 import {
-  BARN,
   BARROW,
   CLOUD,
   CRATE,
@@ -207,6 +206,12 @@ export const YARD: Stage[] = [
   { at: 3e12, heap: 21, add: p(SHED, 40, 2) },
   { at: 1.5e13, heap: 21, add: p(SILO, 138, 3) },
   { at: 6e13, heap: 21, add: p(ELEVATOR, 28, 3) },
+  { at: 2.5e14, heap: 21, add: p(CRATE, 110, 1) },
+  { at: 1e15, heap: 21, add: p(SHED, 72, 2) },
+  { at: 4e15, heap: 21, add: p(SACK, 84, 0) },
+  { at: 1.5e16, heap: 21, add: p(SILO, 154, 3) },
+  { at: 6e16, heap: 21, add: p(ELEVATOR, 4, 3) },
+  { at: 2.5e17, heap: 21, add: p(BARROW, 100, 0) },
 ];
 
 interface YardLayout {
@@ -306,25 +311,32 @@ interface Placement {
   cap: number;
   /** Drives across the field rather than standing in it. */
   speed?: number;
+  /**
+   * How fast the drawn count climbs with the owned count. A long run buys a
+   * hundred and forty farmhands and only fifty greenhouses, so the tiers you
+   * stack deepest need the shallowest curve to keep looking different at
+   * twenty, fifty and a hundred.
+   */
+  spread?: number;
 }
 
 const PLACEMENT: Record<solo.SoloProducerId, Placement> = {
   // The crop doesn't use the log curve — the field draws a bed per plot until
   // the land is full — so its cap is only the ceiling on broken ones.
-  plot: { band: "field", cap: 95 },
-  hand: { band: "walk", cap: 6 },
-  irrigation: { band: "field", cap: 4 },
+  plot: { band: "field", cap: 108 },
+  hand: { band: "walk", cap: 16, spread: 3 },
+  irrigation: { band: "field", cap: 12, spread: 2.6 },
   // Slow. A tractor that crosses the screen in fifteen seconds is a tractor
   // working a field; one that does it in five is a toy being pushed along.
-  tractor: { band: "field", cap: 3, speed: 6 },
-  harvester: { band: "field", cap: 2, speed: 4.5 },
-  lab: { band: "back", cap: 3 },
-  refinery: { band: "back", cap: 2 },
-  tower: { band: "back", cap: 4 },
-  seeder: { band: "sky", cap: 3, speed: 2.5 },
-  reactor: { band: "back", cap: 2 },
-  orbital: { band: "sky", cap: 2, speed: 7 },
-  singularity: { band: "sky", cap: 2 },
+  tractor: { band: "field", cap: 6, spread: 1.4, speed: 6 },
+  harvester: { band: "field", cap: 5, spread: 1.2, speed: 4.5 },
+  lab: { band: "back", cap: 5 },
+  refinery: { band: "back", cap: 5 },
+  tower: { band: "back", cap: 5 },
+  seeder: { band: "sky", cap: 5, spread: 1.6, speed: 2.5 },
+  reactor: { band: "back", cap: 4 },
+  orbital: { band: "sky", cap: 4, spread: 1.4, speed: 7 },
+  singularity: { band: "sky", cap: 3, spread: 1.2 },
 };
 
 const ORDER: solo.SoloProducerId[] = [
@@ -479,6 +491,8 @@ interface Hand {
   y: number;
   /** Where in the yard this one unloads. Spread out, so they don't queue. */
   home: number;
+  /** The depth it stands at when it's home — ranks, so a big crew isn't a line. */
+  homeY: number;
   state: "resting" | "out" | "picking" | "back";
   /** Index into the drawn beds. -1 while resting. */
   target: number;
@@ -505,7 +519,7 @@ interface Row {
 }
 
 /** How deep the field can get planted before it stops adding rows. */
-const FIELD_ROWS = 5;
+const FIELD_ROWS = 6;
 
 /** How long a tractor's furrow stays fresh behind it. */
 const TILL_MS = 4500;
@@ -640,7 +654,11 @@ export class FarmScene {
    * got tidied up off-screen shouldn't produce a potato out of thin air.
    */
   private lift(i: number, t: number): void {
-    this.planted[i] = t;
+    // Replanted part-grown, not from bare soil. A farm running eleven machines
+    // sweeps every row every few seconds, and a bed that goes back to a two
+    // pixel sprout each time means the field you spent the whole game buying
+    // is permanently brown.
+    this.planted[i] = t - GROW_SECONDS * 0.35;
   }
 
   /**
@@ -657,10 +675,17 @@ export class FarmScene {
     while (this.hands.length > count) this.hands.pop();
     while (this.hands.length < count) {
       const i = this.hands.length;
+      // Sixteen of them have to stand somewhere: six to a rank, ranks stepped
+      // back into the yard and offset half a place so the crew reads as a crew
+      // and not a police line.
+      const rank = Math.floor(i / 6);
+      const inRank = i % 6;
+      const home = 12 + inRank * 26 + (rank % 2) * 13;
       this.hands.push({
-        x: 16 + i * 27,
-        y: unload,
-        home: 16 + i * 27,
+        x: home,
+        y: unload + rank * 7,
+        home,
+        homeY: unload + rank * 7,
         state: "resting",
         target: -1,
         // Staggered, so they don't all set off on the same frame like a chorus.
@@ -705,10 +730,10 @@ export class FarmScene {
           break;
         }
         case "back": {
-          if (this.walk(hand, hand.home, unload, dt)) {
+          if (this.walk(hand, hand.home, hand.homeY, dt)) {
             hand.carrying = false;
             // Set down, not thrown. The dirt it kicks up is the whole event.
-            this.puff(hand.home + 2, unload - 1, "dust");
+            this.puff(hand.home + 2, hand.homeY - 1, "dust");
             hand.state = "resting";
             hand.target = -1;
             hand.until = t + REST_SECONDS + Math.random() * 2;
@@ -841,7 +866,7 @@ export class FarmScene {
     this.drawSky(phase, t, horizon);
     this.drawHills(phase, horizon);
     this.drawGround(horizon, yardY);
-    this.drawBack(t, now, horizon, phase);
+    this.drawBack(t, now, horizon);
     this.drawField(t, now, horizon, yardY);
     this.drawPuffs(now, dt);
     this.drawFence(yardY);
@@ -849,7 +874,7 @@ export class FarmScene {
     this.drawHoard(now);
     // The hands walk between the two bands, so they're drawn after both — and
     // after the field has said where this frame's beds are.
-    this.stepHands(t, dt, shownCount(this.view.working.hand ?? 0, PLACEMENT.hand.cap), yardY);
+    this.stepHands(t, dt, shownCount(this.view.working.hand ?? 0, PLACEMENT.hand.cap, PLACEMENT.hand.spread), yardY);
     this.drawHands(t);
     this.drawHauls(now);
     this.drawDug(now);
@@ -960,18 +985,13 @@ export class FarmScene {
   }
 
   /** Buildings and the skyline: the far edge of the property. */
-  private drawBack(t: number, now: number, horizon: number, phase: Phase): void {
+  private drawBack(t: number, now: number, horizon: number): void {
     const ctx = this.ctx;
     const baseline = horizon + 8;
 
-    const barn = artCanvas(BARN);
-    ctx.drawImage(barn.canvas, 4, baseline - barn.h);
-    if (phase === "night") {
-      // The barn keeps a light on. Cheap, and it makes the place feel occupied.
-      ctx.fillStyle = "rgba(255, 214, 130, 0.85)";
-      ctx.fillRect(4 + 12, baseline - barn.h + 10, 4, 3);
-    }
-
+    // No barn. It stood here for a long time as a bookend and it never meant
+    // anything — nothing you buy touched it, and it was taking a third of the
+    // back edge away from the tiers that do.
     const tree = artCanvas(TREE);
     ctx.drawImage(tree.canvas, SCENE_W - tree.w - 3, baseline - tree.h + 2);
 
@@ -981,8 +1001,8 @@ export class FarmScene {
     for (const id of ORDER) {
       const place = PLACEMENT[id];
       if (place.band !== "back") continue;
-      const n = shownCount(this.view.working[id] ?? 0, place.cap);
-      const brokenN = shownCount(this.view.broken[id] ?? 0, place.cap);
+      const n = shownCount(this.view.working[id] ?? 0, place.cap, place.spread);
+      const brokenN = shownCount(this.view.broken[id] ?? 0, place.cap, place.spread);
       const art = this.mark(id);
       for (let i = 0; i < n; i++) queue.push({ id, art, dead: false });
       for (let i = 0; i < brokenN; i++) queue.push({ id, art, dead: true });
@@ -991,7 +1011,7 @@ export class FarmScene {
     // When the skyline is full, the *lowest* tiers give up their spot. A farm
     // with a fusion reactor shouldn't be showing you its third tuber lab
     // instead — the newest thing you bought is the thing you want to look at.
-    const left = 4 + barn.w + 4;
+    const left = 4;
     const right = SCENE_W - tree.w - 6;
     let width = queue.reduce((w, item) => w + artCanvas(item.art).w + 2, 0);
     while (queue.length > 1 && left + width > right) {
@@ -1176,16 +1196,18 @@ export class FarmScene {
       const ground = rowGround(r);
       this.rows.push({ y: ground, left, right: left + rowWidth });
 
-      // One continuous worked strip per row, drawn whether or not anything is
-      // standing on it — the empty ones are the land you haven't bought yet,
-      // and lifting a crop leaves soil behind, not lawn.
+      // Worked soil under the beds you own, and the rest of the row left as
+      // grass with the furrow line still marked out across it. Ploughing the
+      // whole row regardless made a new farm look like six enormous empty
+      // planters; a marked-out line reads as the land being there and waiting,
+      // which is what it is.
+      const worked = count > 0 ? count * step + 1 : 0;
       ctx.fillStyle = this.view.soil < 0.7 ? "#8a7a3c" : DIRT;
-      ctx.fillRect(left - 2, ground - 2, rowWidth + 4, 3);
+      ctx.fillRect(left - 2, ground - 2, worked, 3);
       ctx.fillStyle = DIRT_DARK;
-      ctx.fillRect(left - 2, ground + 1, rowWidth + 4, 1);
-      // A nick of shadow in each unplanted slot, so bare ground reads as
-      // furrows with room in them rather than a plain brown bar.
-      for (let c = count; c < perRow; c++) ctx.fillRect(left + c * step + 2, ground - 1, 3, 1);
+      ctx.fillRect(left - 2, ground + 1, worked, 1);
+      ctx.fillStyle = GRASS_DARK;
+      for (let c = count; c < perRow; c++) ctx.fillRect(left + c * step, ground, step - 2, 1);
 
       for (let c = 0; c < count; c++) {
         const i = r * perRow + c;
@@ -1218,7 +1240,7 @@ export class FarmScene {
 
     // Irrigation stands at the ends of the rows it waters, alternating sides,
     // and throws across them. A rig in the middle of nowhere was just a pole.
-    const sprinklers = shownCount(this.view.working.irrigation ?? 0, PLACEMENT.irrigation.cap);
+    const sprinklers = shownCount(this.view.working.irrigation ?? 0, PLACEMENT.irrigation.cap, PLACEMENT.irrigation.spread);
     const sprinkler = artCanvas(this.mark("irrigation"));
     for (let i = 0; i < sprinklers; i++) {
       const row = this.rows[i % Math.max(1, this.rows.length)];
@@ -1245,7 +1267,7 @@ export class FarmScene {
       ["harvester", 0.78],
     ] as const) {
       const place = PLACEMENT[id];
-      const n = shownCount(this.view.working[id] ?? 0, place.cap);
+      const n = shownCount(this.view.working[id] ?? 0, place.cap, place.spread);
       const sprite = artCanvas(this.mark(id));
       const span = SCENE_W + sprite.w;
       for (let i = 0; i < n; i++) {
@@ -1277,7 +1299,7 @@ export class FarmScene {
           if (bed.dry || Math.abs(bed.y - (ground - 5)) > 3) continue;
           if (bed.x < x - reach || bed.x > x + sprite.w + reach) continue;
           if (this.ripeness(b, t) < 1) continue;
-          this.planted[b] = t;
+          this.lift(b, t);
           this.unload(x + Math.floor(sprite.w / 2), ground - sprite.h + 3, now);
         }
       }
@@ -1290,7 +1312,7 @@ export class FarmScene {
     for (const id of ORDER) {
       const place = PLACEMENT[id];
       if (place.band === "sky" || place.band === "back") continue;
-      const brokenN = shownCount(this.view.broken[id] ?? 0, place.cap);
+      const brokenN = shownCount(this.view.broken[id] ?? 0, place.cap, place.spread);
       for (let i = 0; i < brokenN; i++) {
         const dead = artTinted(this.mark(id), "#6b6b74", 0.62);
         if (deadX + dead.w > SCENE_W - 6) break;
@@ -1303,7 +1325,7 @@ export class FarmScene {
     // its own job to the field below rather than sliding past it.
     for (const id of ["seeder", "orbital", "singularity"] as const) {
       const place = PLACEMENT[id];
-      const n = shownCount(this.view.working[id] ?? 0, place.cap);
+      const n = shownCount(this.view.working[id] ?? 0, place.cap, place.spread);
       const sprite = artCanvas(this.mark(id));
       for (let i = 0; i < n; i++) {
         if (place.speed) {
