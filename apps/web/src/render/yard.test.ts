@@ -44,6 +44,27 @@ describe("the yard", () => {
     }
   });
 
+  it("only ever shrinks the heap because something carried it away", () => {
+    // The heap used to reset to nothing at every stage, including the four
+    // early ones that add nothing to the yard — so a farm pouring potatoes in
+    // spent long stretches with one potato on the ground.
+    let last = yardLayout(1);
+    for (let l = 0.05; l <= 17.5; l += 0.005) {
+      const now = yardLayout(10 ** l);
+      if (now.heap < last.heap) {
+        expect(now.stage, `heap fell at 1e${l.toFixed(2)}`).toBeGreaterThan(last.stage);
+        expect(YARD[now.stage]!.add, `heap fell at 1e${l.toFixed(2)}`).toBeDefined();
+      }
+      last = now;
+    }
+  });
+
+  it("leaves a decent pile standing once the yard is building", () => {
+    for (let l = Math.log10(200); l <= 17.5; l += 0.005) {
+      expect(yardLayout(10 ** l).heap).toBeGreaterThanOrEqual(Math.round(HEAP_CAP * 0.4));
+    }
+  });
+
   it("has a build-out that climbs and fits on the canvas", () => {
     for (let i = 1; i < YARD.length; i++) {
       expect(YARD[i]!.at).toBeGreaterThan(YARD[i - 1]!.at);

@@ -137,6 +137,51 @@ function mulberry32(seed: number): () => number {
 // ---------------------------------------------------------------------------
 
 /**
+ * The working heap: a mound, front-left, where every potato the farm sends
+ * down lands. Eight wide at the base, each course half a potato in from the one
+ * below, and the potatoes overlapping by two pixels — a heap of anything
+ * touches itself, and spaced out on a grid it reads as a row of items instead.
+ *
+ * Slots fill center-out *and* upward at the same time, weighted so a course
+ * starts before the one below it is finished. Filling a whole course first laid
+ * a flat line of potatoes along the yard and only stacked once it ran out of
+ * room, which is the one shape a dumped pile never has: three potatoes were a
+ * row, and a dozen were a fence.
+ */
+const HEAP_BASE = 8;
+const HEAP_X = 6;
+const HEAP_STEP = 5;
+export const HEAP_CAP = (HEAP_BASE * (HEAP_BASE + 1)) / 2;
+
+/** How eagerly the pile climbs. Higher stacks sooner; 0 is a flat row. */
+const HEAP_CLIMB = 1.15;
+
+let heapCache: { x: number; y: number }[] | null = null;
+
+function heapSlots(): { x: number; y: number }[] {
+  if (!heapCache) {
+    const h = artCanvas(POTATO_SPRITE).h;
+    const slots: { x: number; y: number; key: number }[] = [];
+    for (let course = 0; course < HEAP_BASE; course++) {
+      const n = HEAP_BASE - course;
+      for (let i = 0; i < n; i++) {
+        slots.push({
+          x: HEAP_X + Math.round(course * (HEAP_STEP / 2)) + i * HEAP_STEP,
+          y: -h - course * 3 - (i % 2),
+          key: Math.abs(i - (n - 1) / 2) + course * HEAP_CLIMB,
+        });
+      }
+    }
+    slots.sort((a, b) => a.key - b.key);
+    heapCache = slots.map(({ x, y }) => ({ x, y }));
+  }
+  return heapCache;
+}
+
+/** How wide the mound gets at the base, for anything that has to clear it. */
+const HEAP_W = HEAP_X + (HEAP_BASE - 1) * HEAP_STEP + 7;
+
+/**
  * The yard doesn't count your potatoes. It shows what you've built with them.
  *
  * Two earlier goes at this both counted, and counting is the problem. Place
@@ -191,36 +236,36 @@ const p = (art: Art, x: number, row: number): Prop => ({ art, x, row });
  * stop.
  */
 export const YARD: Stage[] = [
-  { at: 0, heap: 3 },
-  { at: 3, heap: 6 },
-  { at: 10, heap: 10 },
-  { at: 30, heap: 15 },
-  { at: 80, heap: 21 },
-  { at: 200, heap: 21, add: p(SACK, 159, 0) },
-  { at: 900, heap: 21, add: p(SACK, 145, 0) },
-  { at: 4e3, heap: 21, add: p(CRATE, 159, 1) },
-  { at: 2e4, heap: 21, add: p(BARROW, 127, 0) },
-  { at: 8e4, heap: 21, add: p(SACK, 113, 0) },
-  { at: 3e5, heap: 21, add: p(CRATE, 141, 1) },
-  { at: 1.5e6, heap: 21, add: p(SHED, 141, 2) },
-  { at: 6e6, heap: 21, add: p(SILO, 73, 3) },
-  { at: 3e7, heap: 21, add: p(CRATE, 123, 1) },
-  { at: 1.2e8, heap: 21, add: p(SACK, 97, 0) },
-  { at: 5e8, heap: 21, add: p(SILO, 57, 3) },
-  { at: 2e9, heap: 21, add: p(CRATE, 105, 1) },
-  { at: 1e10, heap: 21, add: p(ELEVATOR, 105, 3) },
-  { at: 4e10, heap: 21, add: p(CRATE, 87, 1) },
-  { at: 2e11, heap: 21, add: p(SILO, 41, 3) },
-  { at: 8e11, heap: 21, add: p(CRATE, 69, 1) },
-  { at: 3e12, heap: 21, add: p(SHED, 109, 2) },
-  { at: 1.5e13, heap: 21, add: p(SILO, 25, 3) },
-  { at: 6e13, heap: 21, add: p(ELEVATOR, 129, 3) },
-  { at: 2.5e14, heap: 21, add: p(CRATE, 51, 1) },
-  { at: 1e15, heap: 21, add: p(SHED, 77, 2) },
-  { at: 4e15, heap: 21, add: p(SACK, 81, 0) },
-  { at: 1.5e16, heap: 21, add: p(SILO, 10, 3) },
-  { at: 6e16, heap: 21, add: p(ELEVATOR, 153, 3) },
-  { at: 2.5e17, heap: 21, add: p(BARROW, 63, 0) },
+  { at: 0, heap: 5 },
+  { at: 5, heap: 13 },
+  { at: 16, heap: 21 },
+  { at: 45, heap: 29 },
+  { at: 110, heap: HEAP_CAP },
+  { at: 200, heap: HEAP_CAP, add: p(SACK, 159, 0) },
+  { at: 900, heap: HEAP_CAP, add: p(SACK, 145, 0) },
+  { at: 4e3, heap: HEAP_CAP, add: p(CRATE, 159, 1) },
+  { at: 2e4, heap: HEAP_CAP, add: p(BARROW, 127, 0) },
+  { at: 8e4, heap: HEAP_CAP, add: p(SACK, 113, 0) },
+  { at: 3e5, heap: HEAP_CAP, add: p(CRATE, 141, 1) },
+  { at: 1.5e6, heap: HEAP_CAP, add: p(SHED, 141, 2) },
+  { at: 6e6, heap: HEAP_CAP, add: p(SILO, 73, 3) },
+  { at: 3e7, heap: HEAP_CAP, add: p(CRATE, 123, 1) },
+  { at: 1.2e8, heap: HEAP_CAP, add: p(SACK, 97, 0) },
+  { at: 5e8, heap: HEAP_CAP, add: p(SILO, 57, 3) },
+  { at: 2e9, heap: HEAP_CAP, add: p(CRATE, 105, 1) },
+  { at: 1e10, heap: HEAP_CAP, add: p(ELEVATOR, 105, 3) },
+  { at: 4e10, heap: HEAP_CAP, add: p(CRATE, 87, 1) },
+  { at: 2e11, heap: HEAP_CAP, add: p(SILO, 41, 3) },
+  { at: 8e11, heap: HEAP_CAP, add: p(CRATE, 69, 1) },
+  { at: 3e12, heap: HEAP_CAP, add: p(SHED, 109, 2) },
+  { at: 1.5e13, heap: HEAP_CAP, add: p(SILO, 25, 3) },
+  { at: 6e13, heap: HEAP_CAP, add: p(ELEVATOR, 129, 3) },
+  { at: 2.5e14, heap: HEAP_CAP, add: p(CRATE, 51, 1) },
+  { at: 1e15, heap: HEAP_CAP, add: p(SHED, 77, 2) },
+  { at: 4e15, heap: HEAP_CAP, add: p(SACK, 81, 0) },
+  { at: 1.5e16, heap: HEAP_CAP, add: p(SILO, 10, 3) },
+  { at: 6e16, heap: HEAP_CAP, add: p(ELEVATOR, 153, 3) },
+  { at: 2.5e17, heap: HEAP_CAP, add: p(BARROW, 63, 0) },
 ];
 
 interface YardLayout {
@@ -229,6 +274,22 @@ interface YardLayout {
   /** Potatoes in the working heap, 0..the stage's cap. */
   heap: number;
 }
+
+/**
+ * What's left on the mound after a stage arrives and takes the pile with it,
+ * as a fraction of the cap. Not zero: a farm making thousands a second should
+ * never be standing over one potato and a shed, which is what emptying the
+ * mound at every threshold used to look like.
+ */
+const HEAP_KEEP = 0.4;
+
+/**
+ * How the heap fills between one stage and the next. Well under 1, so most of
+ * the pile is back within the first slice of the stage and the long tail is
+ * spent topping it off — the mound should read as full most of the time and
+ * only be conspicuously low right after something carted it away.
+ */
+const HEAP_EASE = 0.5;
 
 export function yardLayout(amount: number): YardLayout {
   const a = Math.max(0, amount);
@@ -246,47 +307,20 @@ export function yardLayout(amount: number): YardLayout {
         ? a / next.at
         : (Math.log10(a) - Math.log10(here.at)) / (Math.log10(next.at) - Math.log10(here.at));
   }
-  return { stage, heap: Math.max(0, Math.min(here.heap, Math.floor(frac * here.heap))) };
+  frac = Math.max(0, Math.min(1, frac));
+
+  // Where the mound starts this stage. A stage that put something in the yard
+  // was built out of the pile, so the pile starts low; a stage that only made
+  // room for a bigger mound picks up exactly where the last one left off, so
+  // the early game is one unbroken climb rather than four resets to nothing.
+  const from = stage === 0 ? 0 : here.add ? Math.round(here.heap * HEAP_KEEP) : YARD[stage - 1]!.heap;
+  const grow = stage === 0 ? frac : Math.pow(frac, HEAP_EASE);
+  const heap = from + Math.floor((here.heap - from) * grow);
+  return { stage, heap: Math.max(0, Math.min(here.heap, heap)) };
 }
 
 function sameLayout(a: YardLayout, b: YardLayout): boolean {
   return a.stage === b.stage && a.heap === b.heap;
-}
-
-/**
- * The working heap: a mound, front-right, where every dug potato is already
- * being thrown. Six wide at the base, each course half a potato in from the one
- * below, and the potatoes overlapping by a pixel — a heap of anything touches
- * itself, and spaced out on a grid it reads as a row of items instead.
- *
- * Courses fill from the middle outward, so three potatoes are a small pile
- * rather than the left end of a big one.
- */
-const HEAP_BASE = 6;
-const HEAP_X = 6;
-const HEAP_STEP = 6;
-export const HEAP_CAP = (HEAP_BASE * (HEAP_BASE + 1)) / 2;
-
-let heapCache: { x: number; y: number }[] | null = null;
-
-function heapSlots(): { x: number; y: number }[] {
-  if (!heapCache) {
-    const h = artCanvas(POTATO_SPRITE).h;
-    heapCache = [];
-    for (let course = 0; course < HEAP_BASE; course++) {
-      const n = HEAP_BASE - course;
-      const order = Array.from({ length: n }, (_, i) => i).sort(
-        (a, b) => Math.abs(a - (n - 1) / 2) - Math.abs(b - (n - 1) / 2),
-      );
-      for (const i of order) {
-        heapCache.push({
-          x: HEAP_X + course * 3 + i * HEAP_STEP,
-          y: -h - course * 3 - (i % 2),
-        });
-      }
-    }
-  }
-  return heapCache;
 }
 
 /**
@@ -306,6 +340,32 @@ interface Bundle {
   /** Rises and fades instead of travelling. Used for potatoes you spent. */
   poof: boolean;
 }
+
+/**
+ * Somebody moving the hoard about by hand.
+ *
+ * A crate doesn't appear in the yard because a number went up, it appears
+ * because the pile got bagged and carried into it. So every stage change now
+ * has a person in it: out from the mound with a sack on the shoulder, tip it
+ * in, walk back for the next one — and when you spend the yard back down, the
+ * same walk in reverse, off out of the gate with what you paid.
+ */
+interface Porter {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  born: number;
+  /** How long the loaded leg takes. The empty leg back takes the same. */
+  walk: number;
+  /** Comes home empty afterwards. False for a load that's leaving for good. */
+  home: boolean;
+}
+
+/** Yard pace, buffer pixels a second. Slower than the field: it's heavy. */
+const PORTER_SPEED = 24;
+/** How long they stand at the far end tipping the sack in. */
+const PORTER_TIP = 300;
 
 // ---------------------------------------------------------------------------
 // Producer placement
@@ -396,6 +456,12 @@ interface Haul {
   y1: number;
   born: number;
   dur: number;
+  /**
+   * On a slide rather than in a pipe: picks up speed on the way down and
+   * kicks up dirt where it lands. A potato on an auger is being pushed at a
+   * constant rate; a potato on a chute is falling.
+   */
+  slide?: boolean;
 }
 
 /** A potato inside the pipeline, measured as distance travelled along it. */
@@ -628,6 +694,8 @@ export class FarmScene {
   private shown = -1;
   private shownLayout = yardLayout(0);
   private bundles: Bundle[] = [];
+  /** The yard crew, moving the pile into and out of what it paid for. */
+  private porters: Porter[] = [];
   /**
    * Stages part-way through arriving or leaving, as stage index to the moment
    * it started. A prop on this list is drawn sliding out of or down into the
@@ -999,6 +1067,11 @@ export class FarmScene {
     this.drawPuffs(now, dt);
     this.drawFence(yardY);
     this.drawHoard(now);
+    // The spout hangs over the yard on its way to the mound at the front of it,
+    // so it's drawn after the yard rather than with the trough it comes off:
+    // behind the silos it was pouring the crop out somewhere you couldn't see.
+    if (this.troughBox) this.drawSpout(this.troughBox);
+    this.drawPorters(now);
     // After the hoard: the pipeline runs down the near side of the yard, so it
     // passes in front of the silos rather than being swallowed by them.
     this.drawPipeline(horizon, yardY, dt);
@@ -1102,16 +1175,33 @@ export class FarmScene {
     // The yard: beaten dirt, because this is where everything gets dumped.
     ctx.fillStyle = DIRT;
     ctx.fillRect(0, yardY, SCENE_W, this.sh - yardY);
+    // Shade along the back of it, under the fence, where nothing stands. One
+    // flat brown from the fence to the bottom of the screen gave the yard no
+    // floor at all — everything in it looked stuck to a wall.
     ctx.fillStyle = DIRT_DARK;
+    ctx.fillRect(0, yardY, SCENE_W, 3);
+    ctx.globalAlpha = 0.5;
+    ctx.fillRect(0, yardY + 3, SCENE_W, 3);
+    ctx.globalAlpha = 1;
     const rng = mulberry32(this.rngSeed ^ 0x9e37);
     for (let i = 0; i < 30; i++) {
       ctx.fillRect(
         Math.floor(rng() * SCENE_W),
-        yardY + 2 + Math.floor(rng() * Math.max(1, this.sh - yardY - 4)),
+        yardY + 6 + Math.floor(rng() * Math.max(1, this.sh - yardY - 8)),
         2,
         1,
       );
     }
+
+    // The apron: the patch in front of the mound is walked over all day and
+    // has everything on the farm tipped onto it, so it's bare and paler than
+    // the rest. It also gives the heap somewhere to sit.
+    const foot = this.station(0);
+    ctx.fillStyle = "#9a6c48";
+    ctx.fillRect(HEAP_X - 5, foot - 3, HEAP_W - HEAP_X + 10, 6);
+    ctx.fillRect(HEAP_X - 3, foot - 5, HEAP_W - HEAP_X + 6, 10);
+    ctx.fillStyle = "#a87a54";
+    ctx.fillRect(HEAP_X - 2, foot - 4, HEAP_W - HEAP_X + 4, 5);
   }
 
   /** Buildings and the skyline: the far edge of the property. */
@@ -1748,6 +1838,8 @@ export class FarmScene {
       this.shownLayout = next;
     }
 
+    this.ambleYard(now);
+
     const cutoff = now - 900;
     if (this.bundles.length > 0) this.bundles = this.bundles.filter((b) => b.born + b.dur > cutoff);
     for (const [stage, run] of this.building) {
@@ -1798,25 +1890,126 @@ export class FarmScene {
       for (let d = 0; d < 4; d++) {
         this.puff(prop.x + 2 + (d * sprite.w) / 3, foot - 2, "dust", d < 2 ? -14 : 14);
       }
+      const arrives = this.sendPorter(prop, sprite.w, foot, born, up);
       if (!up || this.bundles.length > 24) continue;
-      // The heap, going into it. Three potatoes is enough to read as "that pile
-      // went in there" without burying the thing that just arrived.
-      const heap = heapSlots();
-      const base = this.station(0);
+      // What the porter tips in when they get there. Three potatoes over the
+      // lip is enough to read as "that pile went in there" without burying the
+      // thing that just arrived.
+      const drop = prop.x + Math.floor(sprite.w / 2);
       for (let n = 0; n < 3; n++) {
-        const slot = heap[n * 3]!;
         this.bundles.push({
           art: POTATO_SPRITE,
-          x0: slot.x,
-          y0: base + slot.y,
-          x1: prop.x + Math.floor(sprite.w / 2) - 3 + n * 2,
+          x0: drop - 8,
+          y0: foot - 12,
+          x1: drop - 3 + n * 2,
           y1: foot - sprite.h + 2,
-          born: born + n * 80,
-          dur: 420,
+          born: arrives + n * 90,
+          dur: 380,
           poof: false,
         });
       }
     }
+  }
+
+  /**
+   * Send somebody out with a sack, and say when they'll get there.
+   *
+   * Going up they set off from the mound and come back for another; going down
+   * they come out of whatever's being taken apart and carry it off the right
+   * hand edge, which is where the yard's gate is as far as anyone watching is
+   * concerned. Either way the load is only ever on screen once.
+   */
+  private sendPorter(prop: Prop, w: number, foot: number, born: number, up: boolean): number {
+    const at = this.doorstep(prop, w, foot);
+    const yard = this.station(0);
+    const mound = { x: HEAP_W - 2, y: yard };
+    const gate = { x: SCENE_W + 4, y: yard };
+    return up ? this.pushPorter(mound, at, born, true) : this.pushPorter(at, gate, born, false);
+  }
+
+  /** Where you'd stand to load something: at its feet, a little to the left. */
+  private doorstep(prop: Prop, w: number, foot: number): { x: number; y: number } {
+    return { x: prop.x + Math.floor(w / 2) - 10, y: foot };
+  }
+
+  private pushPorter(
+    start: { x: number; y: number },
+    end: { x: number; y: number },
+    born: number,
+    home: boolean,
+  ): number {
+    if (this.porters.length > 5) return born;
+    const dist = Math.hypot(end.x - start.x, end.y - start.y);
+    const walk = Math.max(500, Math.min(2400, (dist / PORTER_SPEED) * 1000));
+    this.porters.push({ x0: start.x, y0: start.y, x1: end.x, y1: end.y, born, walk, home });
+    return born + walk;
+  }
+
+  /**
+   * The yard, being kept. Every so often somebody shifts a sack from one store
+   * to another — nothing to do with the count, which doesn't move a potato
+   * either way. It's just that a yard where the only thing that ever happens is
+   * a threshold being crossed is a yard nobody works in.
+   */
+  private ambleYard(now: number): void {
+    if (this.porters.length > 0 || !this.chance(0.06)) return;
+    const standing: Prop[] = [];
+    for (let s = 0; s <= this.shownLayout.stage && s < YARD.length; s++) {
+      const prop = YARD[s]?.add;
+      if (prop) standing.push(prop);
+    }
+    if (standing.length < 2) return;
+    const i = Math.floor(Math.random() * standing.length);
+    let j = Math.floor(Math.random() * (standing.length - 1));
+    if (j >= i) j++;
+    const from = standing[i]!;
+    const to = standing[j]!;
+    const a = this.doorstep(from, artCanvas(from.art).w, this.propFoot(from));
+    const b = this.doorstep(to, artCanvas(to.art).w, this.propFoot(to));
+    this.pushPorter(a, b, now, true);
+  }
+
+  /**
+   * The yard crew, walking. Drawn like the field hands — same sprite, same
+   * one-pixel bob — because they are the field hands: this is the same farm at
+   * the other end of the same day.
+   */
+  private drawPorters(now: number): void {
+    const ctx = this.ctx;
+    const sprite = artCanvas(this.mark("hand"));
+    const sack = artCanvas(SACK);
+    this.porters = this.porters.filter((porter) => {
+      const age = now - porter.born;
+      if (age < 0) return true;
+      const total = porter.home ? porter.walk * 2 + PORTER_TIP : porter.walk;
+      if (age > total) return false;
+
+      // Out loaded, a beat to heave the sack in, then back empty. A load that's
+      // leaving skips both: it walks the one leg and goes out of shot with it.
+      let f: number;
+      let load = true;
+      if (age < porter.walk) {
+        f = age / porter.walk;
+      } else if (age < porter.walk + PORTER_TIP) {
+        f = 1;
+        load = age < porter.walk + PORTER_TIP / 2;
+      } else {
+        f = 1 - (age - porter.walk - PORTER_TIP) / porter.walk;
+        load = false;
+      }
+
+      const x = Math.round(porter.x0 + (porter.x1 - porter.x0) * f);
+      const y = Math.round(porter.y0 + (porter.y1 - porter.y0) * f);
+      const walking = age < porter.walk || age > porter.walk + PORTER_TIP;
+      // Stooped while they're heaving the sack off the shoulder.
+      const bob = walking ? Math.floor(now / 190) % 2 : 2;
+      const top = y - sprite.h + bob;
+      if (!porter.home) ctx.globalAlpha = Math.max(0, Math.min(1, (SCENE_W + 2 - x) / 12));
+      ctx.drawImage(sprite.canvas, x, top);
+      if (load) ctx.drawImage(sack.canvas, x - 2, top - sack.h + 3);
+      ctx.globalAlpha = 1;
+      return true;
+    });
   }
 
   /**
@@ -1865,20 +2058,37 @@ export class FarmScene {
   private drawProp(prop: Prop, run: { born: number; up: boolean } | undefined, now: number): void {
     const ctx = this.ctx;
     const sprite = artCanvas(prop.art);
-    const top = this.propFoot(prop) - sprite.h;
+    const foot = this.propFoot(prop);
+    const top = foot - sprite.h;
     if (!run) {
+      this.propShadow(prop.x, foot, sprite.w);
       ctx.drawImage(sprite.canvas, prop.x, top);
       return;
     }
 
     const hidden = buildHidden(now - run.born, run.up, sprite.h);
     if (hidden >= sprite.h) return;
+    this.propShadow(prop.x, foot, sprite.w);
     ctx.save();
     ctx.beginPath();
     ctx.rect(prop.x, top, sprite.w, sprite.h);
     ctx.clip();
     ctx.drawImage(sprite.canvas, prop.x, top + hidden);
     ctx.restore();
+  }
+
+  /**
+   * A pool of shade under something's feet. Two pixels of it, tucked in at the
+   * ends — with a dozen things standing on the same flat brown, this is the
+   * only thing telling you which of them are near and which are far.
+   */
+  private propShadow(x: number, foot: number, w: number): void {
+    const ctx = this.ctx;
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = INK;
+    ctx.fillRect(x, foot - 1, w, 1);
+    ctx.fillRect(x + 2, foot, w - 4, 1);
+    ctx.globalAlpha = 1;
   }
 
   /** Potatoes being carried between columns, drawn over the columns themselves. */
@@ -1967,13 +2177,17 @@ export class FarmScene {
       }
       this.troughFill--;
       if (this.hauls.length >= MAX_HAULS) continue;
+      // Down the middle of the slide, and off the end into the pile.
+      const run = this.spout(box);
+      const mid = (FarmScene.SPOUT_W - 7) / 2;
       this.hauls.push({
-        x0: box.x + 3,
-        y0: box.y - 7,
-        x1: HEAP_X + 38,
-        y1: this.station(0) - 18,
+        x0: run.x0 + mid,
+        y0: run.y0 - 4,
+        x1: run.x1 + mid,
+        y1: run.y1 + 3,
         born: now,
-        dur: 520,
+        dur: 620,
+        slide: true,
       });
     }
   }
@@ -2009,33 +2223,83 @@ export class FarmScene {
       for (let sx = x + 2; sx < x + w - 3; sx += 3) ctx.fillRect(sx, y - 2 - depth, 2, 1);
     }
 
-    // The spout: out of the low end, through the fence and down towards the
-    // mound — which is on the same side as the pipeline's chute, so the yard
-    // has one place things arrive rather than two.
-    this.chuteLine(x + 3, y - 7, HEAP_X + 38, this.station(0) - 18, "#7f8891");
   }
 
   /**
-   * A chute, drawn as pixels stepped along the span rather than a stroked path
-   * — a stroked diagonal at this buffer size antialiases into a grey smear.
-   *
-   * `span` is how much of it to draw, as a fraction. The trough's spout is
-   * fixed plumbing and draws the whole thing; a combine's auger draws a stub,
-   * because the arm is bolted to the machine and the drop is the rest of it. A
-   * full-length line from a machine on the back row to the trough at the
-   * headland is sixty pixels of grey and reads as a lamppost.
+   * Where the trough's outfall runs: a gate in the floor a little along from
+   * the low end, then down over the fence to a mouth that hangs above the
+   * mound. Both ends in one place, because the potatoes on it have to agree
+   * with the woodwork under them.
    */
-  private chuteLine(x0: number, y0: number, x1: number, y1: number, color: string, span = 1): void {
+  private spout(box: { x: number; w: number; y: number }): {
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+  } {
+    const x0 = box.x + 22;
+    const y0 = box.y - 2;
+    // Ends over the crown of the mound and stops just above a full one, so
+    // it's tipping onto the pile rather than buried in it or pointing at the
+    // dirt beside it. It leans back the other way from the pipeline's outfall,
+    // so the yard's two arrivals aren't the same line drawn twice.
+    return {
+      x0,
+      y0,
+      x1: HEAP_X + 20,
+      y1: Math.max(y0 + 16, this.station(0) - 29),
+    };
+  }
+
+  /** How wide the boards are, and what a potato rides down the middle of. */
+  private static SPOUT_W = 9;
+
+  /**
+   * The slide, drawn as a channel: a side board down each edge with the run
+   * between them, lit on the high side and shaded on the low one, and an open
+   * mouth over the pile.
+   *
+   * It used to be a line of two-pixel dots from the trough to the mound, which
+   * is a perfectly good way to describe a path and a terrible way to draw a
+   * chute — the crop came out of the trough and went down a piece of string.
+   * The first go at fixing it put battens across the run and made a ladder, so
+   * everything here reads *along* the fall: rails, a highlight and a floor.
+   */
+  private drawSpout(box: { x: number; w: number; y: number }): void {
     const ctx = this.ctx;
-    const dx = x1 - x0;
-    const dy = y1 - y0;
-    const steps = Math.max(1, Math.round(Math.max(Math.abs(dx), Math.abs(dy)) * span));
-    const len = Math.max(1, Math.round(Math.max(Math.abs(dx), Math.abs(dy))));
-    ctx.fillStyle = color;
-    for (let i = 0; i <= steps; i++) {
-      const f = i / len;
-      ctx.fillRect(Math.round(x0 + dx * f), Math.round(y0 + dy * f) + 4, 2, 1);
+    const { x0, y0, x1, y1 } = this.spout(box);
+    const W = FarmScene.SPOUT_W;
+    const fall = y1 - y0;
+
+    // The throat: a collar under the trough floor, so the slide is fed by the
+    // trough rather than just touching it.
+    ctx.fillStyle = "#5e3e29";
+    ctx.fillRect(x0, y0 - 3, W, 3);
+
+    for (let i = 0; i <= fall; i++) {
+      const sx = Math.round(x0 + ((x1 - x0) * i) / fall);
+      const sy = y0 + i;
+      // Low side: a side board standing proud of the floor, so the channel has
+      // a visible near edge holding the crop in.
+      ctx.fillStyle = INK;
+      ctx.fillRect(sx, sy, 1, 1);
+      ctx.fillStyle = "#5e3e29";
+      ctx.fillRect(sx + 1, sy, 1, 1);
+      // The floor, in trough wood, and the far rail catching the light.
+      ctx.fillStyle = "#8a5c3c";
+      ctx.fillRect(sx + 2, sy, W - 4, 1);
+      ctx.fillStyle = "#a97a52";
+      ctx.fillRect(sx + W - 2, sy, 1, 1);
+      ctx.fillStyle = "#c39466";
+      ctx.fillRect(sx + W - 1, sy, 1, 1);
     }
+
+    // The mouth: open, with the floor's shadow under the lip. This is the last
+    // thing the potato is inside before it's on the pile.
+    ctx.fillStyle = "#c39466";
+    ctx.fillRect(x1, y1, W, 1);
+    ctx.fillStyle = INK;
+    ctx.fillRect(x1 - 1, y1 + 1, W + 2, 2);
   }
 
   /** Potatoes on an auger or a spout: straight line, constant speed, no arc. */
@@ -2044,12 +2308,18 @@ export class FarmScene {
     const sprite = artCanvas(POTATO_SPRITE);
     this.hauls = this.hauls.filter((h) => {
       const p = (now - h.born) / h.dur;
-      if (p > 1) return false;
+      if (p > 1) {
+        if (h.slide) this.puff(h.x1 + 3, h.y1 + 4, "dust", (Math.random() - 0.5) * 20);
+        return false;
+      }
       if (p < 0) return true;
+      // A slide accelerates, and the last stretch is the potato leaving the
+      // mouth — so it rides the boards, then drops the last few pixels.
+      const f = h.slide ? p * p * 0.7 + p * 0.3 : p;
       ctx.drawImage(
         sprite.canvas,
-        Math.round(h.x0 + (h.x1 - h.x0) * p),
-        Math.round(h.y0 + (h.y1 - h.y0) * p),
+        Math.round(h.x0 + (h.x1 - h.x0) * f),
+        Math.round(h.y0 + (h.y1 - h.y0) * f),
       );
       return true;
     });
