@@ -1316,7 +1316,14 @@ export class FarmScene {
           id === "harvester" ? this.rows.length - 1 - (i % Math.max(1, this.rows.length)) : i % Math.max(1, this.rows.length);
         const row = this.rows.length > (id === "harvester" && this.rows.length < 2 ? 1 : 0) ? this.rows[pick] : undefined;
         const ground = row ? row.y + 5 : lane(fallback);
-        const x = Math.floor((((t * place.speed! + (i * span) / n) % span) + span) % span) - sprite.w;
+        // Phase and pace are hashed per machine rather than dealt out evenly.
+        // Evenly spaced starts at one shared speed drew two perfect diagonals
+        // — the tractors going one way down the rows and the combines the
+        // other — and a farm that renders a clean X across itself all day is
+        // clearly a formula and not a place where work is happening.
+        const h = fract(Math.sin((i + 1) * (id === "harvester" ? 63.7 : 21.3)) * 4375.85);
+        const pace = place.speed! * (0.78 + 0.44 * fract(h * 7.13));
+        const x = Math.floor((((t * pace + h * span) % span) + span) % span) - sprite.w;
         ctx.drawImage(sprite.canvas, x, ground - sprite.h);
         if (this.chance(2.5)) this.puff(x + 1, ground - 2, "dust");
 

@@ -6,6 +6,7 @@ import {
   REPAIR_SECONDS,
   SOLO_PRODUCERS,
   SOLO_REPAIR_COST_FRACTION,
+  SOLO_UPGRADES,
 } from "./content.js";
 import {
   currentRate,
@@ -15,10 +16,10 @@ import {
   soilRestoreCost,
   totalRepairCost,
 } from "./economy.js";
-import { advance, applyFarmCommand, pendingSeeds } from "./farm.js";
+import { advance, applyFarmCommand, createFarm, pendingSeeds } from "./farm.js";
 import { parseFarm, resumeFarm, serializeFarm } from "./persist.js";
 import { MULT_PER_UNSPENT_SEED, seedsFor } from "./prestige.js";
-import { simulateFarm } from "./sim.js";
+import { FARMER_STYLES, farmerTurn, simulateFarm } from "./sim.js";
 import type { FarmState } from "./state.js";
 
 const HOUR = seconds(3_600);
@@ -59,6 +60,41 @@ describe("the ladder", () => {
     // Still growing at the end, not parked on a plateau.
     const [last, prior] = [samples.at(-1)!, samples.at(-2)!];
     expect(last.rate).toBeGreaterThan(prior.rate);
+  });
+
+  it("charges real money for the upgrades that lift the whole farm", () => {
+    // A permanent multiplier on everything you own should cost something you
+    // feel. Priced off the fleet that unlocks it, they drifted into costing
+    // twenty seconds of production — you bought Fertilizer, forever, with the
+    // change in your pocket. Measured in seconds of current output, which is
+    // the only scale on which an early upgrade and a late one are comparable.
+    const style = FARMER_STYLES.keen!;
+    let farm = createFarm({ seed: "prices", startedAt: ms(0) });
+    const paid: { id: string; seconds: number }[] = [];
+    let nextDecision = 0;
+    for (let t = 0; t < 24 * HOUR; t += 1_000) {
+      const dig = applyFarmCommand(farm, { type: "dig", count: style.digsPerSecond }, ms(t));
+      if (dig.ok) farm = dig.farm;
+      if (t >= nextDecision) {
+        nextDecision = t + style.decisionMs;
+        for (const cmd of farmerTurn(farm, style)) {
+          const rate = currentRate(farm);
+          const before = farm.upgrades.length;
+          const res = applyFarmCommand(farm, cmd, ms(t));
+          if (res.ok) farm = res.farm;
+          const id = farm.upgrades.at(-1);
+          if (farm.upgrades.length > before && id) {
+            const u = SOLO_UPGRADES.find((x) => x.id === id)!;
+            if (u.effect.kind === "global_mult") paid.push({ id, seconds: u.cost / rate });
+          }
+        }
+      }
+      farm = advance(farm, ms(t + 1_000)).farm;
+    }
+
+    expect(paid.length).toBeGreaterThan(0);
+    console.log(`globals: ${paid.map((u) => `${u.id}=${u.seconds.toFixed(0)}s`).join(" ")}`);
+    for (const { seconds: s } of paid) expect(s).toBeGreaterThan(60);
   });
 });
 
