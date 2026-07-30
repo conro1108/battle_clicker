@@ -683,8 +683,17 @@ interface Flyer {
   drip: number;
 }
 
-/** Buffer pixels a second at full tilt. Fast: it's the sky, nothing's in it. */
-const FLY_SPEED = 58;
+/**
+ * Buffer pixels a second at full tilt, and how long one stands over a patch
+ * once it gets there.
+ *
+ * The first go at this had them crossing the screen in three seconds and moving
+ * on after one, which is a swarm rather than a crew: five of them at once and
+ * the sky never held still. They work a patch properly now, and take their time
+ * getting to the next one.
+ */
+const FLY_SPEED = 27;
+const FLY_HOLD = 3.6;
 
 export class FarmScene {
   private canvas: HTMLCanvasElement;
@@ -1922,7 +1931,7 @@ export class FarmScene {
         f.hold -= this.dt;
         f.drip -= this.dt;
         if (f.drip <= 0) {
-          f.drip = 0.13 + Math.random() * 0.1;
+          f.drip = 0.22 + Math.random() * 0.16;
           if (this.seeds.length < 24) this.dropSeedNear(f.x + sprite.w / 2, f.y + sprite.h);
         }
         if (f.hold <= 0) this.aimFlyer(f, sprite.w);
@@ -1934,7 +1943,7 @@ export class FarmScene {
         f.x = f.x0 + (f.tx - f.x0) * e;
         f.y = f.y0 + (f.ty - f.y0) * e;
         if (p >= 1) {
-          f.hold = 1.1 + Math.random() * 1.4;
+          f.hold = FLY_HOLD + Math.random() * 3.6;
           f.drip = 0.1;
         }
       }
@@ -1965,12 +1974,13 @@ export class FarmScene {
     f.x0 = f.x;
     f.y0 = f.y;
     f.tx = tx;
-    // A new altitude every time, so they cross each other's lanes instead of
-    // filing along one.
-    f.ty = 2 + Math.random() * 26;
+    // It changes height as it goes, but off where it already is rather than
+    // off the whole band: they still cross each other's lanes, without every
+    // leg being a dive or a climb.
+    f.ty = clamp(f.y + (Math.random() - 0.5) * 18, 2, 28);
     f.t = 0;
     f.hold = 0;
-    f.dur = Math.max(0.55, Math.hypot(f.tx - f.x, f.ty - f.y) / FLY_SPEED);
+    f.dur = Math.max(1, Math.hypot(f.tx - f.x, f.ty - f.y) / FLY_SPEED);
   }
 
   /**
