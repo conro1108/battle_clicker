@@ -306,16 +306,12 @@ interface Placement {
   cap: number;
   /** Drives across the field rather than standing in it. */
   speed?: number;
-  /**
-   * How fast the drawn count climbs with the owned count. Crops are cheap to
-   * draw and a field is *made of* them, so beds get a much steeper curve than
-   * machines — a dozen plants reads as a farm, a dozen combines reads as a mess.
-   */
-  spread?: number;
 }
 
 const PLACEMENT: Record<solo.SoloProducerId, Placement> = {
-  plot: { band: "field", cap: 95, spread: 9 },
+  // The crop doesn't use the log curve — the field draws a bed per plot until
+  // the land is full — so its cap is only the ceiling on broken ones.
+  plot: { band: "field", cap: 95 },
   hand: { band: "walk", cap: 6 },
   irrigation: { band: "field", cap: 4 },
   // Slow. A tractor that crosses the screen in fifteen seconds is a tractor
@@ -1125,57 +1121,43 @@ export class FarmScene {
 
     // The field.
     //
-    // Plants stand shoulder to shoulder in continuous rows on one worked strip
-    // of soil, and the rows fill in as you buy land. That's the difference
-    // between a field of potatoes and a scattering of window boxes, which is
-    // what evenly-spaced individual beds looked like however many there were.
-    const plants = shownCount(this.view.working.plot ?? 0, PLACEMENT.plot.cap, PLACEMENT.plot.spread);
+    // The land is all there from the first frame: five worked rows, full width,
+    // waiting. Buying a Potato Plot plants one bed in it. Before, the rows were
+    // sized to the crop and the crop was a log curve on the owned count, which
+    // meant the field's shape was a readout — and a readout that spent most of
+    // the game with the front half of the ground left as lawn. Empty furrows
+    // are not dead space, they're the thing you're filling in, and one plot
+    // buying one visible plant is a straighter line between the button and the
+    // farm than any curve was.
     const stages = cropStages(this.mark("plot"));
     const plant = artCanvas(this.mark("plot"));
     const wiltShare = 1 - this.view.soil;
     const step = plant.w + 1;
-    const marginX = 10;
+    // Wide, but leaving a rig's width of headland at each end: the irrigation
+    // stands off the ends of the rows it waters, and a row that runs to the
+    // screen edge has nowhere to put it.
+    const marginX = 16;
     const usable = SCENE_W - marginX * 2;
-    // Capped well short of the full width, so the field grows as a block —
-    // deeper as well as wider. Letting one row run the whole screen before
-    // starting a second made a big farm look like a hedge.
-    //
-    // Eleven rather than thirteen because that's what puts the fifth row in
-    // reach: plots cost 1.19x each, so nobody was ever going to own the ~450
-    // that sixty-five drawn plants needed, and the bottom row of the grid was
-    // decoration. At eleven the field goes to four rows around sixty plots and
-    // fills out at about a hundred, which is a long run but a real one.
-    const maxPerRow = Math.max(3, Math.min(Math.floor(usable / step), 11));
-    const rowCount = Math.max(0, Math.min(FIELD_ROWS, Math.ceil(plants / maxPerRow)));
-    // Evened out across however many rows that comes to, so the last row isn't
-    // a stub hanging off the bottom of the block.
-    const perRow = rowCount > 0 ? Math.min(maxPerRow, Math.ceil(plants / rowCount)) : 0;
+    const perRow = Math.max(3, Math.floor(usable / step));
+    const slots = perRow * FIELD_ROWS;
+    // One plot, one bed, until the land runs out — which it does at ninety
+    // plots, deep into a run and well past the point where the field stopped
+    // being the thing you're watching.
+    const plants = Math.min(slots, this.view.working.plot ?? 0);
+    const rowWidth = perRow * step - 1;
+    const rowLeft = marginX + Math.round((usable - rowWidth) / 2);
 
-    // Rows spread through the field's depth instead of stacking into the top of
-    // a fixed five-slot grid, which left a three-row farm crowded into the back
-    // with the whole front third of the field as bare lawn. The gap is capped so a
-    // two-row farm reads as a field with room to grow rather than two stripes
-    // on a hillside, and the block stays centred as it fills out. The last row
-    // stops short of the fence, which is the headland the machines turn on.
-    const BAND_TOP = 0.08;
-    const BAND_BOTTOM = 0.86;
-    const MAX_GAP = 0.24;
-    const gap = rowCount > 1 ? Math.min(MAX_GAP, (BAND_BOTTOM - BAND_TOP) / (rowCount - 1)) : 0;
-    const blockTop = (BAND_TOP + BAND_BOTTOM) / 2 - (gap * (rowCount - 1)) / 2;
-    const rowGround = (r: number) => lane(blockTop + r * gap);
+    // Evenly through the band, the last row stopping short of the fence to
+    // leave the headland the machines turn on.
+    const rowGround = (r: number) => lane(0.08 + (r * 0.78) / (FIELD_ROWS - 1));
 
-    // A farm with nothing on it yet is still somewhere, and the strip in front
-    // of the last row is the bit most likely to be empty, so the ambient green
-    // gets thrown down the whole depth with a bias towards the headland rather
-    // than uniformly — bare lawn is what dead space looks like.
+    // A little ambient green around the edges of the worked ground.
     const tuft = artCanvas(TUFT);
     const flowers = artCanvas(FLOWERS);
-    const lastRow = rowCount > 0 ? blockTop + (rowCount - 1) * gap : 0;
-    for (let i = 0; i < 22; i++) {
+    for (let i = 0; i < 14; i++) {
       const sprite = rng() < 0.3 ? flowers : tuft;
       const x = Math.floor(rng() * (SCENE_W - sprite.w));
-      const f = i % 2 === 0 ? lastRow + rng() * Math.max(0.04, 0.97 - lastRow) : rng();
-      ctx.drawImage(sprite.canvas, x, lane(f) - sprite.h);
+      ctx.drawImage(sprite.canvas, x, lane(rng()) - sprite.h);
     }
 
     this.beds.length = 0;
@@ -1188,20 +1170,22 @@ export class FarmScene {
       (this.view.working.tractor ?? 0) + (this.view.working.harvester ?? 0) > 0 || this.troughFill > 0;
     this.troughBox = works ? { x: 26, w: 112, y: lane(0.99) } : null;
 
-    for (let r = 0; r < rowCount; r++) {
-      const count = Math.min(perRow, plants - r * perRow);
-      if (count <= 0) break;
-      const width = count * step - 1;
-      const left = marginX + Math.round((usable - width) / 2);
+    for (let r = 0; r < FIELD_ROWS; r++) {
+      const count = Math.max(0, Math.min(perRow, plants - r * perRow));
+      const left = rowLeft;
       const ground = rowGround(r);
-      this.rows.push({ y: ground, left, right: left + width });
+      this.rows.push({ y: ground, left, right: left + rowWidth });
 
-      // One continuous worked strip per row, drawn before the plants standing
-      // on it. Lifting a crop leaves soil behind, not lawn.
+      // One continuous worked strip per row, drawn whether or not anything is
+      // standing on it — the empty ones are the land you haven't bought yet,
+      // and lifting a crop leaves soil behind, not lawn.
       ctx.fillStyle = this.view.soil < 0.7 ? "#8a7a3c" : DIRT;
-      ctx.fillRect(left - 2, ground - 2, width + 4, 3);
+      ctx.fillRect(left - 2, ground - 2, rowWidth + 4, 3);
       ctx.fillStyle = DIRT_DARK;
-      ctx.fillRect(left - 2, ground + 1, width + 4, 1);
+      ctx.fillRect(left - 2, ground + 1, rowWidth + 4, 1);
+      // A nick of shadow in each unplanted slot, so bare ground reads as
+      // furrows with room in them rather than a plain brown bar.
+      for (let c = count; c < perRow; c++) ctx.fillRect(left + c * step + 2, ground - 1, 3, 1);
 
       for (let c = 0; c < count; c++) {
         const i = r * perRow + c;
