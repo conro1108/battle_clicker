@@ -1123,17 +1123,6 @@ export class FarmScene {
     /** Ground-level y for a lane given as a fraction of the field's depth. */
     const lane = (f: number) => top + Math.round(depth * f);
 
-    // A farm with nothing on it yet is still somewhere, so scatter a little
-    // ambient green before anything the player bought goes down.
-    const tuft = artCanvas(TUFT);
-    const flowers = artCanvas(FLOWERS);
-    for (let i = 0; i < 14; i++) {
-      const sprite = rng() < 0.3 ? flowers : tuft;
-      const x = Math.floor(rng() * (SCENE_W - sprite.w));
-      const y = lane(rng()) - sprite.h;
-      ctx.drawImage(sprite.canvas, x, y);
-    }
-
     // The field.
     //
     // Plants stand shoulder to shoulder in continuous rows on one worked strip
@@ -1156,9 +1145,33 @@ export class FarmScene {
     // a stub hanging off the bottom of the block.
     const perRow = rowCount > 0 ? Math.min(maxPerRow, Math.ceil(plants / rowCount)) : 0;
 
-    // Rows sit in the back three-quarters, leaving headland at the front for
-    // the machines to turn on and the hands to walk down.
-    const rowGround = (r: number) => lane(0.1 + (r * 0.62) / (FIELD_ROWS - 1));
+    // Rows spread through the field's depth instead of stacking into the top of
+    // a fixed five-slot grid. Five rows takes hundreds of plots, so in practice
+    // everyone was looking at a three-row farm crowded into the back with the
+    // whole front third of the field left as bare lawn. The gap is capped so a
+    // two-row farm reads as a field with room to grow rather than two stripes
+    // on a hillside, and the block stays centred as it fills out. The last row
+    // stops short of the fence, which is the headland the machines turn on.
+    const BAND_TOP = 0.08;
+    const BAND_BOTTOM = 0.86;
+    const MAX_GAP = 0.24;
+    const gap = rowCount > 1 ? Math.min(MAX_GAP, (BAND_BOTTOM - BAND_TOP) / (rowCount - 1)) : 0;
+    const blockTop = (BAND_TOP + BAND_BOTTOM) / 2 - (gap * (rowCount - 1)) / 2;
+    const rowGround = (r: number) => lane(blockTop + r * gap);
+
+    // A farm with nothing on it yet is still somewhere, and the strip in front
+    // of the last row is the bit most likely to be empty, so the ambient green
+    // gets thrown down the whole depth with a bias towards the headland rather
+    // than uniformly — bare lawn is what dead space looks like.
+    const tuft = artCanvas(TUFT);
+    const flowers = artCanvas(FLOWERS);
+    const lastRow = rowCount > 0 ? blockTop + (rowCount - 1) * gap : 0;
+    for (let i = 0; i < 22; i++) {
+      const sprite = rng() < 0.3 ? flowers : tuft;
+      const x = Math.floor(rng() * (SCENE_W - sprite.w));
+      const f = i % 2 === 0 ? lastRow + rng() * Math.max(0.04, 0.97 - lastRow) : rng();
+      ctx.drawImage(sprite.canvas, x, lane(f) - sprite.h);
+    }
 
     this.beds.length = 0;
     this.rows.length = 0;
