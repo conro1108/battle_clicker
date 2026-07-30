@@ -1974,10 +1974,11 @@ export class FarmScene {
     f.x0 = f.x;
     f.y0 = f.y;
     f.tx = tx;
-    // It changes height as it goes, but off where it already is rather than
-    // off the whole band: they still cross each other's lanes, without every
-    // leg being a dive or a climb.
-    f.ty = clamp(f.y + (Math.random() - 0.5) * 18, 2, 28);
+    // It changes height as it goes, and by enough to see — a leg should be able
+    // to be a climb or a dive. Taken off where it already is rather than off
+    // the whole band, so the move is relative to the machine that's making it
+    // instead of a fresh draw from the whole sky every time.
+    f.ty = clamp(f.y + (Math.random() - 0.5) * 34, 2, 28);
     f.t = 0;
     f.hold = 0;
     f.dur = Math.max(1, Math.hypot(f.tx - f.x, f.ty - f.y) / FLY_SPEED);
