@@ -1139,16 +1139,21 @@ export class FarmScene {
     // Capped well short of the full width, so the field grows as a block —
     // deeper as well as wider. Letting one row run the whole screen before
     // starting a second made a big farm look like a hedge.
-    const maxPerRow = Math.max(3, Math.min(Math.floor(usable / step), 13));
+    //
+    // Eleven rather than thirteen because that's what puts the fifth row in
+    // reach: plots cost 1.19x each, so nobody was ever going to own the ~450
+    // that sixty-five drawn plants needed, and the bottom row of the grid was
+    // decoration. At eleven the field goes to four rows around sixty plots and
+    // fills out at about a hundred, which is a long run but a real one.
+    const maxPerRow = Math.max(3, Math.min(Math.floor(usable / step), 11));
     const rowCount = Math.max(0, Math.min(FIELD_ROWS, Math.ceil(plants / maxPerRow)));
     // Evened out across however many rows that comes to, so the last row isn't
     // a stub hanging off the bottom of the block.
     const perRow = rowCount > 0 ? Math.min(maxPerRow, Math.ceil(plants / rowCount)) : 0;
 
     // Rows spread through the field's depth instead of stacking into the top of
-    // a fixed five-slot grid. Five rows takes hundreds of plots, so in practice
-    // everyone was looking at a three-row farm crowded into the back with the
-    // whole front third of the field left as bare lawn. The gap is capped so a
+    // a fixed five-slot grid, which left a three-row farm crowded into the back
+    // with the whole front third of the field as bare lawn. The gap is capped so a
     // two-row farm reads as a field with room to grow rather than two stripes
     // on a hillside, and the block stays centred as it fills out. The last row
     // stops short of the fence, which is the headland the machines turn on.
