@@ -178,8 +178,13 @@ const p = (art: Art, x: number, row: number): Prop => ({ art, x, row });
 
 /**
  * The build-out, in order. Positions are hand-placed rather than generated:
- * the left of the yard is the working end (sacks, crates, sheds), the right is
+ * the right of the yard is the working end (sacks, crates, sheds), the left is
  * the heap with the tall stuff standing behind it.
+ *
+ * That way round because the heap is where everything lands, and everything
+ * lands on the left — the pipeline comes down the west side and the trough
+ * empties towards it. A mound in the opposite corner from the two chutes
+ * feeding it was the yard's oldest lie.
  *
  * It runs out at around a hundred trillion, which is past the last thing on the
  * price list. A yard with everything in it is a fine place for the ladder to
@@ -191,31 +196,31 @@ export const YARD: Stage[] = [
   { at: 10, heap: 10 },
   { at: 30, heap: 15 },
   { at: 80, heap: 21 },
-  { at: 200, heap: 21, add: p(SACK, 6, 0) },
-  { at: 900, heap: 21, add: p(SACK, 20, 0) },
-  { at: 4e3, heap: 21, add: p(CRATE, 2, 1) },
-  { at: 2e4, heap: 21, add: p(BARROW, 36, 0) },
-  { at: 8e4, heap: 21, add: p(SACK, 52, 0) },
-  { at: 3e5, heap: 21, add: p(CRATE, 20, 1) },
-  { at: 1.5e6, heap: 21, add: p(SHED, 8, 2) },
-  { at: 6e6, heap: 21, add: p(SILO, 90, 3) },
-  { at: 3e7, heap: 21, add: p(CRATE, 38, 1) },
-  { at: 1.2e8, heap: 21, add: p(SACK, 68, 0) },
-  { at: 5e8, heap: 21, add: p(SILO, 106, 3) },
-  { at: 2e9, heap: 21, add: p(CRATE, 56, 1) },
-  { at: 1e10, heap: 21, add: p(ELEVATOR, 52, 3) },
-  { at: 4e10, heap: 21, add: p(CRATE, 74, 1) },
-  { at: 2e11, heap: 21, add: p(SILO, 122, 3) },
-  { at: 8e11, heap: 21, add: p(CRATE, 92, 1) },
-  { at: 3e12, heap: 21, add: p(SHED, 40, 2) },
-  { at: 1.5e13, heap: 21, add: p(SILO, 138, 3) },
-  { at: 6e13, heap: 21, add: p(ELEVATOR, 28, 3) },
-  { at: 2.5e14, heap: 21, add: p(CRATE, 110, 1) },
-  { at: 1e15, heap: 21, add: p(SHED, 72, 2) },
-  { at: 4e15, heap: 21, add: p(SACK, 84, 0) },
-  { at: 1.5e16, heap: 21, add: p(SILO, 154, 3) },
-  { at: 6e16, heap: 21, add: p(ELEVATOR, 4, 3) },
-  { at: 2.5e17, heap: 21, add: p(BARROW, 100, 0) },
+  { at: 200, heap: 21, add: p(SACK, 159, 0) },
+  { at: 900, heap: 21, add: p(SACK, 145, 0) },
+  { at: 4e3, heap: 21, add: p(CRATE, 159, 1) },
+  { at: 2e4, heap: 21, add: p(BARROW, 127, 0) },
+  { at: 8e4, heap: 21, add: p(SACK, 113, 0) },
+  { at: 3e5, heap: 21, add: p(CRATE, 141, 1) },
+  { at: 1.5e6, heap: 21, add: p(SHED, 141, 2) },
+  { at: 6e6, heap: 21, add: p(SILO, 73, 3) },
+  { at: 3e7, heap: 21, add: p(CRATE, 123, 1) },
+  { at: 1.2e8, heap: 21, add: p(SACK, 97, 0) },
+  { at: 5e8, heap: 21, add: p(SILO, 57, 3) },
+  { at: 2e9, heap: 21, add: p(CRATE, 105, 1) },
+  { at: 1e10, heap: 21, add: p(ELEVATOR, 105, 3) },
+  { at: 4e10, heap: 21, add: p(CRATE, 87, 1) },
+  { at: 2e11, heap: 21, add: p(SILO, 41, 3) },
+  { at: 8e11, heap: 21, add: p(CRATE, 69, 1) },
+  { at: 3e12, heap: 21, add: p(SHED, 109, 2) },
+  { at: 1.5e13, heap: 21, add: p(SILO, 25, 3) },
+  { at: 6e13, heap: 21, add: p(ELEVATOR, 129, 3) },
+  { at: 2.5e14, heap: 21, add: p(CRATE, 51, 1) },
+  { at: 1e15, heap: 21, add: p(SHED, 77, 2) },
+  { at: 4e15, heap: 21, add: p(SACK, 81, 0) },
+  { at: 1.5e16, heap: 21, add: p(SILO, 10, 3) },
+  { at: 6e16, heap: 21, add: p(ELEVATOR, 153, 3) },
+  { at: 2.5e17, heap: 21, add: p(BARROW, 63, 0) },
 ];
 
 interface YardLayout {
@@ -258,7 +263,7 @@ function sameLayout(a: YardLayout, b: YardLayout): boolean {
  * rather than the left end of a big one.
  */
 const HEAP_BASE = 6;
-const HEAP_X = 121;
+const HEAP_X = 6;
 const HEAP_STEP = 6;
 export const HEAP_CAP = (HEAP_BASE * (HEAP_BASE + 1)) / 2;
 
@@ -455,6 +460,10 @@ const SACK_WORTH = 3;
 /** Sacks that can be waiting at once. Past this the machines hold their load. */
 const MAX_SACKS = 9;
 const MAX_LUMPS = 64;
+
+/** The angled run at the bottom of the pipeline, in pixels across and its fall. */
+const CHUTE_LEN = 14;
+const CHUTE_SLOPE = 0.7;
 
 /** How long a building takes to come out of the ground, or to go back into it. */
 const BUILD_MS = 520;
@@ -825,10 +834,17 @@ export class FarmScene {
           break;
         }
         case "back": {
-          if (this.walk(hand, hand.home, hand.homeY, dt)) {
+          // To the trough, same as the sacks. One deposit point for the whole
+          // farm: what a hand pulls out of a bed goes where a combine's load
+          // goes, and the trough empties towards the mound.
+          const bin = this.troughBox;
+          const bx = bin ? clamp(hand.x, bin.x + 4, bin.x + bin.w - 6) : hand.home;
+          const by = bin ? bin.y + 3 : hand.homeY;
+          if (this.walk(hand, bx, by, dt)) {
             hand.carrying = "none";
+            if (bin) this.troughFill = Math.min(TROUGH_CAP, this.troughFill + 1);
             // Set down, not thrown. The dirt it kicks up is the whole event.
-            this.puff(hand.home + 2, hand.homeY - 1, "dust");
+            this.puff(bx + 2, by - 1, "dust");
             hand.state = "resting";
             hand.target = -1;
             hand.loiter = { x: hand.x, y: hand.y };
@@ -982,8 +998,10 @@ export class FarmScene {
     this.drawSacks(now);
     this.drawPuffs(now, dt);
     this.drawFence(yardY);
-    this.drawPipeline(horizon, yardY, dt);
     this.drawHoard(now);
+    // After the hoard: the pipeline runs down the near side of the yard, so it
+    // passes in front of the silos rather than being swallowed by them.
+    this.drawPipeline(horizon, yardY, dt);
     // The hands walk between the two bands, so they're drawn after both — and
     // after the field has said where this frame's beds are.
     this.stepHands(t, dt, shownCount(this.view.working.hand ?? 0, PLACEMENT.hand.cap, PLACEMENT.hand.spread), yardY);
@@ -1188,9 +1206,10 @@ export class FarmScene {
   private drawPipeline(horizon: number, yardY: number, dt: number): void {
     const ctx = this.ctx;
     const y = this.pipeY(horizon);
-    // Stops just inside the yard: any lower and the first crate you build
-    // stands in front of the spout.
-    const foot = yardY + 5;
+    // The riser runs right down the west side of the yard to just above the
+    // mound, because that's what it's filling. Stopping at the top of the yard
+    // meant a chute pointed at forty pixels of empty dirt.
+    const foot = Math.max(yardY + 12, this.station(0) - 30);
     const reach = this.lumps.reduce((m, l) => Math.max(m, l.from), this.pipeEnd);
     if (reach <= 0) return;
 
@@ -1244,22 +1263,30 @@ export class FarmScene {
     ctx.fillStyle = dark;
     for (let cy = y + 14; cy < foot - 8; cy += 16) ctx.fillRect(runTo - 2, cy, W + 2, 2);
 
-    // The outfall: a box over the yard with a mouth turned out of it, wide
-    // enough that what comes down the riser has room to fall out in a stream.
-    const mouth = foot - 9;
+    // The outfall: a chute, angled the way the potatoes actually leave. It was
+    // drawn as a right-angled box with a lip, and the crop came out of it on a
+    // diagonal — the pipe was telling you one thing and the potatoes another.
+    for (let i = 0; i < CHUTE_LEN; i++) {
+      const cx = runTo + i;
+      const cy = Math.round(foot - 4 + i * CHUTE_SLOPE);
+      ctx.fillStyle = dark;
+      ctx.fillRect(cx, cy, 1, 1);
+      ctx.fillRect(cx, cy + 8, 1, 1);
+      ctx.fillStyle = body;
+      ctx.fillRect(cx, cy + 1, 1, 7);
+      ctx.fillStyle = "#c3cad1";
+      ctx.fillRect(cx, cy + 1, 1, 1);
+      // A couple of bands across it, like the riser's collars.
+      if (i === 5 || i === 10) {
+        ctx.fillStyle = dark;
+        ctx.fillRect(cx, cy, 1, 9);
+      }
+    }
+    // The open end, squared off so it reads as a mouth and not a broken pipe.
+    const endX = runTo + CHUTE_LEN;
+    const endY = Math.round(foot - 4 + CHUTE_LEN * CHUTE_SLOPE);
     ctx.fillStyle = dark;
-    ctx.fillRect(runTo - 2, mouth - 1, 17, 1);
-    ctx.fillRect(runTo - 2, mouth - 1, 1, 12);
-    ctx.fillRect(runTo + 14, mouth - 1, 1, 9);
-    ctx.fillRect(runTo - 2, mouth + 10, 15, 1);
-    ctx.fillStyle = body;
-    ctx.fillRect(runTo - 1, mouth, 16, 10);
-    ctx.fillStyle = "#c3cad1";
-    ctx.fillRect(runTo - 1, mouth, 16, 1);
-    // The lip, open at the bottom right, which is where it all lands.
-    ctx.fillStyle = dark;
-    ctx.fillRect(runTo + 11, mouth + 7, 6, 1);
-    ctx.fillRect(runTo + 16, mouth + 7, 1, 4);
+    ctx.fillRect(endX, endY, 1, 9);
 
     // Whole potatoes in the pipe, not tan squares: outlined, so a hundred of
     // them nose to tail still reads as a hundred potatoes rather than a stripe.
@@ -1275,18 +1302,22 @@ export class FarmScene {
         return true;
       }
       const down = y + 2 + (lump.d - across);
-      if (down < mouth + 4) {
+      if (down < foot - 3) {
         ctx.drawImage(spud.canvas, runTo, Math.round(down));
         return true;
       }
-      // Out of the lip and onto the pile. It's already in the yard's count —
-      // this is just the last thing you see it do.
-      const out = down - (mouth + 4);
-      if (out > 11) {
-        this.puff(runTo + 15, foot - 1, "dust");
+      // Down the chute and off the end onto the pile. It's already in the
+      // yard's count — this is just the last thing you see it do.
+      const out = down - (foot - 3);
+      if (out > CHUTE_LEN + 6) {
+        this.puff(runTo + CHUTE_LEN, endY + 8, "dust");
         return false;
       }
-      ctx.drawImage(spud.canvas, runTo + Math.round(out), Math.round(mouth + 4 + out * 0.7));
+      ctx.drawImage(
+        spud.canvas,
+        runTo + Math.round(out),
+        Math.round(foot - 3 + out * CHUTE_SLOPE),
+      );
       return true;
     });
   }
@@ -1347,8 +1378,15 @@ export class FarmScene {
 
     // The trough gets sited before anything is drawn into it, because the
     // machines above need to know where they're aiming.
+    // Everything the field produces goes in the trough — the machines tip
+    // sacks for the crew to carry over, and the crew's own pickings go in the
+    // same place. So it's there as soon as anybody's working, not just when
+    // there's a machine.
     const works =
-      (this.view.working.tractor ?? 0) + (this.view.working.harvester ?? 0) > 0 || this.troughFill > 0;
+      (this.view.working.tractor ?? 0) +
+        (this.view.working.harvester ?? 0) +
+        (this.view.working.hand ?? 0) >
+        0 || this.troughFill > 0;
     this.troughBox = works ? { x: 26, w: 112, y: lane(0.99) } : null;
 
     for (let r = 0; r < FIELD_ROWS; r++) {
@@ -1780,8 +1818,8 @@ export class FarmScene {
       // Empty yard, but not an empty frame — a couple of strays in the dirt.
       const spud = artCanvas(POTATO_SPRITE);
       const baseline = this.station(0);
-      ctx.drawImage(spud.canvas, SCENE_W - 22, baseline - spud.h);
-      ctx.drawImage(spud.canvas, SCENE_W - 14, baseline - spud.h + 1);
+      ctx.drawImage(spud.canvas, HEAP_X + 4, baseline - spud.h);
+      ctx.drawImage(spud.canvas, HEAP_X + 12, baseline - spud.h + 1);
       return;
     }
 
@@ -1901,10 +1939,10 @@ export class FarmScene {
       this.troughFill--;
       if (this.hauls.length >= MAX_HAULS) continue;
       this.hauls.push({
-        x0: box.x + box.w - 3,
+        x0: box.x + 3,
         y0: box.y - 7,
-        x1: box.x + box.w + 9,
-        y1: this.yardTop() + 5,
+        x1: HEAP_X + 38,
+        y1: this.station(0) - 18,
         born: now,
         dur: 520,
       });
@@ -1942,8 +1980,10 @@ export class FarmScene {
       for (let sx = x + 2; sx < x + w - 3; sx += 3) ctx.fillRect(sx, y - 2 - depth, 2, 1);
     }
 
-    // The spout: out of the low end, through the fence, into the yard.
-    this.chuteLine(x + w - 3, y - 7, x + w + 9, this.yardTop() + 5, "#7f8891");
+    // The spout: out of the low end, through the fence and down towards the
+    // mound — which is on the same side as the pipeline's chute, so the yard
+    // has one place things arrive rather than two.
+    this.chuteLine(x + 3, y - 7, HEAP_X + 38, this.station(0) - 18, "#7f8891");
   }
 
   /**
