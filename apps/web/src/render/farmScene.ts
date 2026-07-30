@@ -391,8 +391,6 @@ interface Haul {
   y1: number;
   born: number;
   dur: number;
-  /** Draw the chute it's sliding down. Augers have one; the trough spout is fixed. */
-  guide: boolean;
 }
 
 /** A potato inside the pipeline, measured as distance travelled along it. */
@@ -446,10 +444,17 @@ const TROUGH_CAP = 12;
 const TROUGH_DRAIN = 0.8;
 
 /** Buffer pixels a second, for a potato in the pipeline. */
-const PIPE_SPEED = 34;
+const PIPE_SPEED = 40;
 
 const MAX_HAULS = 24;
-const MAX_LUMPS = 18;
+
+/** Beds a machine takes on board before it tips a sack out at the headland. */
+const MACHINE_LOAD = 5;
+/** What one of those sacks is worth when a hand tips it into the trough. */
+const SACK_WORTH = 3;
+/** Sacks that can be waiting at once. Past this the machines hold their load. */
+const MAX_SACKS = 9;
+const MAX_LUMPS = 40;
 
 /** How long a building takes to come out of the ground, or to go back into it. */
 const BUILD_MS = 520;
@@ -501,12 +506,30 @@ interface Hand {
   loiter: { x: number; y: number };
   /** The row it works by preference, so the crew covers the field. */
   rowPref: number;
-  state: "resting" | "out" | "picking" | "back";
+  state: "resting" | "out" | "picking" | "back" | "fetch" | "hauling";
   /** Index into the drawn beds. -1 while resting. */
   target: number;
+  /** Id of the sack it's been sent for, or -1. */
+  sack: number;
   /** Wall time at which a timed state ends. */
   until: number;
-  carrying: boolean;
+  carrying: "none" | "potato" | "sack";
+}
+
+/**
+ * A machine's load, tipped out at the end of the row for somebody to deal with.
+ *
+ * The machines used to auger straight into the trough from wherever they stood,
+ * which meant the potato left the combine as a thrown object and crossed forty
+ * pixels of open air. This is the same journey with the work put back in: the
+ * combine fills, tips a sack at the headland, and a hand walks out for it.
+ */
+interface Sack {
+  id: number;
+  x: number;
+  y: number;
+  /** Wall clock at the drop, so it can land rather than appear. */
+  born: number;
 }
 
 /** One plant in a row, as drawn this frame. Ground point, not top-left. */
@@ -562,6 +585,11 @@ export class FarmScene {
   private rngSeed = 1;
   private hauls: Haul[] = [];
   private lumps: Lump[] = [];
+  /** Sacks tipped out by the machines, waiting for a hand. */
+  private sacks: Sack[] = [];
+  private sackId = 0;
+  /** How full each drawn machine is, keyed by tier and index. */
+  private machineLoad = new Map<string, number>();
   private dug: Dug[] = [];
   private puffs: Puff[] = [];
   /** The plants as laid out this frame. Deterministic, so an index is a place. */
@@ -705,8 +733,9 @@ export class FarmScene {
         rowPref: i % FIELD_ROWS,
         state: "resting",
         target: -1,
+        sack: -1,
         until: t + jitter * 2,
-        carrying: false,
+        carrying: "none",
       });
     }
 
@@ -724,6 +753,14 @@ export class FarmScene {
             };
           }
           if (t < hand.until) break;
+          // A sack sitting at the headland is worth more than another bed:
+          // it's already picked, and it's in the way.
+          const sack = this.claimSack(hand);
+          if (sack >= 0) {
+            hand.sack = sack;
+            hand.state = "fetch";
+            break;
+          }
           const target = this.claimBed(t, hand);
           if (target < 0) {
             // Nothing ready and nothing growing: try again shortly.
@@ -751,13 +788,45 @@ export class FarmScene {
         case "picking": {
           if (t < hand.until) break;
           this.lift(hand.target, t);
-          hand.carrying = true;
+          hand.carrying = "potato";
           hand.state = "back";
+          break;
+        }
+        case "fetch": {
+          const sack = this.sacks.find((sk) => sk.id === hand.sack);
+          if (!sack) {
+            hand.sack = -1;
+            hand.state = "resting";
+            hand.until = t + 0.3;
+            break;
+          }
+          if (this.walk(hand, sack.x, sack.y, dt)) {
+            this.sacks = this.sacks.filter((sk) => sk.id !== hand.sack);
+            hand.carrying = "sack";
+            hand.state = "hauling";
+          }
+          break;
+        }
+        case "hauling": {
+          // To the trough if there is one — that's where the machines' load
+          // goes — and to the yard if there isn't.
+          const box = this.troughBox;
+          const tx = box ? clamp(hand.x, box.x + 4, box.x + box.w - 6) : hand.home;
+          const ty = box ? box.y + 3 : hand.homeY;
+          if (this.walk(hand, tx, ty, dt, 0.85)) {
+            hand.carrying = "none";
+            hand.sack = -1;
+            if (box) this.troughFill = Math.min(TROUGH_CAP, this.troughFill + SACK_WORTH);
+            this.puff(tx + 1, ty - 2, "dust");
+            hand.state = "resting";
+            hand.loiter = { x: hand.x, y: hand.y };
+            hand.until = t + 0.4;
+          }
           break;
         }
         case "back": {
           if (this.walk(hand, hand.home, hand.homeY, dt)) {
-            hand.carrying = false;
+            hand.carrying = "none";
             // Set down, not thrown. The dirt it kicks up is the whole event.
             this.puff(hand.home + 2, hand.homeY - 1, "dust");
             hand.state = "resting";
@@ -822,14 +891,18 @@ export class FarmScene {
     const ctx = this.ctx;
     const sprite = artCanvas(this.mark("hand"));
     const spud = artCanvas(POTATO_SPRITE);
+    const sack = artCanvas(SACK);
     for (const hand of this.hands) {
-      const moving = hand.state === "out" || hand.state === "back";
+      const moving = hand.state !== "resting" && hand.state !== "picking";
       // A 1px bob while walking, and a deeper stoop while pulling a bed.
       const bob = moving ? Math.floor(t * 4) % 2 : hand.state === "picking" ? 2 : 0;
       const x = Math.round(hand.x);
       const y = Math.round(hand.y) - sprite.h + bob;
       ctx.drawImage(sprite.canvas, x, y);
-      if (hand.carrying) ctx.drawImage(spud.canvas, x + 1, y - 4);
+      if (hand.carrying === "potato") ctx.drawImage(spud.canvas, x + 1, y - 4);
+      // Sacks ride on the shoulder, which is also why a hand carrying one
+      // walks at eighty-five per cent pace.
+      if (hand.carrying === "sack") ctx.drawImage(sack.canvas, x - 2, y - sack.h + 3);
     }
   }
 
@@ -906,6 +979,7 @@ export class FarmScene {
     this.drawGround(horizon, yardY);
     this.drawBack(t, now, horizon);
     this.drawField(t, now, horizon, yardY);
+    this.drawSacks(now);
     this.drawPuffs(now, dt);
     this.drawFence(yardY);
     this.drawPipeline(horizon, yardY, dt);
@@ -1117,53 +1191,97 @@ export class FarmScene {
     const reach = this.lumps.reduce((m, l) => Math.max(m, l.from), this.pipeEnd);
     if (reach <= 0) return;
 
-    // The run, the elbow and the riser, as one bent tube: dark edges, light
-    // body, and the body exactly as wide as a potato so the contents read.
+    // Everything the industrial half of the farm makes comes down this thing,
+    // and for a long time it was a five pixel drainpipe. It's now built like it
+    // carries the load: a nine-pixel trunk on trestles, a hopper where the
+    // sheds tip into it, collars down the riser and a proper outfall over the
+    // yard with the crop visibly falling out of it.
     const body = "#a8b0b8";
     const edge = "#7f8891";
-    ctx.fillStyle = edge;
-    ctx.fillRect(1, y, reach, 1);
-    ctx.fillRect(1, y + 4, reach, 1);
-    ctx.fillRect(1, y, 1, foot - y);
-    ctx.fillRect(5, y, 1, foot - y);
-    ctx.fillStyle = body;
-    ctx.fillRect(2, y + 1, reach - 1, 3);
-    ctx.fillRect(2, y + 5, 3, foot - y - 5);
-    // A collar every so often, so a long riser isn't a featureless bar.
-    ctx.fillStyle = edge;
-    for (let cy = y + 12; cy < foot - 4; cy += 14) ctx.fillRect(1, cy, 5, 1);
-    // The mouth: an elbow turned out over the yard, open at the end, so the
-    // riser reads as delivering somewhere rather than just stopping at dirt.
-    ctx.fillStyle = edge;
-    ctx.fillRect(1, foot - 6, 11, 1);
-    ctx.fillRect(1, foot, 11, 1);
-    ctx.fillRect(11, foot - 6, 1, 3);
-    ctx.fillRect(11, foot - 1, 1, 2);
-    ctx.fillStyle = body;
-    ctx.fillRect(2, foot - 5, 10, 5);
+    const dark = "#68707a";
+    const W = 9; // outside width of the trunk
+    const runTo = 2; // left edge of the riser
+    const midY = y + 3; // where the potatoes ride inside the run
 
-    const runTo = 3;
+    // Trestles under the horizontal run, so it's carried rather than floating.
+    ctx.fillStyle = dark;
+    for (let px = 22; px < reach - 6; px += 26) {
+      ctx.fillRect(px, y + W, 1, 5);
+      ctx.fillRect(px + 4, y + W, 1, 5);
+      ctx.fillRect(px - 1, y + W + 5, 7, 1);
+    }
+
+    // The run: dark rims top and bottom, lit body, and a highlight line along
+    // the top so it reads as a tube and not a rectangle.
+    ctx.fillStyle = edge;
+    ctx.fillRect(1, y, reach, W);
+    ctx.fillStyle = body;
+    ctx.fillRect(1, y + 1, reach, W - 3);
+    ctx.fillStyle = "#c3cad1";
+    ctx.fillRect(1, y + 1, reach, 1);
+    // Seams, every so often along the run.
+    ctx.fillStyle = dark;
+    for (let px = 14; px < reach - 2; px += 18) ctx.fillRect(px, y, 1, W);
+
+    // The hopper at the far end, where the sheds tip in: a funnel wider than
+    // the pipe, so the run has somewhere to have come from.
+    const hx = Math.min(SCENE_W - 3, reach);
+    ctx.fillStyle = dark;
+    ctx.fillRect(hx - 10, y - 6, 12, 1);
+    ctx.fillStyle = body;
+    for (let i = 0; i < 5; i++) ctx.fillRect(hx - 9 + i, y - 5 + i, 11 - i * 2, 1);
+
+    // The riser, with collars.
+    ctx.fillStyle = edge;
+    ctx.fillRect(runTo - 1, y, W, foot - y);
+    ctx.fillStyle = body;
+    ctx.fillRect(runTo, y, W - 2, foot - y);
+    ctx.fillStyle = "#c3cad1";
+    ctx.fillRect(runTo, y, 1, foot - y);
+    ctx.fillStyle = dark;
+    for (let cy = y + 14; cy < foot - 8; cy += 16) ctx.fillRect(runTo - 2, cy, W + 2, 2);
+
+    // The outfall: a box over the yard with a mouth turned out of it, wide
+    // enough that what comes down the riser has room to fall out in a stream.
+    const mouth = foot - 9;
+    ctx.fillStyle = dark;
+    ctx.fillRect(runTo - 2, mouth - 1, 17, 1);
+    ctx.fillRect(runTo - 2, mouth - 1, 1, 12);
+    ctx.fillRect(runTo + 14, mouth - 1, 1, 9);
+    ctx.fillRect(runTo - 2, mouth + 10, 15, 1);
+    ctx.fillStyle = body;
+    ctx.fillRect(runTo - 1, mouth, 16, 10);
+    ctx.fillStyle = "#c3cad1";
+    ctx.fillRect(runTo - 1, mouth, 16, 1);
+    // The lip, open at the bottom right, which is where it all lands.
+    ctx.fillStyle = dark;
+    ctx.fillRect(runTo + 11, mouth + 7, 6, 1);
+    ctx.fillRect(runTo + 16, mouth + 7, 1, 4);
+
     ctx.fillStyle = "#c98b4b";
     this.lumps = this.lumps.filter((lump) => {
       lump.d += PIPE_SPEED * dt;
       const across = lump.from - runTo;
       if (lump.d < across) {
-        ctx.fillRect(Math.round(lump.from - lump.d), y + 1, 3, 3);
+        // Along the run, riding with a one pixel jog so the contents rattle
+        // rather than slide.
+        const px = Math.round(lump.from - lump.d);
+        ctx.fillRect(px, midY + (px % 5 === 0 ? 0 : 1), 4, 3);
         return true;
       }
-      const down = y + 1 + (lump.d - across);
-      if (down < foot - 5) {
-        ctx.fillRect(runTo - 1, Math.round(down), 3, 3);
+      const down = y + 2 + (lump.d - across);
+      if (down < mouth + 4) {
+        ctx.fillRect(runTo + 1, Math.round(down), 4, 3);
         return true;
       }
-      // Round the elbow and out of the mouth, onto the pile. It's already in
-      // the yard's count — this is just the last thing you see it do.
-      const out = 2 + (down - (foot - 5));
-      if (out > 12) {
-        this.puff(12, foot - 1, "dust");
+      // Out of the lip and onto the pile. It's already in the yard's count —
+      // this is just the last thing you see it do.
+      const out = down - (mouth + 4);
+      if (out > 11) {
+        this.puff(runTo + 15, foot - 1, "dust");
         return false;
       }
-      ctx.fillRect(Math.round(out), foot - 4, 3, 3);
+      ctx.fillRect(runTo + 1 + Math.round(out), Math.round(mouth + 4 + out * 0.7), 4, 3);
       return true;
     });
   }
@@ -1339,13 +1457,38 @@ export class FarmScene {
         // both of them unload the same way a real one does: an auger swung out
         // over the trough, with the crop visibly going down it.
         const reach = id === "harvester" ? 6 : 2;
+        const key = `${id}${i}`;
         for (let b = 0; b < this.beds.length; b++) {
           const bed = this.beds[b]!;
           if (bed.dry || Math.abs(bed.y - (ground - 5)) > 3) continue;
           if (bed.x < x - reach || bed.x > x + sprite.w + reach) continue;
           if (this.ripeness(b, t) < 1) continue;
           this.lift(b, t);
-          this.unload(x + Math.floor(sprite.w / 2), ground - sprite.h + 3, now);
+          this.machineLoad.set(key, (this.machineLoad.get(key) ?? 0) + 1);
+        }
+        // Full up: tip it out at the end of the row it's working and carry on.
+        // A sack on the headland is a job for somebody, which is the point —
+        // the machines and the crew are the same operation now.
+        if ((this.machineLoad.get(key) ?? 0) >= MACHINE_LOAD && this.sacks.length < MAX_SACKS) {
+          this.machineLoad.set(key, 0);
+          // Nobody to fetch it: a farm with machines and no crew tips straight
+          // into the trough rather than leaving sacks out in the rain forever.
+          if (this.hands.length === 0) {
+            this.troughFill = Math.min(TROUGH_CAP, this.troughFill + SACK_WORTH);
+            continue;
+          }
+          // Just inside the end of the row, not past it: a sack half off the
+          // side of the screen is a sack nobody sees get fetched.
+          const at = row
+            ? clamp(row.right - 8, 4, SCENE_W - 14)
+            : clamp(x + sprite.w, 4, SCENE_W - 14);
+          this.sacks.push({
+            id: this.sackId++,
+            x: at + (this.sacks.length % 3) * 3,
+            y: ground + 3,
+            born: now,
+          });
+          this.puff(at + 4, ground + 2, "dust");
         }
       }
     }
@@ -1711,27 +1854,28 @@ export class FarmScene {
   // filled by auger from whatever's working the rows above it, emptying down a
   // spout through the fence into the yard.
 
-  /** Fill the trough by one, with the auger that put it there. */
-  private unload(x: number, y: number, now: number): void {
-    const box = this.troughBox;
-    if (!box) return;
-    this.troughFill = Math.min(TROUGH_CAP, this.troughFill + 1);
-    if (this.hauls.length + 2 > MAX_HAULS) return;
-    // Aimed at the nearest part of the trough, so a machine at the left end
-    // isn't augering across the whole field.
-    const tx = Math.max(box.x + 6, Math.min(box.x + box.w - 10, x));
-    for (let n = 0; n < 2; n++) {
-      this.hauls.push({
-        x0: x,
-        y0: y,
-        // Two abreast rather than nose to tail: a spout throws a spread, and
-        // one potato behind another on the same line just reads as lag.
-        x1: tx + n * 3 - 1,
-        y1: box.y - 8,
-        born: now + n * 90,
-        dur: 480,
-        guide: true,
-      });
+  /** The nearest sack nobody's already walking to. */
+  private claimSack(hand: Hand): number {
+    let best = -1;
+    let bestD = Infinity;
+    for (const sack of this.sacks) {
+      if (this.hands.some((h) => h.sack === sack.id)) continue;
+      const d = Math.hypot(sack.x - hand.x, sack.y - hand.y);
+      if (d < bestD) {
+        bestD = d;
+        best = sack.id;
+      }
+    }
+    return best;
+  }
+
+  /** The sacks waiting at the headland, dropping the last inch as they land. */
+  private drawSacks(now: number): void {
+    const sprite = artCanvas(SACK);
+    for (const sack of this.sacks) {
+      const age = now - sack.born;
+      const drop = age < 220 ? Math.round(4 * (1 - age / 220)) : 0;
+      this.ctx.drawImage(sprite.canvas, Math.round(sack.x), Math.round(sack.y) - sprite.h - drop);
     }
   }
 
@@ -1758,7 +1902,6 @@ export class FarmScene {
         y1: this.yardTop() + 5,
         born: now,
         dur: 520,
-        guide: false,
       });
     }
   }
@@ -1829,10 +1972,6 @@ export class FarmScene {
       const p = (now - h.born) / h.dur;
       if (p > 1) return false;
       if (p < 0) return true;
-      if (h.guide) {
-        const reach = Math.max(Math.abs(h.x1 - h.x0), Math.abs(h.y1 - h.y0));
-        this.chuteLine(h.x0, h.y0, h.x1, h.y1, "#8f979f", Math.min(1, 9 / Math.max(1, reach)));
-      }
       ctx.drawImage(
         sprite.canvas,
         Math.round(h.x0 + (h.x1 - h.x0) * p),
