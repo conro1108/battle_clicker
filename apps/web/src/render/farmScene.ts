@@ -496,6 +496,23 @@ interface Puff {
 
 const MAX_PUFFS = 40;
 
+/**
+ * A billow of steam off a cooling tower. Fatter, slower and longer-lived than a
+ * puff, and it grows as it climbs — a reactor's plume is the biggest thing on
+ * the property and it should be drawn like weather, not like exhaust.
+ */
+interface Plume {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  born: number;
+  dur: number;
+  size: number;
+}
+
+const MAX_PLUMES = 80;
+
 /** How long a dug potato sits in the open before it's counted and gone. */
 const DUG_MS = 850;
 
@@ -639,6 +656,36 @@ interface Seed {
   crop: number;
 }
 
+/**
+ * A cloud seeder, working the sky the way the hands work the ground.
+ *
+ * These used to drift left to right at a fixed pace on a fixed lane, seeding
+ * whatever happened to be under them, and a rank of them was a screensaver.
+ * A seeder has a *job*: pick a patch that needs bringing on, dart over it from
+ * wherever it is, stop dead, and dump on it. So it holds a position and a
+ * destination and moves between them, and it goes up and left as readily as
+ * down and right.
+ */
+interface Flyer {
+  x: number;
+  y: number;
+  /** Where the current dash started, and where it ends. */
+  x0: number;
+  y0: number;
+  tx: number;
+  ty: number;
+  /** Seconds into the dash, and how long the dash takes. */
+  t: number;
+  dur: number;
+  /** Seconds left standing over the patch. Zero while it's travelling. */
+  hold: number;
+  /** Metronome for the drops while it's holding. */
+  drip: number;
+}
+
+/** Buffer pixels a second at full tilt. Fast: it's the sky, nothing's in it. */
+const FLY_SPEED = 58;
+
 export class FarmScene {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -667,6 +714,8 @@ export class FarmScene {
   private machineLoad = new Map<string, number>();
   private dug: Dug[] = [];
   private puffs: Puff[] = [];
+  /** Cooling-tower steam, on its own budget so it can't starve the dust. */
+  private plumes: Plume[] = [];
   /** The plants as laid out this frame. Deterministic, so an index is a place. */
   private beds: Bed[] = [];
   /** This frame's crop rows. Rigs stand beside these; machines drive along them. */
@@ -674,6 +723,8 @@ export class FarmScene {
   /** Fresh furrow behind a tractor, fading. */
   private tills: { x: number; y: number; born: number }[] = [];
   private seeds: Seed[] = [];
+  /** The seeders aloft, one entry each, kept between frames. */
+  private flyers: Flyer[] = [];
   /** When each bed was last cleared. Indexed the same as `beds`. */
   private planted: number[] = [];
   private hands: Hand[] = [];
@@ -1209,6 +1260,10 @@ export class FarmScene {
     const ctx = this.ctx;
     const baseline = horizon + 8;
 
+    // Steam first, so it comes out from behind the towers rather than over
+    // the front of them.
+    this.drawPlumes(now);
+
     // No barn. It stood here for a long time as a bookend and it never meant
     // anything — nothing you buy touched it, and it was taking a third of the
     // back edge away from the tiers that do.
@@ -1245,21 +1300,7 @@ export class FarmScene {
       if (x + sprite.w > right) break;
       ctx.drawImage(sprite.canvas, x, baseline - sprite.h);
       if (!item.dead) {
-        // The stack runs, which is how you tell it from a dead one at a glance
-        // without reading the colour.
-        if (this.chance(0.45)) this.puff(x + 2, baseline - sprite.h - 1, "steam");
-        // Windows and panel lights, blinking on their own phase. A row of
-        // identical silhouettes standing perfectly still reads as a printed
-        // backdrop; a couple of moving pixels each reads as a night shift.
-        const beat = Math.sin(t * 1.4 + idx * 2.3);
-        if (beat > 0.1) {
-          ctx.fillStyle = beat > 0.75 ? "#fff0b8" : "#ffd782";
-          ctx.fillRect(x + 2, baseline - sprite.h + 2, 2, 1);
-        }
-        if (Math.sin(t * 0.9 + idx * 1.1) > 0.4) {
-          ctx.fillStyle = "#8ee0c0";
-          ctx.fillRect(x + sprite.w - 3, baseline - Math.floor(sprite.h / 2), 1, 1);
-        }
+        this.buildingLife(item.id, x, baseline - sprite.h, sprite.w, sprite.h, t, idx);
         // Everything along the back edge stands on the pipeline, and every so
         // often drops something into it. A trickle, not a conveyor: the far
         // side of the property should read as a place that's busy.
@@ -1272,6 +1313,157 @@ export class FarmScene {
       idx++;
       x += sprite.w + 2;
     }
+  }
+
+  /** Which mark of a tier is standing, 0..2. */
+  private markLevel(id: solo.SoloProducerId): number {
+    return Math.max(0, Math.min(2, this.view.marks[id] ?? 0));
+  }
+
+  /**
+   * What a building on the back edge does while it stands there.
+   *
+   * Every one of them used to get the same two blinking pixels and the same
+   * wisp of steam off the top left corner, which at a glance made the whole
+   * skyline one building repeated. They're different industries: the lab is lit
+   * and bubbling, the refinery is on fire, the tower is a rack of grow lights
+   * cycling, and the reactor is a reactor.
+   */
+  private buildingLife(
+    id: solo.SoloProducerId,
+    x: number,
+    top: number,
+    w: number,
+    h: number,
+    t: number,
+    idx: number,
+  ): void {
+    const ctx = this.ctx;
+    switch (id) {
+      case "lab": {
+        // Three lit windows on their own phases, and whatever's in the dome.
+        for (const [k, c] of [2, 7, 12].entries()) {
+          const beat = Math.sin(t * 1.7 + idx * 2.1 + k * 1.9);
+          if (beat <= -0.2) continue;
+          ctx.globalAlpha = 0.3 + 0.5 * Math.max(0, beat);
+          ctx.fillStyle = "#e4fbff";
+          ctx.fillRect(x + c, top + 6, 2, 2);
+        }
+        const glow = 0.5 + 0.5 * Math.sin(t * 1.1 + idx);
+        ctx.globalAlpha = 0.2 + 0.35 * glow;
+        ctx.fillStyle = "#b6f2fb";
+        ctx.fillRect(x + 4, top + 1, 8, 3 - Math.round(glow));
+        ctx.globalAlpha = 1;
+        if (this.chance(0.5)) this.puff(x + 8, top, "steam", 2);
+        break;
+      }
+      case "refinery": {
+        // The flare stack, which is the one thing on the skyline that's alight.
+        // Later marks draw a flame into the art, so the live one is anchored to
+        // where the stack actually tops out rather than to the top of the
+        // sprite — otherwise the upgrade lights a second fire above the first.
+        const stack = top + [0, 2, 3][this.markLevel("refinery")]!;
+        const flick = fract(Math.sin(t * 11.3 + idx * 4.1) * 4375.85);
+        const tall = 2 + Math.round(flick * 2);
+        ctx.fillStyle = "#f0913c";
+        ctx.fillRect(x + 11, stack - tall, 3, tall);
+        ctx.fillStyle = "#ffe08a";
+        ctx.fillRect(x + 12, stack - tall + 1, 1, Math.max(1, tall - 1));
+        if (this.chance(0.9)) this.puff(x + 12, stack - tall - 1, "steam", 7);
+        // Vessel lights down the near tank, running in sequence.
+        const lamp = Math.floor(t * 2.2 + idx) % 3;
+        ctx.fillStyle = "#ffd782";
+        ctx.fillRect(x + 2, top + h - 3 - lamp * 2, 1, 1);
+        break;
+      }
+      case "tower": {
+        // A rack of grow lights, cycling floor by floor: the light walks up the
+        // tower and starts again, so a row of them ripples.
+        const floors = Math.max(1, Math.round((h - 7) / 3));
+        const lit = Math.floor(t * 2.6 + idx * 1.7) % floors;
+        for (const c of [2, 6]) {
+          ctx.globalAlpha = 0.75;
+          ctx.fillStyle = "#e6ffc4";
+          ctx.fillRect(x + c, top + 4 + lit * 3, 2, 2);
+        }
+        ctx.globalAlpha = 0.18;
+        ctx.fillStyle = "#c8f5a0";
+        ctx.fillRect(x - 1, top + 3 + lit * 3, w + 2, 4);
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case "reactor": {
+        // Steam off the tower, continuously. This is the only thing on the farm
+        // that draws its own weather.
+        if (this.plumes.length < MAX_PLUMES && this.chance(11)) {
+          this.plumes.push({
+            x: x + w / 2 - 2 + (Math.random() - 0.5) * 6,
+            y: top + 1 - Math.random() * 2,
+            // Barely any sideways push to start with: it leaves the mouth as a
+            // column and only finds the wind once it's clear of the tower.
+            vx: (Math.random() - 0.5) * 3,
+            vy: -15 - Math.random() * 6,
+            born: performance.now(),
+            dur: 2600 + Math.random() * 1200,
+            size: 3,
+          });
+        }
+        // The core, seen through the throat of the tower, and its bloom.
+        // A slow breath with a fast flicker on top of it — a steady glow reads
+        // as a light left on, and this is supposed to be a reaction.
+        const pulse =
+          (0.5 + 0.5 * Math.sin(t * 2.7 + idx * 1.3)) * (0.8 + 0.2 * fract(Math.sin(t * 37 + idx) * 4375.85));
+        ctx.fillStyle = "#9dfbe0";
+        ctx.globalAlpha = 0.1 + 0.1 * pulse;
+        ctx.fillRect(x + 2, top + 3, w - 4, 6);
+        ctx.globalAlpha = 0.2 + 0.22 * pulse;
+        ctx.fillRect(x + 4, top + 4, w - 8, 4);
+        ctx.globalAlpha = 0.5 + 0.5 * pulse;
+        ctx.fillRect(x + 5, top + 5, 4, 2);
+        // Hazard strobes on the rim, and the light the whole thing throws on
+        // the ground it stands on.
+        ctx.globalAlpha = 0.08 + 0.07 * pulse;
+        ctx.fillRect(x - 1, top + h - 2, w + 2, 2);
+        ctx.globalAlpha = 1;
+        if ((t * 0.75 + idx * 0.4) % 1 < 0.14) {
+          ctx.fillStyle = "#ff5b4a";
+          ctx.fillRect(x + 1, top + 1, 1, 1);
+          ctx.fillRect(x + w - 2, top + 1, 1, 1);
+        }
+        break;
+      }
+      default: {
+        // Anything else that ends up back here keeps the old night shift: a
+        // lit window and a wisp off the roof.
+        if (this.chance(0.45)) this.puff(x + 2, top - 1, "steam");
+        const beat = Math.sin(t * 1.4 + idx * 2.3);
+        if (beat > 0.1) {
+          ctx.fillStyle = beat > 0.75 ? "#fff0b8" : "#ffd782";
+          ctx.fillRect(x + 2, top + 2, 2, 1);
+        }
+      }
+    }
+  }
+
+  /** Cooling-tower steam: rises, spreads, thins out and is gone. */
+  private drawPlumes(now: number): void {
+    const ctx = this.ctx;
+    ctx.fillStyle = "#eef3f7";
+    this.plumes = this.plumes.filter((p) => {
+      const age = now - p.born;
+      if (age > p.dur) return false;
+      const f = age / p.dur;
+      p.x += p.vx * this.dt;
+      p.y += p.vy * this.dt;
+      // It slows as it climbs and leans off downwind, like the real thing.
+      p.vy *= 1 - this.dt * 0.35;
+      p.vx += this.dt * 2.5;
+      const size = p.size + Math.round(f * 4);
+      ctx.globalAlpha = 0.6 * (1 - f * f);
+      ctx.fillRect(Math.round(p.x), Math.round(p.y), size, Math.max(1, size - 1));
+      ctx.globalAlpha = 1;
+      return true;
+    });
   }
 
   // --- The pipeline --------------------------------------------------------
@@ -1644,7 +1836,13 @@ export class FarmScene {
 
     // The sky tiers, above everything on the ground — and each of them doing
     // its own job to the field below rather than sliding past it.
-    for (const id of ["seeder", "orbital", "singularity"] as const) {
+    this.stepFlyers(
+      shownCount(this.view.working.seeder ?? 0, PLACEMENT.seeder.cap, PLACEMENT.seeder.spread),
+      artCanvas(this.mark("seeder")),
+      t,
+    );
+
+    for (const id of ["orbital", "singularity"] as const) {
       const place = PLACEMENT[id];
       const n = shownCount(this.view.working[id] ?? 0, place.cap, place.spread);
       const sprite = artCanvas(this.mark(id));
@@ -1666,16 +1864,9 @@ export class FarmScene {
           const y = lane + Math.round(Math.sin(t * (0.25 + h2 * 0.4) + h * 9) * 4);
           ctx.drawImage(sprite.canvas, x, y);
 
-          if (id === "seeder") {
-            // It seeds. Each drop is aimed at a plant and brings it on — the
-            // tier that says "the weather works for you now" ought to be
-            // visibly doing something to the weather's job.
-            if (this.seeds.length < 20 && this.chance(1.1)) this.dropSeed(x + sprite.w / 2, y + sprite.h);
-          } else {
-            // The greenhouse runs a grow-light down onto the rows in sweeps.
-            const cycle = (t * 0.14 + i * 0.37) % 1;
-            if (cycle < 0.22) this.drawBeam(x + sprite.w / 2, y + sprite.h, t, cycle / 0.22);
-          }
+          // The greenhouse runs a grow-light down onto the rows in sweeps.
+          const cycle = (t * 0.14 + i * 0.37) % 1;
+          if (cycle < 0.22) this.drawBeam(x + sprite.w / 2, y + sprite.h, t, cycle / 0.22);
         } else {
           // The singularity doesn't travel. It hangs there and breathes, and
           // what it makes goes into the same pipeline as everything else the
@@ -1711,16 +1902,100 @@ export class FarmScene {
     });
   }
 
-  /** Aim a seed at a plant that could use one. */
-  private dropSeed(x: number, y: number): void {
-    if (this.beds.length === 0) return;
-    // The least-grown plant in range, so a drop visibly changes something.
-    let pick = Math.floor(Math.random() * this.beds.length);
-    for (let i = 0; i < 4; i++) {
-      const other = Math.floor(Math.random() * this.beds.length);
-      if ((this.planted[other] ?? 0) > (this.planted[pick] ?? 0)) pick = other;
+  /**
+   * The seeders, flying. Each one dashes to a patch that needs bringing on,
+   * stops over it, empties its hopper into it, and picks somewhere else.
+   *
+   * The dash eases in and out, which is what makes it read as a machine going
+   * somewhere on purpose rather than a cloud being blown about: it leans on,
+   * runs, and settles.
+   */
+  private stepFlyers(n: number, sprite: { w: number; h: number; canvas: CanvasImageSource }, t: number): void {
+    const ctx = this.ctx;
+    while (this.flyers.length < n) this.flyers.push(this.newFlyer(sprite.w));
+    if (this.flyers.length > n) this.flyers.length = Math.max(0, n);
+
+    for (const f of this.flyers) {
+      if (f.hold > 0) {
+        // Parked. It bobs on the spot and drips, and the drops are aimed at
+        // whatever's underneath rather than halfway across the field.
+        f.hold -= this.dt;
+        f.drip -= this.dt;
+        if (f.drip <= 0) {
+          f.drip = 0.13 + Math.random() * 0.1;
+          if (this.seeds.length < 24) this.dropSeedNear(f.x + sprite.w / 2, f.y + sprite.h);
+        }
+        if (f.hold <= 0) this.aimFlyer(f, sprite.w);
+      } else {
+        f.t += this.dt;
+        const p = Math.min(1, f.t / f.dur);
+        // Ease in and out of the dash.
+        const e = p < 0.5 ? 2 * p * p : 1 - 2 * (1 - p) * (1 - p);
+        f.x = f.x0 + (f.tx - f.x0) * e;
+        f.y = f.y0 + (f.ty - f.y0) * e;
+        if (p >= 1) {
+          f.hold = 1.1 + Math.random() * 1.4;
+          f.drip = 0.1;
+        }
+      }
+      const bob = f.hold > 0 ? Math.round(Math.sin(t * 3.1 + f.x) * 1) : 0;
+      ctx.drawImage(sprite.canvas, Math.round(f.x), Math.round(f.y) + bob);
     }
-    this.seeds.push({ x, y, vy: 26 + Math.random() * 10, crop: pick });
+  }
+
+  private newFlyer(w: number): Flyer {
+    const x = Math.random() * (SCENE_W - w);
+    const y = 3 + Math.random() * 24;
+    const f: Flyer = { x, y, x0: x, y0: y, tx: x, ty: y, t: 0, dur: 1, hold: 0, drip: 0 };
+    this.aimFlyer(f, w);
+    return f;
+  }
+
+  /** Send a seeder somewhere worth going: over the patch that needs it most. */
+  private aimFlyer(f: Flyer, w: number): void {
+    let tx = Math.random() * (SCENE_W - w);
+    if (this.beds.length > 0) {
+      let pick = Math.floor(Math.random() * this.beds.length);
+      for (let i = 0; i < 5; i++) {
+        const other = Math.floor(Math.random() * this.beds.length);
+        if ((this.planted[other] ?? 0) > (this.planted[pick] ?? 0)) pick = other;
+      }
+      tx = clamp((this.beds[pick]?.x ?? tx) - w / 2, 0, SCENE_W - w);
+    }
+    f.x0 = f.x;
+    f.y0 = f.y;
+    f.tx = tx;
+    // A new altitude every time, so they cross each other's lanes instead of
+    // filing along one.
+    f.ty = 2 + Math.random() * 26;
+    f.t = 0;
+    f.hold = 0;
+    f.dur = Math.max(0.55, Math.hypot(f.tx - f.x, f.ty - f.y) / FLY_SPEED);
+  }
+
+  /**
+   * Aim a seed at a plant that could use one, near where it was dropped: a
+   * seeder that stopped somewhere on purpose drops on what it's standing over.
+   * A hovering machine whose seeds all sail off to the far side of the field is
+   * a machine that didn't need to stop.
+   */
+  private dropSeedNear(x: number, y: number): void {
+    if (this.beds.length === 0) return;
+    let pick = -1;
+    let best = Infinity;
+    for (let i = 0; i < 8; i++) {
+      const other = Math.floor(Math.random() * this.beds.length);
+      const bed = this.beds[other];
+      if (!bed) continue;
+      // Nearest to the nozzle, with a nudge towards the ones furthest behind.
+      const score = Math.abs(bed.x + 3 - x) - (this.clock - (this.planted[other] ?? 0)) * 0.4;
+      if (score < best) {
+        best = score;
+        pick = other;
+      }
+    }
+    if (pick < 0) return;
+    this.seeds.push({ x, y, vy: 30 + Math.random() * 12, crop: pick });
   }
 
   /** Seeds falling, and what they do when they land. */
@@ -2063,6 +2338,7 @@ export class FarmScene {
     if (!run) {
       this.propShadow(prop.x, foot, sprite.w);
       ctx.drawImage(sprite.canvas, prop.x, top);
+      this.propLife(prop, top);
       return;
     }
 
@@ -2075,6 +2351,35 @@ export class FarmScene {
     ctx.clip();
     ctx.drawImage(sprite.canvas, prop.x, top + hidden);
     ctx.restore();
+  }
+
+  /**
+   * The lights on the things in the yard that are big enough to have them. The
+   * yard is where you look when nothing else is happening, and a shed with a
+   * lamp over the door is a shed somebody works in.
+   */
+  private propLife(prop: Prop, top: number): void {
+    const ctx = this.ctx;
+    const t = this.clock;
+    if (prop.art === SHED) {
+      // A lamp either side of the door, on a slow flicker.
+      const lit = 0.7 + 0.3 * Math.sin(t * 2.1 + prop.x);
+      for (const c of [2, 24]) {
+        ctx.globalAlpha = lit;
+        ctx.fillStyle = "#ffd782";
+        ctx.fillRect(prop.x + c, top + 6, 1, 1);
+        ctx.globalAlpha = 0.16 * lit;
+        ctx.fillRect(prop.x + c - 1, top + 5, 3, 3);
+      }
+      ctx.globalAlpha = 1;
+    } else if (prop.art === ELEVATOR && (t * 0.5 + prop.x * 0.02) % 1 < 0.18) {
+      // A beacon on the head house: it's the tallest thing you own.
+      ctx.fillStyle = "#ff5b4a";
+      ctx.fillRect(prop.x + 9, top + 1, 1, 1);
+      ctx.globalAlpha = 0.28;
+      ctx.fillRect(prop.x + 8, top, 3, 3);
+      ctx.globalAlpha = 1;
+    }
   }
 
   /**

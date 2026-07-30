@@ -623,25 +623,32 @@ export const SEEDER: Art = {
   palette: { k: K, c: "#dfe7ee", m: "#a8b0b8", a: "#8ec9e6" },
 };
 
+/**
+ * A cooling tower, and it should look like one from across the room: an open
+ * mouth with the dark of the shaft showing in it, a waist, a lit core behind
+ * the throat, a hazard band round the bottom and vents at the foot. The old one
+ * was the same hourglass with a grey square in the middle, which at fourteen
+ * pixels across read as a chess piece.
+ */
 export const REACTOR: Art = {
   rows: [
     "..kkkkkkkkkk..",
-    ".kmmmmmmmmmmk.",
+    ".kkddddddddkk.",
     ".kmmmmmmmmmmk.",
     "..kmmmmmmmmk..",
     "...kmmmmmmk...",
-    "...kmmssmmk...",
-    "...kmmssmmk...",
+    "...kmggggmk...",
+    "...kmggggmk...",
     "...kmmmmmmk...",
     "..kmmmmmmmmk..",
     "..kmmmmmmmmk..",
     ".kmmmmmmmmmmk.",
-    ".kmmmmmmmmmmk.",
-    "kmmmmmmmmmmmmk",
-    "kmmmmmmmmmmmmk",
+    ".khhhhhhhhhhk.",
+    "kkmmmmmmmmmmkk",
+    "kmkkmmmmmmkkmk",
     "kkkkkkkkkkkkkk",
   ],
-  palette: { k: K, m: "#cfd6dc", s: "#7f8891" },
+  palette: { k: K, m: "#cfd6dc", d: "#6b737c", e: "#8d959d", g: "#7fe8cc", h: "#e8b93f" },
 };
 
 export const SATELLITE: Art = {
@@ -953,8 +960,8 @@ export const PRODUCER_MARKS = {
   seeder: [SEEDER, SEEDER_2, SEEDER_3],
   reactor: [
     REACTOR,
-    repaint(REACTOR, { s: "#6fd8e6" }),
-    repaint(REACTOR, { s: "#ffd166", m: "#e6ecf2" }),
+    repaint(REACTOR, { g: "#6fd8e6" }),
+    repaint(REACTOR, { g: "#ffd166", m: "#e6ecf2" }),
   ],
   orbital: [
     SATELLITE,
