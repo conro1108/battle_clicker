@@ -25,20 +25,22 @@ const WOOD = { w: "#7a5237", v: "#5e3e29" };
 // ---------------------------------------------------------------------------
 
 export const ICONS = {
+  // Oblong and tilted, not a disc. The old one was a circle with shading on
+  // it, and a circle of that colour on a button is a biscuit.
   potato: {
     rows: [
-      "....kkkk....",
-      "..kkllppkk..",
-      ".klllppppdk.",
-      ".kllppppppk.",
-      "kllpppdppppk",
-      "kllppppppddk",
-      "kppppppppddk",
-      "kppppdppppdk",
-      ".kpppppppdk.",
-      ".kppppppddk.",
-      "..kkppppkk..",
-      "....kkkk....",
+      "............",
+      ".....kkkkk..",
+      "...kkllppdk.",
+      "..kllpppppdk",
+      ".kllpdppppdk",
+      ".klppppppddk",
+      "kllppppppdk.",
+      "kppppdpppdk.",
+      "kpppppppdk..",
+      ".kkppppddk..",
+      "...kkkkkk...",
+      "............",
     ],
     palette: { k: K, ...POTATO },
   },
