@@ -828,7 +828,7 @@ export class FarmScene {
             if (box) this.troughFill = Math.min(TROUGH_CAP, this.troughFill + SACK_WORTH);
             this.puff(tx + 1, ty - 2, "dust");
             hand.state = "resting";
-            hand.loiter = { x: hand.x, y: hand.y };
+            hand.loiter = this.turnAround(hand, yardY);
             hand.until = t + 0.4;
           }
           break;
@@ -847,7 +847,7 @@ export class FarmScene {
             this.puff(bx + 2, by - 1, "dust");
             hand.state = "resting";
             hand.target = -1;
-            hand.loiter = { x: hand.x, y: hand.y };
+            hand.loiter = this.turnAround(hand, yardY);
             hand.until = t + REST_SECONDS * (0.5 + Math.random());
           }
           break;
@@ -1559,10 +1559,21 @@ export class FarmScene {
       const n = shownCount(this.view.working[id] ?? 0, place.cap, place.spread);
       const sprite = artCanvas(this.mark(id));
       for (let i = 0; i < n; i++) {
+        // Same problem the machines had: one shared speed and evenly dealt
+        // starting positions is a formation, not traffic. Everything up here
+        // gets its own pace, its own start, its own altitude and its own slow
+        // wander off a hash, so no two of them ever line up for long.
+        const h = fract(Math.sin((i + 1) * 47.3 + id.length * 13.1) * 4375.85);
+        const h2 = fract(h * 137.7);
+        const h3 = fract(h2 * 91.3);
         if (place.speed) {
           const span = SCENE_W + sprite.w;
-          const x = Math.floor((((t * place.speed + i * 80) % span) + span) % span) - sprite.w;
-          const y = 6 + i * 14;
+          const pace = place.speed * (0.68 + 0.7 * h);
+          const x = Math.floor((((t * pace + h2 * span) % span) + span) % span) - sprite.w;
+          // Its own lane, plus a slow rise and fall across it — they drift
+          // through each other's altitude rather than flying in a stack.
+          const lane = 3 + Math.round(h3 * 26);
+          const y = lane + Math.round(Math.sin(t * (0.25 + h2 * 0.4) + h * 9) * 4);
           ctx.drawImage(sprite.canvas, x, y);
 
           if (id === "seeder") {
@@ -1580,8 +1591,10 @@ export class FarmScene {
           // what it makes goes into the same pipeline as everything else the
           // industrial half of the farm produces — it just doesn't need a shed
           // to do it from.
-          const y = 10 + i * 20 + (Math.sin(t * 0.9 + i) > 0 ? 1 : 0);
-          const x = 20 + i * 44;
+          // It hangs, but it doesn't hang still: a slow lissajous a few pixels
+          // wide, on its own phase, so two of them never breathe together.
+          const x = 14 + Math.round(h * 120) + Math.round(Math.sin(t * 0.31 + h2 * 6) * 4);
+          const y = 8 + Math.round(h2 * 26) + Math.round(Math.sin(t * 0.43 + h3 * 6) * 3);
           this.drawPulse(x + sprite.w / 2, y + sprite.h / 2, t + i);
           ctx.drawImage(sprite.canvas, x, y);
           this.pipeEnd = Math.max(this.pipeEnd, x + Math.floor(sprite.w / 2));
@@ -1896,6 +1909,22 @@ export class FarmScene {
   // load has to end up somewhere you can see: a trough across the headland,
   // filled by auger from whatever's working the rows above it, emptying down a
   // spout through the fence into the yard.
+
+  /**
+   * Where a hand goes after it's tipped its load in: back up the headland,
+   * towards the work.
+   *
+   * Not on down into the yard. The yard is where the potatoes are kept, not
+   * where the people are, and a crew that carries every load down past the
+   * trough and then wanders about among the crates spends most of the day
+   * walking away from the field it's supposed to be picking.
+   */
+  private turnAround(hand: Hand, yardY: number): { x: number; y: number } {
+    return {
+      x: clamp(hand.x + (Math.random() - 0.5) * 22, 4, SCENE_W - 10),
+      y: clamp(hand.y - 6 - Math.random() * 12, this.fieldTop() + 14, yardY - 2),
+    };
+  }
 
   /** The nearest sack nobody's already walking to. */
   private claimSack(hand: Hand): number {
