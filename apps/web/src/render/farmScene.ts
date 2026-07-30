@@ -454,7 +454,7 @@ const MACHINE_LOAD = 5;
 const SACK_WORTH = 3;
 /** Sacks that can be waiting at once. Past this the machines hold their load. */
 const MAX_SACKS = 9;
-const MAX_LUMPS = 40;
+const MAX_LUMPS = 64;
 
 /** How long a building takes to come out of the ground, or to go back into it. */
 const BUILD_MS = 520;
@@ -1156,7 +1156,10 @@ export class FarmScene {
         // often drops something into it. A trickle, not a conveyor: the far
         // side of the property should read as a place that's busy.
         this.pipeEnd = Math.max(this.pipeEnd, x + Math.floor(sprite.w / 2));
-        if (this.chance(0.3)) this.feedPipe(x + Math.floor(sprite.w / 2));
+        // Each shed tips in about once a second. With a skyline of them the
+        // trunk runs properly full, which is what a farm making most of its
+        // potatoes up here should look like.
+        if (this.chance(1.1)) this.feedPipe(x + Math.floor(sprite.w / 2));
       }
       idx++;
       x += sprite.w + 2;
@@ -1258,7 +1261,9 @@ export class FarmScene {
     ctx.fillRect(runTo + 11, mouth + 7, 6, 1);
     ctx.fillRect(runTo + 16, mouth + 7, 1, 4);
 
-    ctx.fillStyle = "#c98b4b";
+    // Whole potatoes in the pipe, not tan squares: outlined, so a hundred of
+    // them nose to tail still reads as a hundred potatoes rather than a stripe.
+    const spud = artCanvas(POTATO_SPRITE);
     this.lumps = this.lumps.filter((lump) => {
       lump.d += PIPE_SPEED * dt;
       const across = lump.from - runTo;
@@ -1266,12 +1271,12 @@ export class FarmScene {
         // Along the run, riding with a one pixel jog so the contents rattle
         // rather than slide.
         const px = Math.round(lump.from - lump.d);
-        ctx.fillRect(px, midY + (px % 5 === 0 ? 0 : 1), 4, 3);
+        ctx.drawImage(spud.canvas, px, midY - 2 + (px % 5 === 0 ? 0 : 1));
         return true;
       }
       const down = y + 2 + (lump.d - across);
       if (down < mouth + 4) {
-        ctx.fillRect(runTo + 1, Math.round(down), 4, 3);
+        ctx.drawImage(spud.canvas, runTo, Math.round(down));
         return true;
       }
       // Out of the lip and onto the pile. It's already in the yard's count —
@@ -1281,7 +1286,7 @@ export class FarmScene {
         this.puff(runTo + 15, foot - 1, "dust");
         return false;
       }
-      ctx.fillRect(runTo + 1 + Math.round(out), Math.round(mouth + 4 + out * 0.7), 4, 3);
+      ctx.drawImage(spud.canvas, runTo + Math.round(out), Math.round(mouth + 4 + out * 0.7));
       return true;
     });
   }
@@ -1542,7 +1547,7 @@ export class FarmScene {
           this.drawPulse(x + sprite.w / 2, y + sprite.h / 2, t + i);
           ctx.drawImage(sprite.canvas, x, y);
           this.pipeEnd = Math.max(this.pipeEnd, x + Math.floor(sprite.w / 2));
-          if (this.chance(0.5)) this.feedPipe(x + Math.floor(sprite.w / 2));
+          if (this.chance(1.4)) this.feedPipe(x + Math.floor(sprite.w / 2));
         }
       }
     }

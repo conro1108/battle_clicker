@@ -324,15 +324,23 @@ export function cropStages(art: Art): readonly Art[] {
 // The hoard — what a pile of potatoes turns into as it stops being a pile
 // ---------------------------------------------------------------------------
 
+/**
+ * The potato itself, everywhere it appears loose: carried, dug, heaped, and
+ * riding down the pipeline.
+ *
+ * Outlined, which is the whole point. Without one it was a soft blob, and a
+ * queue of soft blobs in a pipe is a tan line with lumps in it — you can't see
+ * how many are going past, which is the one thing the pipeline is for.
+ */
 export const POTATO_SPRITE: Art = {
   rows: [
-    "..lll..",
-    ".lllpp.",
-    "lppppdp",
-    ".ppppd.",
-    "..ppd..",
+    ".kkkk..",
+    "klllpk.",
+    "kllppdk",
+    ".kppddk",
+    "..kkkk.",
   ],
-  palette: POTATO,
+  palette: { k: K, ...POTATO },
 };
 
 export const SACK: Art = {
