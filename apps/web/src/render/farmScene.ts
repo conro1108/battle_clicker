@@ -113,6 +113,10 @@ function hashSeed(s: string): number {
   return h >>> 0;
 }
 
+function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
 /** The fractional part, always positive. Used for cheap per-index hashing. */
 function fract(x: number): number {
   return ((x % 1) + 1) % 1;
@@ -478,7 +482,7 @@ const GROW_SECONDS = 46;
 const RIPE_SECONDS = 14;
 
 /** Buffer pixels a second. A farmhand crosses the field in about five. */
-const HAND_SPEED = 14;
+const HAND_SPEED = 19;
 const PICK_SECONDS = 1.8;
 const REST_SECONDS = 2.4;
 
@@ -493,6 +497,10 @@ interface Hand {
   home: number;
   /** The depth it stands at when it's home — ranks, so a big crew isn't a line. */
   homeY: number;
+  /** Where it's ambling to while it has nothing to do. */
+  loiter: { x: number; y: number };
+  /** The row it works by preference, so the crew covers the field. */
+  rowPref: number;
   state: "resting" | "out" | "picking" | "back";
   /** Index into the drawn beds. -1 while resting. */
   target: number;
@@ -681,15 +689,23 @@ export class FarmScene {
       const rank = Math.floor(i / 6);
       const inRank = i % 6;
       const home = 12 + inRank * 26 + (rank % 2) * 13;
+      const homeY = unload + rank * 7;
+      // Staggered so they don't set off on the same frame like a chorus, but
+      // barely — two seconds of jitter off a hash rather than two seconds per
+      // hand in a queue. Sixteen hands standing in the yard counting to thirty
+      // is the crew you just bought doing nothing, which is the opposite of
+      // what buying them was for.
+      const jitter = fract(Math.sin((i + 1) * 91.7) * 4375.85);
       this.hands.push({
         x: home,
-        y: unload + rank * 7,
+        y: homeY,
         home,
-        homeY: unload + rank * 7,
+        homeY,
+        loiter: { x: home, y: homeY },
+        rowPref: i % FIELD_ROWS,
         state: "resting",
         target: -1,
-        // Staggered, so they don't all set off on the same frame like a chorus.
-        until: t + i * 1.9,
+        until: t + jitter * 2,
         carrying: false,
       });
     }
@@ -697,11 +713,21 @@ export class FarmScene {
     for (const hand of this.hands) {
       switch (hand.state) {
         case "resting": {
+          // Idle hands amble. They pick a spot a few paces off, wander to it at
+          // half pace, and pick another — so a crew with nothing ready to lift
+          // reads as people standing about a farm rather than a rank of clones
+          // waiting for a whistle.
+          if (this.walk(hand, hand.loiter.x, hand.loiter.y, dt, 0.35)) {
+            hand.loiter = {
+              x: clamp(hand.home + (Math.random() - 0.5) * 26, 4, SCENE_W - 10),
+              y: clamp(hand.homeY + (Math.random() - 0.5) * 14, yardY + 4, this.sh - 6),
+            };
+          }
           if (t < hand.until) break;
-          const target = this.claimBed(t);
+          const target = this.claimBed(t, hand);
           if (target < 0) {
             // Nothing ready and nothing growing: try again shortly.
-            hand.until = t + 1.5;
+            hand.until = t + 0.6 + Math.random();
             break;
           }
           hand.target = target;
@@ -736,7 +762,8 @@ export class FarmScene {
             this.puff(hand.home + 2, hand.homeY - 1, "dust");
             hand.state = "resting";
             hand.target = -1;
-            hand.until = t + REST_SECONDS + Math.random() * 2;
+            hand.loiter = { x: hand.x, y: hand.y };
+            hand.until = t + REST_SECONDS * (0.5 + Math.random());
           }
           break;
         }
@@ -749,15 +776,26 @@ export class FarmScene {
    * beds are passed over — there's nothing under them worth the walk, which is
    * the soil bar showing up as behaviour rather than a number.
    */
-  private claimBed(t: number): number {
+  private claimBed(t: number, hand: Hand): number {
     let best = -1;
-    let bestRipe = 0.55;
+    let bestScore = 0;
     for (let i = 0; i < this.beds.length; i++) {
-      if (this.beds[i]!.dry) continue;
+      const bed = this.beds[i]!;
+      if (bed.dry) continue;
       if (this.hands.some((h) => h.target === i)) continue;
       const ripe = this.ripeness(i, t);
-      if (ripe > bestRipe) {
-        bestRipe = ripe;
+      if (ripe <= 0.55) continue;
+      // Ripest first, then weighted against the walk, then against the row
+      // this one tends to work. Purely by ripeness they all set off for the
+      // same corner, because beds ripen in patches; purely by distance they
+      // all crowd the near row. Each hand leaning towards a row of its own is
+      // what spreads the crew over the whole field.
+      const score =
+        ripe * 40 -
+        Math.hypot(bed.x - hand.x, bed.y - hand.y) * 0.35 -
+        Math.abs(bed.row - hand.rowPref) * 9;
+      if (best < 0 || score > bestScore) {
+        bestScore = score;
         best = i;
       }
     }
@@ -765,7 +803,7 @@ export class FarmScene {
   }
 
   /** Step a hand toward a point. True once it's there. */
-  private walk(hand: Hand, tx: number, ty: number, dt: number): boolean {
+  private walk(hand: Hand, tx: number, ty: number, dt: number, pace = 1): boolean {
     const dx = tx - hand.x;
     const dy = ty - hand.y;
     const d = Math.hypot(dx, dy);
@@ -774,7 +812,7 @@ export class FarmScene {
       hand.y = ty;
       return true;
     }
-    const step = Math.min(d, HAND_SPEED * dt);
+    const step = Math.min(d, HAND_SPEED * pace * dt);
     hand.x += (dx / d) * step;
     hand.y += (dy / d) * step;
     return false;
