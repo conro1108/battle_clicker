@@ -20,28 +20,26 @@ const PALETTE = {
   d: "#ad7330", // sprout-bud dimple
 };
 
-// 20x20, oblong and tilted. Outer ring must stay background so the padding
-// trick is invisible. A potato drawn as a circle reads as a biscuit at every
-// size an app icon gets shown at, which is the note this came back with.
+// 20x20. Outer ring must stay background so the padding trick is invisible.
 const SPRITE = [
   "....................",
-  "..........ooooo.....",
-  ".......oooLLLLoo....",
-  ".....ooLLLLLLLMo....",
-  "....oLLLLLLLLLMMo...",
-  "...oLLLdLLLLLLMMo...",
-  "..oLLLLLLLLLLLMMMo..",
-  "..oLLLLLLLLLMMMMMo..",
-  ".oLLLLLLLLLMMMMMMo..",
-  ".oLLLLLdLLLMMMMMDo..",
-  ".oLLLLLLLLMMMMMDDo..",
-  "..oLLLLLLLMMMMDDDo..",
-  "..oLLLLLLMMMMDDDo...",
-  "...oLLLLMMMdDDDo....",
-  "....ooLLMMDDDDo.....",
-  "......ooMDDDDo......",
-  "........oooooo......",
-  "....................",
+  ".......ooooo........",
+  "......oLLLLLo.......",
+  ".....oLLLLLLLo......",
+  "....oLLLLLLLMo......",
+  "....oLLdLLLLMMo.....",
+  "....oLLLLLLLMMo.....",
+  "....oLLLLLLLMMo.....",
+  "....oLLLLLLLMMMo....",
+  "....oLLLLLdMMMMo....",
+  "....oLLLLLLMMMMo....",
+  "....oLLLLLLMMMMo....",
+  "....oLLLLLMMMMo.....",
+  ".....oLdLMMMMMo.....",
+  ".....oLLMMDDDo......",
+  "......oMMDDDDo......",
+  "......oDDDDDo.......",
+  ".......ooooo........",
   "....................",
   "....................",
 ];
