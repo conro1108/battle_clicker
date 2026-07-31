@@ -1013,6 +1013,55 @@ interface Flyer {
 const FLY_SPEED = 27;
 const FLY_HOLD = 3.6;
 
+/**
+ * A Tuber Singularity, as the rest of the sky experiences it.
+ *
+ * It hangs in its column most of the time, and every half a minute or so it
+ * comes down over the farm and goes back up — which is the only way a thing that
+ * doesn't travel gets to be watched. On the way it drags: clouds, greenhouses,
+ * seeders and the seeds they're dropping all bend toward it as it passes and
+ * spring back once it's gone, because a hole in the sky that nothing reacts to
+ * is a sticker of a hole in the sky.
+ *
+ * The drag is a displacement rather than a force. Nothing up here has to know it
+ * happened — they fly the routes they were flying and get drawn somewhere else —
+ * so a machine can't be left stranded in orbit by a badly timed dive.
+ */
+interface Well {
+  /** Top-left of the sprite, and the middle of it, which is what pulls. */
+  x: number;
+  y: number;
+  cx: number;
+  cy: number;
+  /** How far the pull reaches, and how hard it is at the centre. */
+  r: number;
+  pull: number;
+  /** 0 holding station, 1 at the bottom of a dive. */
+  dive: number;
+}
+
+/** How often one comes down, and how much of that cycle it spends down there. */
+const DIVE_PERIOD = 34;
+const DIVE_SHARE = 0.32;
+
+/** The one hash every sky tier is placed off. Stable per tier and index. */
+function skyHash(i: number, id: string): number {
+  return fract(Math.sin((i + 1) * 47.3 + id.length * 13.1) * 4375.85);
+}
+
+/**
+ * How far into a dive something is, 0..1, given the clock and its own phase.
+ *
+ * Eases down, hangs at the bottom, eases back — one sine, which is exactly the
+ * shape of a thing that has weight and is deciding rather than a thing on a
+ * lift. The rest of the cycle it's flat zero and the sky is left alone.
+ */
+function diveAt(t: number, period: number, phase: number): number {
+  const c = fract(t / period + phase);
+  if (c > DIVE_SHARE) return 0;
+  return Math.sin(Math.PI * (c / DIVE_SHARE)) ** 2;
+}
+
 export class FarmScene {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -1072,6 +1121,8 @@ export class FarmScene {
   private seeds: Seed[] = [];
   /** The seeders aloft, one entry each, kept between frames. */
   private flyers: Flyer[] = [];
+  /** This frame's singularities. Placed before the sky, so the sky can feel them. */
+  private wells: Well[] = [];
   /** When each bed was last cleared. Indexed the same as `beds`. */
   private planted: number[] = [];
   private hands: Hand[] = [];
@@ -1460,6 +1511,117 @@ export class FarmScene {
     return Math.max(MIN_SKY, this.yardTop() - Math.max(40, Math.round(this.sh * FIELD_SHARE)));
   }
 
+  /**
+   * How much sky the machines have, and where the hanging tier's deck ends.
+   *
+   * `deck` is the top of the frame down to where the far ridge crests, which is
+   * as low as anything up here should sit before it's flying in front of the
+   * hills instead of above them. Floored, because a squat landscape sky has no
+   * room at all and everything in it has always just flown a bit low in that
+   * case.
+   *
+   * Three tiers used to draw their altitude from one range, which is three tiers
+   * taking turns being in front of each other. They're stacked by how long an
+   * overlap would last instead: the singularities hang and never travel, so they
+   * get the top and everything passes underneath them; the greenhouses cross, so
+   * they get the middle; the seeders dash, hold and drip, so they get the
+   * bottom, nearest the rows they're seeding.
+   */
+  private decks(horizon: number): { deck: number; hang: number } {
+    const ridge = RIDGES[0]!;
+    const deck = Math.max(
+      34,
+      Math.round(horizon - Math.min(1, horizon / RIDGE_ROOM) * (ridge.base + ridge.amp)),
+    );
+    return { deck, hang: Math.round(deck * 0.44) };
+  }
+
+  /**
+   * Where the singularities are this frame, and how hard each is pulling.
+   *
+   * Placed before anything is drawn, because half the point of them is what the
+   * rest of the sky does about them — the clouds go up before the machines do,
+   * and both have to be able to ask where the holes are.
+   *
+   * A singularity can't be placed by hash the way the travelling tiers are: a
+   * greenhouse that overlaps another one has passed it by the time you look up,
+   * and two of these dealt the same corner are still in that corner ten minutes
+   * later. So each one owns a column — `cap` even lots across the width — and
+   * everything else it does happens inside that column.
+   */
+  private stepWells(t: number, horizon: number): void {
+    const place = PLACEMENT.singularity;
+    const n = shownCount(this.view.working.singularity ?? 0, place.cap, place.spread ?? 1);
+    const sprite = artCanvas(this.mark("singularity"));
+    const { deck, hang } = this.decks(horizon);
+    const lot = SCENE_W / place.cap;
+    // As low as a dive gets: down past the traffic and out over the hills, but
+    // not all the way to the skyline. It's coming down to be among the things it
+    // drags, and a hole that parks itself on the village is both lost against it
+    // and too far from the sky to be pulling on any of it.
+    const floor = Math.min(
+      Math.max(hang, horizon - sprite.h - 6),
+      deck + Math.round((horizon - deck) * 0.3),
+    );
+
+    this.wells.length = 0;
+    for (let i = 0; i < n; i++) {
+      const h = skyHash(i, "singularity");
+      const h2 = fract(h * 137.7);
+      const h3 = fract(h2 * 91.3);
+      // Hanging: high in its column, and never quite still — a slow lissajous a
+      // few pixels wide, on its own phase, so two of them don't breathe
+      // together. Staggered vertically by what room the deck leaves, so three of
+      // them aren't a row of portals at one exact altitude.
+      const home = (i / place.cap) * SCENE_W + (lot - sprite.w) / 2;
+      const room = Math.max(0, hang - sprite.h - 2);
+      const rest = 1 + Math.round(h2 * room) + Math.round(Math.sin(t * 0.43 + h3 * 6) * 2);
+      // And every half a minute or so, it comes down. Off the clock rather than
+      // out of a bag, so it's a thing the farm does on a rhythm you can learn
+      // rather than a jump scare — and on its own phase, because three of them
+      // descending in step is a formation flight, not weather.
+      const dive = diveAt(t, DIVE_PERIOD * (0.8 + 0.5 * h), h2);
+      const x = Math.round(home + Math.sin(t * 0.31 + h2 * 6) * 5);
+      const y = Math.round(rest + (floor - rest) * dive);
+      this.wells.push({
+        x,
+        y,
+        cx: x + sprite.w / 2,
+        cy: y + sprite.h / 2,
+        // It reaches further and pulls harder the lower it gets. Resting, it's
+        // barely more than a lens the clouds bend through; at the bottom of a
+        // dive it's worth about half a cloud's width of displacement, which at
+        // this resolution is the difference between a drift and a grab.
+        r: 18 + dive * 44,
+        pull: 0.16 + dive * 0.64,
+        dive,
+      });
+    }
+  }
+
+  /**
+   * Where a point in the sky ends up once the holes have had a go at it.
+   *
+   * Displacement, not force: the thing being warped is drawn somewhere else and
+   * never told, so it stays on whatever route it was flying and springs back as
+   * the well leaves. Falls off with the square of the distance, so the edge of
+   * the field is a lean and the middle of it is a swallow.
+   */
+  private warp(x: number, y: number): { x: number; y: number } {
+    let ox = x;
+    let oy = y;
+    for (const well of this.wells) {
+      const dx = well.cx - ox;
+      const dy = well.cy - oy;
+      const d = Math.hypot(dx, dy);
+      if (d >= well.r || d < 0.01) continue;
+      const f = well.pull * (1 - d / well.r) ** 2;
+      ox += dx * f;
+      oy += dy * f;
+    }
+    return { x: ox, y: oy };
+  }
+
   // --- Drawing -------------------------------------------------------------
 
   private draw(now: number): void {
@@ -1474,6 +1636,9 @@ export class FarmScene {
 
     this.stepHoard(dt, now);
     this.pipeEnd = 0;
+    // Before anything is drawn: the sky has to know where the holes in it are
+    // before it draws the things that fall toward them.
+    this.stepWells(t, horizon);
 
     const fold = this.foldProgress(now);
     // Mid-fold the old sky is still down there under the advancing edge, so it
@@ -1710,13 +1875,19 @@ export class FarmScene {
     }
 
     // Drifting clouds. Day only — at night they'd just be grey smears.
+    //
+    // Warped by whatever's hanging in the sky with them: a cloud that sails
+    // straight past a hole in the world is the cheapest way to say the hole
+    // isn't real. They're the loosest thing up here, so they're the first thing
+    // to lean.
     if (phase !== "night") {
       const cloud = artCanvas(CLOUD);
       for (let i = 0; i < 3; i++) {
         const span = SCENE_W + cloud.w;
-        const x = Math.floor((((t * (3 + i) + i * 70) % span) + span) % span) - cloud.w;
+        const cx = Math.floor((((t * (3 + i) + i * 70) % span) + span) % span) - cloud.w;
+        const at = this.warp(cx + cloud.w / 2, 8 + i * 13 + cloud.h / 2);
         ctx.globalAlpha = 0.85;
-        ctx.drawImage(cloud.canvas, x, 8 + i * 13);
+        ctx.drawImage(cloud.canvas, Math.round(at.x - cloud.w / 2), Math.round(at.y - cloud.h / 2));
         ctx.globalAlpha = 1;
       }
     }
@@ -3085,24 +3256,7 @@ export class FarmScene {
 
     // The sky tiers, above everything on the ground — and each of them doing
     // its own job to the field below rather than sliding past it.
-    //
-    // How much sky there is to do it in: the top of the frame down to where the
-    // far ridge crests, which is as low as anything up here should get before
-    // it's flying in front of the hills instead of above them. Floored, because
-    // a squat landscape sky has no room at all and everything in it has always
-    // just flown a bit low in that case.
-    const ridge = RIDGES[0]!;
-    const deck = Math.max(
-      34,
-      Math.round(horizon - Math.min(1, horizon / RIDGE_ROOM) * (ridge.base + ridge.amp)),
-    );
-    // And how it's shared out. Three tiers were drawing from one range of
-    // altitudes, which is three tiers taking turns being in front of each other.
-    // Now it's stacked by how long an overlap would last: the singularities hang
-    // and never move, so they get the top and everything passes underneath them;
-    // the greenhouses cross, so they get the middle; the seeders dash, hold and
-    // drip, so they get the bottom, nearest the rows they're seeding.
-    const hangDeck = Math.round(deck * 0.44);
+    const { deck, hang } = this.decks(horizon);
 
     this.stepFlyers(
       shownCount(this.view.working.seeder ?? 0, PLACEMENT.seeder.cap, PLACEMENT.seeder.spread),
@@ -3111,75 +3265,58 @@ export class FarmScene {
       deck,
     );
 
-    for (const id of ["orbital", "singularity"] as const) {
-      const place = PLACEMENT[id];
-      const n = shownCount(this.view.working[id] ?? 0, place.cap, place.spread);
-      const sprite = artCanvas(this.mark(id));
-      for (let i = 0; i < n; i++) {
-        // Everything up here gets its own pace, its own altitude and its own
-        // slow wander off a hash, so it doesn't fly in formation — but *only*
-        // off a hash meant nothing kept two of them apart, and a hash that deals
-        // two greenhouses the same corner and near enough the same speed parks
-        // them on top of each other for a minute at a time. So the hash is the
-        // variation now and the spacing is dealt: each index owns a share of the
-        // sky, and the hash moves it around inside its share.
-        const h = fract(Math.sin((i + 1) * 47.3 + id.length * 13.1) * 4375.85);
-        const h2 = fract(h * 137.7);
-        const h3 = fract(h2 * 91.3);
-        // Off `cap` rather than `n`, so buying the fourth greenhouse doesn't
-        // shuffle the three already up there.
-        const share = i / place.cap;
-        if (place.speed) {
-          const span = SCENE_W + sprite.w;
-          // A tenth either side of the tier's speed. Wide enough that they pull
-          // apart and drift back together over a couple of minutes, narrow
-          // enough that a lap doesn't close the quarter-screen gap they start
-          // with — the old spread was two to one, which caught the one in front
-          // up inside a single crossing.
-          const pace = place.speed * (0.9 + 0.2 * h);
-          const start = (share + h2 * 0.12) * span;
-          const x = Math.floor((((t * pace + start) % span) + span) % span) - sprite.w;
-          // Its own lane in the middle deck, plus a slow rise and fall across
-          // it — they drift through each other's altitude rather than flying in
-          // a stack, without ever climbing into what's hanging above them.
-          const room = Math.max(0, deck - sprite.h - 3 - hangDeck);
-          const lane = hangDeck + Math.round(h3 * room);
-          const y = lane + Math.round(Math.sin(t * (0.25 + h2 * 0.4) + h * 9) * 3);
-          this.primeGlow(id, x, y, sprite.w, sprite.h, t, i);
-          ctx.drawImage(sprite.canvas, x, y);
+    // The greenhouses, crossing. Everything up here gets its own pace, its own
+    // altitude and its own slow wander off a hash, so it doesn't fly in
+    // formation — but *only* off a hash meant nothing kept two of them apart,
+    // and a hash that deals two of them the same corner and near enough the same
+    // speed parks them on top of each other for a minute at a time. So the hash
+    // is the variation now and the spacing is dealt: each index owns a share of
+    // the sky, and the hash moves it around inside its share.
+    const place = PLACEMENT.orbital;
+    const n = shownCount(this.view.working.orbital ?? 0, place.cap, place.spread ?? 1);
+    const sprite = artCanvas(this.mark("orbital"));
+    for (let i = 0; i < n; i++) {
+      const h = skyHash(i, "orbital");
+      const h2 = fract(h * 137.7);
+      const h3 = fract(h2 * 91.3);
+      // Off `cap` rather than `n`, so buying the fourth greenhouse doesn't
+      // shuffle the three already up there.
+      const span = SCENE_W + sprite.w;
+      // A tenth either side of the tier's speed. Wide enough that they pull
+      // apart and drift back together over a couple of minutes, narrow enough
+      // that a lap doesn't close the quarter-screen gap they start with — the
+      // old spread was two to one, which caught the one in front up inside a
+      // single crossing.
+      const pace = (place.speed ?? 1) * (0.9 + 0.2 * h);
+      const start = (i / place.cap + h2 * 0.12) * span;
+      const gx = Math.floor((((t * pace + start) % span) + span) % span) - sprite.w;
+      // Its own lane in the middle deck, plus a slow rise and fall across it —
+      // they drift through each other's altitude rather than flying in a stack,
+      // without ever climbing into what's hanging above them.
+      const room = Math.max(0, deck - sprite.h - 3 - hang);
+      const lane = hang + Math.round(h3 * room);
+      const gy = lane + Math.round(Math.sin(t * (0.25 + h2 * 0.4) + h * 9) * 3);
+      // And then whatever the sky is doing to it. A greenhouse that passes
+      // under a diving singularity gets leaned on and let go.
+      const at = this.warp(gx + sprite.w / 2, gy + sprite.h / 2);
+      const x = Math.round(at.x - sprite.w / 2);
+      const y = Math.round(at.y - sprite.h / 2);
+      this.primeGlow("orbital", x, y, sprite.w, sprite.h, t, i);
+      ctx.drawImage(sprite.canvas, x, y);
 
-          // The greenhouse runs a grow-light down onto the rows in sweeps.
-          const cycle = (t * 0.14 + i * 0.37) % 1;
-          if (cycle < 0.22) this.drawBeam(x + sprite.w / 2, y + sprite.h, t, cycle / 0.22);
-        } else {
-          // The singularity doesn't travel. It hangs there and breathes, and
-          // what it makes goes into the same pipeline as everything else the
-          // industrial half of the farm produces — it just doesn't need a shed
-          // to do it from.
-          //
-          // Which is exactly why it can't be placed by hash: a greenhouse that
-          // overlaps another one has passed it by the time you look up, and two
-          // of these hanging in the same spot are still hanging in the same spot
-          // ten minutes later. So each one owns a column — `cap` even lots
-          // across the width — and wanders inside it.
-          //
-          // It hangs, but it doesn't hang still: a slow lissajous a few pixels
-          // wide, on its own phase, so two of them never breathe together.
-          const lot = SCENE_W / place.cap;
-          const home = share * SCENE_W + (lot - sprite.w) / 2;
-          const x = Math.round(home + Math.sin(t * 0.31 + h2 * 6) * 5);
-          // The top deck, above the traffic, and staggered off the hash by what
-          // room is left so three of them aren't a row of portals at one exact
-          // altitude.
-          const room = Math.max(0, hangDeck - sprite.h - 2);
-          const y = 1 + Math.round(h2 * room) + Math.round(Math.sin(t * 0.43 + h3 * 6) * 2);
-          this.drawPulse(x + sprite.w / 2, y + sprite.h / 2, t + i);
-          this.primeGlow(id, x, y, sprite.w, sprite.h, t, i);
-          ctx.drawImage(sprite.canvas, x, y);
-          this.pipeEnd = Math.max(this.pipeEnd, x + Math.floor(sprite.w / 2));
-          if (this.chance(1.4)) this.feedPipe(x + Math.floor(sprite.w / 2));
-        }
-      }
+      // The greenhouse runs a grow-light down onto the rows in sweeps.
+      const cycle = (t * 0.14 + i * 0.37) % 1;
+      if (cycle < 0.22) this.drawBeam(x + sprite.w / 2, y + sprite.h, t, cycle / 0.22);
+    }
+
+    // And the singularities, wherever this frame's dive has left them.
+    const hole = artCanvas(this.mark("singularity"));
+    for (const [i, well] of this.wells.entries()) {
+      this.drawPulse(well.cx, well.cy, t + i, 1 + well.dive * 1.6);
+      this.primeGlow("singularity", well.x, well.y, hole.w, hole.h, t, i);
+      ctx.drawImage(hole.canvas, well.x, well.y);
+      this.pipeEnd = Math.max(this.pipeEnd, well.x + Math.floor(hole.w / 2));
+      if (this.chance(1.4)) this.feedPipe(well.x + Math.floor(hole.w / 2));
     }
 
     this.stepSeeds(t);
@@ -3245,8 +3382,12 @@ export class FarmScene {
         }
       }
       const bob = f.hold > 0 ? Math.round(Math.sin(t * 3.1 + f.x) * 1) : 0;
-      const fx = Math.round(f.x);
-      const fy = Math.round(f.y) + bob;
+      // Warped where it's drawn rather than where it's flying: a seeder caught
+      // by a passing singularity gets dragged off its patch and lands back on it
+      // afterwards, instead of losing the run it was in the middle of.
+      const at = this.warp(f.x + sprite.w / 2, f.y + bob + sprite.h / 2);
+      const fx = Math.round(at.x - sprite.w / 2);
+      const fy = Math.round(at.y - sprite.h / 2);
       this.primeGlow("seeder", fx, fy, sprite.w, sprite.h, t, i);
       ctx.drawImage(sprite.canvas, fx, fy);
     }
@@ -3342,7 +3483,11 @@ export class FarmScene {
       }
       // Drift toward the plant it's aimed at, so the drop reads as deliberate.
       seed.x += (bed.x + 3 - seed.x) * Math.min(1, this.dt * 1.6);
-      ctx.fillRect(Math.round(seed.x), Math.round(seed.y), 1, 2);
+      // Unless something with more of an opinion is in the way. It still lands
+      // where it was aimed — the seed falls the whole time, it just takes a
+      // detour around whatever came down over the field.
+      const at = this.warp(seed.x, seed.y);
+      ctx.fillRect(Math.round(at.x), Math.round(at.y), 1, 2);
       return true;
     });
   }
@@ -3370,10 +3515,10 @@ export class FarmScene {
   }
 
   /** The singularity, breathing. Four points on the grid, no rotation. */
-  private drawPulse(cx: number, cy: number, t: number): void {
+  private drawPulse(cx: number, cy: number, t: number, scale = 1): void {
     const ctx = this.ctx;
     const phase = (t * 0.55) % 1;
-    const r = Math.round(4 + phase * 9);
+    const r = Math.round((4 + phase * 9) * scale);
     ctx.globalAlpha = 0.5 * (1 - phase);
     ctx.fillStyle = "#c9a4f0";
     for (const [dx, dy] of [
