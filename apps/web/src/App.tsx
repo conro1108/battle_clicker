@@ -124,8 +124,18 @@ function markSeen(key: string): void {
   }
 }
 
-/** How long the omen stays up. Long enough to read twice, then gone for good. */
-const OMEN_MS = 14_000;
+/**
+ * How long the omen owns the screen, start of the blackout to the last frame of
+ * the farm coming back. Kept in step with the `omen-veil` keyframes.
+ *
+ * It used to be fourteen seconds of text breathing over the sky, which is a long
+ * time to hold a player still for one sentence — and because it was a label on
+ * the scene rather than an event, buying the Singularity from an open shop meant
+ * the whole thing played out behind the sheet. This is short because it's a cut,
+ * not a notice: the lights go out, you're told to keep going, the lights come up
+ * on a horizon that's moved.
+ */
+const OMEN_MS = 4600;
 
 /**
  * Everything that isn't the farm: the parked head-to-head prototype and the
@@ -221,6 +231,10 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
     if (omen !== "unseen" || looming <= 0) return;
     setOmen("showing");
     markSeen(OMEN_KEY);
+    // The purchase that triggers this happens in the shop, and the point of the
+    // omen is the sky. Take the sheet away under the blackout so the lights come
+    // up on the farm rather than on the row of buttons you were just reading.
+    setSheet(null);
     const id = setTimeout(() => setOmen("done"), OMEN_MS);
     return () => clearTimeout(id);
   }, [omen, looming, farm.converged]);
@@ -269,7 +283,7 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
     setTimeout(() => setPops((p) => p.filter((x) => x.id !== id)), 700);
   }, [dig, farm]);
 
-  useSpaceToDig(onDig, report === null && sheet === null);
+  useSpaceToDig(onDig, report === null && sheet === null && omen !== "showing");
 
   const soilPct = Math.round(farm.soil * 100);
 
@@ -303,15 +317,6 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
         {/* The whole scene digs, which is not something a farm looks like it
             does. One sentence, once, and then never again. */}
         {!taught && <p className="tap-hint">Tap the farm to dig</p>}
-        {/* Up at the top, over the thing it's about. Deliberately says nothing
-            about what's coming — the punchline has to land on a button the
-            player chose to press, not on a label that gave it away. */}
-        {omen === "showing" && (
-          <p className="omen-hint">
-            The horizon isn't where you left it
-            <span>Keep going</span>
-          </p>
-        )}
       </FarmScene>
 
       {/* The button is no longer the way you dig — the scene is. What's left is
@@ -419,6 +424,19 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
       )}
 
       {report && <AwayReport report={report} onDismiss={dismissReport} />}
+
+      {/* The first Tuber Singularity, and the only time the game takes the
+          screen off you. Everything goes out, one sentence and one instruction
+          arrive in the dark, and the farm fades back up underneath them.
+          Deliberately says nothing about what's coming — the punchline has to
+          land on a button the player chose to press, not on a label that gave it
+          away. It eats taps for its four seconds, which is the point. */}
+      {omen === "showing" && (
+        <div className="omen-veil" role="presentation">
+          <p className="omen-line">The horizon isn't where you left it</p>
+          <p className="omen-call">Keep going</p>
+        </div>
+      )}
     </div>
   );
 }
