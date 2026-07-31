@@ -583,6 +583,272 @@ input {
   }
 }
 
+/* --- The Convergence ------------------------------------------------------ */
+
+/* The trip inside. Over everything — HUD, nav, the shop it was bought from —
+   and it takes every input with it for its ten seconds. Timings track
+   `CONVERGE_MS` in App.tsx; every layer runs on that same duration with
+   percentage offsets so the beats can't drift apart.
+
+   Fixed rather than absolute, because the omen's `.app`-relative box is the
+   farm screen and this is not a thing happening on the farm screen. */
+.converge {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow: hidden;
+  background: #06040a;
+  animation: converge-veil 9600ms linear both;
+}
+/* The light of the thing you're falling toward, before it's big enough to be
+   anything. Kept on the backdrop rather than on the tuber itself: a blurred
+   shadow scaled thirty times is a lot of pixels to ask a phone for. */
+.converge::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 191, 122, 0.22), rgba(6, 4, 10, 0) 48%);
+  animation: converge-halo 9600ms ease-in both;
+}
+
+/* The potato, from outside, getting closer. It's a lopsided blob with two eyes
+   on it, which is all it needs to be — for the four seconds it's small enough
+   to read as an object it's barely more than a lit speck, and by the time it's
+   big enough to inspect you're already through it. */
+.converge-skin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44vmin;
+  height: 33vmin;
+  margin: -16.5vmin 0 0 -22vmin;
+  border-radius: 54% 46% 48% 52% / 60% 58% 42% 40%;
+  background: radial-gradient(72% 78% at 36% 30%, #b07c4c 0%, #8a5a35 42%, #5d3a22 74%, #341f13 100%);
+  will-change: transform;
+  animation: converge-skin 9600ms cubic-bezier(0.62, 0, 0.9, 0.4) both;
+}
+/* Two eyes, so the last thing that passes the camera on the way in is a sprout
+   pit the size of the screen. */
+.converge-skin::before,
+.converge-skin::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 40%, #2a1a10 0%, #46291a 62%, rgba(70, 41, 26, 0) 100%);
+  box-shadow: 0 -0.35vmin 0 rgba(214, 160, 106, 0.45);
+}
+.converge-skin::before {
+  left: 25%;
+  top: 41%;
+  width: 7%;
+  height: 9%;
+}
+.converge-skin::after {
+  left: 58%;
+  top: 25%;
+  width: 5%;
+  height: 6.5%;
+}
+
+/* Inside. Cut flesh lit from where you came in, going to shadow at the edges,
+   with the same vascular rings the ceiling has — this is the same place the
+   canvas is about to draw over the sky, seen from much closer. */
+.converge-flesh {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-radial-gradient(
+      circle at 50% 44%,
+      rgba(93, 58, 34, 0.17) 0 2px,
+      rgba(93, 58, 34, 0) 2px 30px
+    ),
+    radial-gradient(circle at 50% 44%, #f2e2b4 0%, #ecd9a6 18%, #c9a473 45%, #7d5330 74%, #3d2415 100%);
+  animation: converge-flesh 9600ms cubic-bezier(0.16, 0.6, 0.24, 1) both;
+}
+/* The skin going past the lens. One frame's worth of white, which is what
+   turns a crossfade into a passage through something. */
+.converge-flesh::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #fff3d6;
+  animation: converge-flash 9600ms ease-out both;
+}
+
+.converge-words {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 0 26px;
+  text-align: center;
+}
+/* All three in the same cell, so a line arriving doesn't shove the last one
+   off its mark on the way out. */
+.converge-words > p {
+  grid-area: 1 / 1;
+  margin: 0;
+  max-width: 22ch;
+  text-wrap: balance;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+/* Said in the dark, on the way in. Held up out of the middle, because the
+   middle is where the tuber is and a sentence across it makes the one object
+   on the screen look like a background. */
+.converge-line {
+  align-self: start;
+  padding-top: 16vh;
+  font-size: 1rem;
+  line-height: 1.4;
+  letter-spacing: 0.1em;
+  color: #efe2cd;
+  text-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+  animation: converge-line 9600ms ease both;
+}
+/* The card, and the only time the game names anything at itself. Lands on the
+   frame you come through the skin, on the flesh rather than on the dark. */
+.converge-title {
+  font-size: clamp(1.7rem, 9vw, 2.7rem);
+  line-height: 1.1;
+  color: #4a2a17;
+  text-shadow: 0 0 8vmin rgba(255, 240, 200, 0.95);
+  animation: converge-title 9600ms ease-out both;
+}
+/* And the sentence that's still up when the farm comes back under it. */
+.converge-call {
+  font-size: 1.1rem;
+  line-height: 1.45;
+  letter-spacing: 0.16em;
+  text-indent: 0.16em;
+  color: #3b2412;
+  text-shadow: 0 0 6vmin rgba(255, 240, 200, 0.8);
+  animation: converge-call 9600ms ease both;
+}
+
+@keyframes converge-veil {
+  0% {
+    opacity: 0;
+  }
+  /* 800ms to take the screen, and 800ms at the end to give it back — the farm
+     arriving under a ceiling that hasn't landed yet is the last beat. */
+  8%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes converge-halo {
+  0% {
+    opacity: 0;
+  }
+  44% {
+    opacity: 1;
+  }
+  48%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes converge-skin {
+  0% {
+    opacity: 0;
+    transform: scale(0.05) rotate(-8deg);
+  }
+  /* A speck in the dark for a second and a half, then the fall — nearly all of
+     the distance is covered in the last quarter of it. */
+  8% {
+    opacity: 1;
+    transform: scale(0.1) rotate(-7deg);
+  }
+  44% {
+    opacity: 1;
+    transform: scale(24) rotate(4deg);
+  }
+  48%,
+  100% {
+    opacity: 0;
+    transform: scale(34) rotate(6deg);
+  }
+}
+@keyframes converge-flesh {
+  0%,
+  42% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+  /* Through, and then still moving: it keeps opening out for another four
+     seconds, so being inside reads as arriving somewhere rather than as a
+     picture that replaced the last one. */
+  46% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes converge-flash {
+  0%,
+  41% {
+    opacity: 0;
+  }
+  45% {
+    opacity: 0.9;
+  }
+  54%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes converge-line {
+  0%,
+  10% {
+    opacity: 0;
+  }
+  15%,
+  36% {
+    opacity: 1;
+  }
+  42%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes converge-title {
+  0%,
+  45% {
+    opacity: 0;
+    letter-spacing: 0.12em;
+  }
+  52% {
+    opacity: 1;
+    letter-spacing: 0.22em;
+  }
+  70% {
+    opacity: 1;
+    letter-spacing: 0.3em;
+  }
+  76%,
+  100% {
+    opacity: 0;
+    letter-spacing: 0.34em;
+  }
+}
+@keyframes converge-call {
+  0%,
+  72% {
+    opacity: 0;
+  }
+  79%,
+  100% {
+    opacity: 1;
+  }
+}
+
 /* --- Dig ----------------------------------------------------------------- */
 
 /* Deliberately small. The scene is the dig button; this is the label that says
@@ -1287,5 +1553,28 @@ input {
   .omen-nudge,
   .omen-veil:not(.flash)::after {
     animation: none;
+  }
+
+  /* The Convergence still takes the screen and still ends up inside the potato,
+     because that's the run's one payoff and cutting it would be cutting the
+     ending. What goes is the flight: no rush toward the tuber and no scaling on
+     the flesh, so it's a lit place you arrive in rather than one you're thrown
+     at. Everything else is opacity, which is already safe. */
+  .converge-skin {
+    display: none;
+  }
+  .converge-flesh {
+    animation-name: converge-flesh-still;
+  }
+}
+
+@keyframes converge-flesh-still {
+  0%,
+  42% {
+    opacity: 0;
+  }
+  46%,
+  100% {
+    opacity: 1;
   }
 }

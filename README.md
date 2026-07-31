@@ -89,6 +89,16 @@ rungs arrive that farm the parts of it you're now standing in. It's permanent
 rather than per-run — a flag that survives prestige, because the point is that
 it happens to you once.
 
+The purchase gets the only cutscene in the game: ten seconds of the screen, the
+tuber approaching out of the dark, and the camera going through the skin into
+the flesh. The canvas holds the old sky underneath it the whole time
+(`FOLD_HOLD_MS`), so what the veil lifts on is a horizon still open — and then
+closing, in front of you. The shop empties down to that one row from the tenth
+Tuber Singularity until it's bought, which is the only place in the game a
+purchase is made the only thing you can do: the tier is a countdown and nothing
+else says so, so a player at the threshold with twelve rows in front of them
+buys another rung and pushes the fold another hour out.
+
 Its mechanical payoff is the weather, not a multiplier. Inside the potato
 there's no sky, so hail and frost and drought stop and the tuber's immune
 response takes over: same three effect kinds, soil-heavier mix, two more

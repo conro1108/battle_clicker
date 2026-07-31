@@ -396,6 +396,24 @@ export function convergenceProgress(f: FarmState): number {
   return Math.min(1, (f.producers[gate.producer] ?? 0) / gate.count);
 }
 
+/**
+ * The Ur-Potato is on the table and unbought — the last stretch of the run.
+ *
+ * The shop empties itself down to this one row while it's true, which is the
+ * only place in the game a purchase is made the only thing you can do. It's the
+ * point: the tenth Tuber Singularity is a threshold nothing in the shop marked,
+ * and a player who reaches it with a screen full of rungs will keep buying rungs
+ * and never notice what the tier was counting down to. There is roughly a
+ * thousand seconds of production between the gate opening and the price being
+ * met, and the whole of it should be spent looking at the thing you're saving
+ * for.
+ */
+export function convergencePending(f: FarmState): boolean {
+  const upgrade = SOLO_UPGRADE_BY_ID[CONVERGENCE_UPGRADE];
+  if (!upgrade || f.converged || f.upgrades.includes(CONVERGENCE_UPGRADE)) return false;
+  return isUnlocked(f, upgrade);
+}
+
 /** What a prestige right now would pay. Zero means it isn't worth doing yet. */
 export function pendingSeeds(f: FarmState): number {
   return seedsFor(f.harvested);

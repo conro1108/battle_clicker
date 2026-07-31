@@ -99,11 +99,23 @@ if (await back.isVisible().catch(() => false)) await back.click();
 
 await page.waitForTimeout(Number(args.settle ?? 2500));
 
+// `buy=` takes an upgrade id as well as a producer one — the Convergence is a
+// purchase off the same shelf, and it's the one thing on it worth photographing
+// mid-arrival.
 if (args.buy) {
-  const prod = solo.SOLO_PRODUCER_BY_ID[args.buy as solo.SoloProducerId];
+  const thing =
+    solo.SOLO_PRODUCER_BY_ID[args.buy as solo.SoloProducerId] ?? solo.SOLO_UPGRADE_BY_ID[args.buy];
+  if (!thing) throw new Error(`nothing called ${args.buy} in the shop`);
   await page.getByRole("button", { name: "Shop" }).click();
-  await page.getByRole("button").filter({ hasText: prod.name }).first().click();
-  await page.getByRole("button", { name: "Close" }).click();
+  await page.getByRole("button").filter({ hasText: thing.name }).first().click();
+  // The Convergence takes the sheet away itself, and it eats the click that
+  // would close one that's still open.
+  const close = page.getByRole("button", { name: "Close" });
+  if (await close.isVisible().catch(() => false)) await close.click().catch(() => {});
+} else if (args.open === "shop") {
+  await page.getByRole("button", { name: "Shop" }).click();
+  // The sheet slides up; shooting on the click catches it still off the bottom.
+  await page.waitForTimeout(500);
 }
 
 const burst = Number(args.burst ?? 0);

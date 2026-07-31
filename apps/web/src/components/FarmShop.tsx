@@ -61,6 +61,38 @@ export function GrowPanel({
 }) {
   const [qty, setQty] = useState<BuyQty>(1);
 
+  // The last stretch. Once the tenth Tuber Singularity is standing, the shop
+  // stops being a shop: every other rung and every other upgrade comes off the
+  // board and the only thing you can buy is the one that ends the climb.
+  //
+  // Nothing else in the game does this, and nothing else should. It's the one
+  // moment where "what do I spend this on" has a wrong answer — the tier was a
+  // countdown and the shop never said so, so a player at the threshold with the
+  // usual twelve rows in front of them buys another Singularity and pushes the
+  // Ur-Potato another hour out. Emptying the board is the game finally saying
+  // out loud that there's only one thing left to save for.
+  if (solo.convergencePending(farm)) {
+    const ur = solo.SOLO_UPGRADE_BY_ID[solo.CONVERGENCE_UPGRADE]!;
+    return (
+      <>
+        <p className="hint">
+          The ladder stops here. Everything the farm makes goes to one purchase now.
+        </p>
+        <div className="rows">
+          <Row
+            accent="row-upgrade"
+            name={ur.name}
+            blurb={ur.blurb}
+            cost={format(ur.cost)}
+            affordable={P.gte(budget, ur.cost)}
+            art={upgradePreview(farm, ur)}
+            onBuy={() => dispatch({ type: "buy_upgrade", upgrade: ur.id })}
+          />
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <div className="qty-toggle">

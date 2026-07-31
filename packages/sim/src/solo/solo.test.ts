@@ -20,7 +20,14 @@ import {
   soilRestoreCost,
   totalRepairCost,
 } from "./economy.js";
-import { advance, applyFarmCommand, createFarm, pendingSeeds } from "./farm.js";
+import {
+  CONVERGENCE_UPGRADE,
+  advance,
+  applyFarmCommand,
+  convergencePending,
+  createFarm,
+  pendingSeeds,
+} from "./farm.js";
 import { parseFarm, resumeFarm, serializeFarm } from "./persist.js";
 import { MULT_PER_UNSPENT_SEED, PERKS, seedsFor } from "./prestige.js";
 import { FARMER_STYLES, farmerTurn, simulateCadence, simulateFarm } from "./sim.js";
@@ -459,6 +466,25 @@ describe("the Convergence", () => {
         rich.checkpointAt,
       ).ok).toBe(true);
     }
+  });
+
+  /**
+   * What the shop hangs its one piece of tunnel vision on. The window opens on
+   * the tenth Tuber Singularity and shuts on the purchase, and nowhere else —
+   * a farm that's already folded must not get an empty shop for the rest of
+   * the run.
+   */
+  it("empties the shop only between the gate opening and the purchase", () => {
+    const gate = SOLO_UPGRADE_BY_ID[CONVERGENCE_UPGRADE]!.requires!;
+    const base = developedFarm("pending");
+    const short: FarmState = { ...base, producers: { [gate.producer]: gate.count - 1 } };
+    const ready: FarmState = { ...base, producers: { [gate.producer]: gate.count } };
+
+    expect(convergencePending(short)).toBe(false);
+    expect(convergencePending(ready)).toBe(true);
+    // Bought, and the shop comes back.
+    expect(convergencePending({ ...ready, upgrades: [CONVERGENCE_UPGRADE] })).toBe(false);
+    expect(convergencePending({ ...ready, converged: true })).toBe(false);
   });
 
   it("happens to you once, and outlives the farm it happened to", () => {

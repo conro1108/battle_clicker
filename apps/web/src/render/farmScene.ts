@@ -56,6 +56,21 @@ const MIN_SKY = 20;
  */
 const FOLD_MS = 3400;
 
+/**
+ * How long the sky waits before it starts closing.
+ *
+ * The Convergence cutscene owns the screen for the first part of the purchase —
+ * the flight into the tuber, which happens over the top of everything in a DOM
+ * layer — and the canvas is behind it the whole time. Playing the fold under
+ * there would spend it: the veil lifts on a ceiling that already landed and the
+ * player never sees the sky it replaced.
+ *
+ * So the horizon holds until the cutscene is nearly done, and comes down in
+ * front of them as they're handed the farm back. Tracks `CONVERGE_MS` in
+ * App.tsx: this wants to be a second or so short of it.
+ */
+const FOLD_HOLD_MS = 9000;
+
 /** The shared outline ink, for the bits of the scene drawn as rects not art. */
 const INK = "#402e3a";
 
@@ -1180,7 +1195,7 @@ export class FarmScene {
     // A farm that was already folded when the tab opened is just folded — the
     // first view a scene is handed is a restore, not an event, and replaying
     // the best moment in the game on every reload would spend it.
-    if (view.converged && !was && this.sawView) this.foldAt = performance.now();
+    if (view.converged && !was && this.sawView) this.foldAt = performance.now() + FOLD_HOLD_MS;
     this.sawView = true;
   }
 
@@ -1672,7 +1687,10 @@ export class FarmScene {
       this.drawSky(phase, t, horizon);
       this.drawDistance(lots, phase, horizon, fold, t);
     }
-    if (this.view.converged) this.drawCeiling(horizon, fold, t);
+    // `fold > 0` rather than just `converged`: through the cutscene's hold the
+    // horizon is still the old one, and a ceiling drawn at zero would leave its
+    // leading edge sitting on the top of the sky for the whole eight seconds.
+    if (this.view.converged && fold > 0) this.drawCeiling(horizon, fold, t);
     if (!open) this.drawDistance(lots, phase, horizon, fold, t);
     this.drawGround(horizon, yardY);
     this.drawBack(lots, t, now, horizon, phase, fold);
