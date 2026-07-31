@@ -305,8 +305,10 @@ export function applyFarmCommand(f0: FarmState, cmd: FarmCommand, now: Millis): 
     case "prestige": {
       const earned = seedsFor(farm.harvested);
       if (earned <= 0) return fail("Nothing worth handing down yet.");
-      farm = resetForNextGeneration(farm, earned, at);
+      const out = cmd.outside === true && farm.converged;
+      farm = resetForNextGeneration(farm, earned, at, out);
       note(`handed the farm down. +${earned} Heirloom Seed.`, "good");
+      if (out) note("the horizon is open again.", "neutral");
       break;
     }
   }
@@ -317,11 +319,22 @@ export function applyFarmCommand(f0: FarmState, cmd: FarmCommand, now: Millis): 
 /**
  * Everything a generation earns is wiped except the seeds and what they bought.
  * `lifetimeHarvested` deliberately survives — it's the only number in the game
- * that never goes backwards — and so does `converged`, by not being named here:
- * the world stays folded, and the next generation re-climbs to the tiers that
- * only exist inside it.
+ * that never goes backwards — and so does `converged`, unless the farm is being
+ * handed down with the sky asked for.
+ *
+ * `outside` is the only way out of the potato, and it's a door rather than a
+ * consequence: it costs nothing, gives nothing, and hands the next generation a
+ * world with a horizon in it and the Convergence to reach again. The four tiers
+ * inside the potato go out of reach with it, which is the price and is meant to
+ * be — a run under the sky that kept the ceiling's kit would just be the folded
+ * run with different weather.
  */
-function resetForNextGeneration(f: FarmState, earned: number, at: Millis): FarmState {
+function resetForNextGeneration(
+  f: FarmState,
+  earned: number,
+  at: Millis,
+  outside = false,
+): FarmState {
   const seeds = f.seeds + earned;
   const next: FarmState = {
     ...f,
@@ -334,6 +347,7 @@ function resetForNextGeneration(f: FarmState, earned: number, at: Millis): FarmS
     land: {},
     soil: MAX_SOIL,
     weatherIndex: f.weatherIndex,
+    converged: f.converged && !outside,
     seeds,
     generation: f.generation + 1,
     runStartedAt: at,

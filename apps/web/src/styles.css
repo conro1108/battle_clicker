@@ -244,6 +244,13 @@ input {
   flex-wrap: wrap;
   gap: 8px;
 }
+/* Two halves of one decision — which world the next generation gets — so they
+   sit side by side and the same size rather than wrapping into a staircase. */
+.choices.halves {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 14px;
+}
 
 /* A live diorama, not a hero image — same scene the game runs, sized down. */
 .title-scene {

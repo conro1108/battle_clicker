@@ -498,6 +498,37 @@ describe("the Convergence", () => {
     expect(next.converged).toBe(true);
   });
 
+  /**
+   * ...unless you hand the farm down and ask for the sky. The one door out, and
+   * the only thing in the game that puts a permanent flag back.
+   */
+  it("hands the sky down too, if that's what you asked for", () => {
+    const base = developedFarm("sky", 24 * HOUR);
+    const folded: FarmState = { ...base, converged: true };
+    const res = applyFarmCommand(folded, { type: "prestige", outside: true }, folded.checkpointAt);
+    expect(res.ok).toBe(true);
+    const next = (res as { farm: FarmState }).farm;
+    expect(next.converged).toBe(false);
+    // And the world above the fold goes with it: the tiers that farm the inside
+    // of the potato are unbuyable again, whatever you can afford.
+    const rich: FarmState = { ...next, potatoes: 1e30 as never };
+    for (const prod of SOLO_PRODUCERS.filter((p) => p.afterFold)) {
+      expect(
+        applyFarmCommand(rich, { type: "buy_producer", producer: prod.id, qty: 1 }, rich.checkpointAt).ok,
+      ).toBe(false);
+    }
+    // Which means it's there to climb to again.
+    expect(convergencePending({ ...next, producers: { singularity: 10 } })).toBe(true);
+  });
+
+  it("has no sky to offer a farm that never folded", () => {
+    const base = developedFarm("nofold", 24 * HOUR);
+    expect(base.converged).toBe(false);
+    const res = applyFarmCommand(base, { type: "prestige", outside: true }, base.checkpointAt);
+    expect(res.ok).toBe(true);
+    expect((res as { farm: FarmState }).farm.converged).toBe(false);
+  });
+
   it("swaps the weather for the tuber's immune response", () => {
     const base = developedFarm("immune", 2 * HOUR);
     const seen = (f: FarmState) =>

@@ -41,10 +41,16 @@ export interface FarmState {
 
   // --- Persists across prestige resets -------------------------------------
   /**
-   * The horizon has closed. Set once, when the Ur-Potato is bought, and never
-   * unset — you find out you have always been inside the potato exactly once,
-   * and re-running that every generation would make the spectacle routine.
-   * Later generations start in the folded world and re-climb to the new tiers.
+   * The horizon has closed. Survives prestige by default, so the next
+   * generation starts in the folded world and re-climbs to the tiers that only
+   * exist inside it.
+   *
+   * The one thing that can put it back is handing the farm down and asking for
+   * the sky — see `prestige`'s `outside`. It's the player's call rather than
+   * automatic in either direction: making it routine would spend the spectacle
+   * every generation, and making it permanent means the best ten seconds of the
+   * game are something you're allowed to have exactly once and then never
+   * again, on a save you keep for weeks.
    */
   converged: boolean;
   /** Heirloom Seed on hand, spendable on perks. */
@@ -74,7 +80,13 @@ export type FarmCommand =
   | { type: "repair"; producer: SoloProducerId }
   | { type: "restore_soil" }
   | { type: "buy_perk"; perk: PerkId }
-  | { type: "prestige" }
+  /**
+   * `outside` opens the horizon back up on the way down: the next generation
+   * starts under a sky, with the four tiers inside the potato out of reach and
+   * the Convergence to climb to all over again. Ignored by a farm that never
+   * folded, which has nowhere to come out of.
+   */
+  | { type: "prestige"; outside?: boolean }
   /**
    * A cheat, and named like one. `dig` is deliberately capped so a batched
    * flush can't be forged, which also makes it useless for filling a yard up to

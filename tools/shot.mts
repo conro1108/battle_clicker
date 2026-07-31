@@ -112,8 +112,19 @@ if (args.buy) {
   // would close one that's still open.
   const close = page.getByRole("button", { name: "Close" });
   if (await close.isVisible().catch(() => false)) await close.click().catch(() => {});
-} else if (args.open === "shop") {
-  await page.getByRole("button", { name: "Shop" }).click();
+} else if (args.hand) {
+  // `hand=inside` / `hand=outside`: prestige, and which world to hand down. The
+  // sky coming back is the other transition worth photographing.
+  page.on("dialog", (d) => void d.accept());
+  await page.getByRole("button", { name: "Seeds", exact: true }).click();
+  if (args.hand === "outside") await page.getByRole("button", { name: "Back under the sky" }).click();
+  await page.getByRole("button").filter({ hasText: "Hand the farm down" }).first().click();
+  const close = page.getByRole("button", { name: "Close" });
+  if (await close.isVisible().catch(() => false)) await close.click().catch(() => {});
+  await page.waitForTimeout(Number(args.after ?? 2500));
+} else if (args.open) {
+  // Any of the nav sheets by name: `open=Shop`, `open=Seeds`, `open=Weather`.
+  await page.getByRole("button", { name: args.open, exact: true }).click();
   // The sheet slides up; shooting on the click catches it still off the bottom.
   await page.waitForTimeout(500);
 }

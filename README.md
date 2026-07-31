@@ -85,9 +85,17 @@ difference between weather as a 6% running cost and weather as a 65% one.
 
 **The Convergence** fires when you buy The Ur-Potato. The horizon closes: the
 sky band stops being sky and becomes the inside of the tuber, and four more
-rungs arrive that farm the parts of it you're now standing in. It's permanent
-rather than per-run — a flag that survives prestige, because the point is that
-it happens to you once.
+rungs arrive that farm the parts of it you're now standing in. The flag survives
+prestige, so later generations start in the folded world and re-climb to the
+tiers that only exist inside it.
+
+Handing the farm down is the one way back out: the Seeds panel offers the next
+generation either world, defaulting to the one you're standing in. Under the sky
+means no Inversion Furrow and no Mantle Tap, weather instead of the tuber's
+immune response, and the Convergence to reach all over again. "It happens to you
+once" is the right instinct for a first run and the wrong one for a save you keep
+for weeks — the alternative is the best ten seconds in the game locked behind a
+flag you can never clear.
 
 The purchase gets the only cutscene in the game: ten seconds of the screen, the
 tuber approaching out of the dark, and the camera going through the skin into

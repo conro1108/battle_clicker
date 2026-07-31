@@ -257,6 +257,9 @@ export function LegacyPanel({
   farm: solo.FarmState;
   dispatch: (cmd: solo.FarmCommand) => void;
 }) {
+  // Which world the next generation gets. Defaults to the one you're standing
+  // in: coming back out is a thing you go and ask for.
+  const [outside, setOutside] = useState(false);
   const pending = solo.pendingSeeds(farm);
   const multNow = 1 + solo.MULT_PER_UNSPENT_SEED * farm.seeds;
   const multAfter = 1 + solo.MULT_PER_UNSPENT_SEED * (farm.seeds + pending);
@@ -279,6 +282,35 @@ export function LegacyPanel({
         else here — one pile, competing uses.
       </p>
 
+      {/* The only way back out of the potato, and it's on the one screen where
+          you're already deciding what the next generation inherits.
+
+          The fold survives prestige because finding out you've always been
+          inside the potato is a thing that should happen to you once. But
+          "once" turned into "once ever, on a save you keep for weeks" — the
+          best ten seconds in the game, locked behind a flag, with the world
+          you'd want to show someone gone for good. So: the horizon is part of
+          what you hand down. Keep the ceiling, or give the next generation a
+          sky and the climb back to it. */}
+      {farm.converged && (
+        <>
+          <p className="hint">
+            You can hand down the sky as well. Stay inside and the next generation starts under the
+            ceiling, with the tiers that farm it already in the shop. Go back out and the horizon
+            opens — no Inversion Furrow, no Mantle Tap, weather instead of the tuber, and the
+            Convergence to reach all over again.
+          </p>
+          <div className="choices halves">
+            <button className={outside ? "" : "on"} onClick={() => setOutside(false)}>
+              Inside the potato
+            </button>
+            <button className={outside ? "on" : ""} onClick={() => setOutside(true)}>
+              Back under the sky
+            </button>
+          </div>
+        </>
+      )}
+
       <div className="rows">
         <Row
           accent="row-upgrade"
@@ -287,14 +319,24 @@ export function LegacyPanel({
             pending > 0
               ? `Clears everything this generation built. Output goes ×${multNow.toFixed(
                   2,
-                )} → ×${multAfter.toFixed(2)}.`
+                )} → ×${multAfter.toFixed(2)}.${
+                  farm.converged ? (outside ? " Starts outside the potato." : " Starts inside the potato.") : ""
+                }`
               : "Not worth doing yet — grow this generation further first."
           }
           cost={pending > 0 ? `+${pending}` : "—"}
           affordable={pending > 0}
           onBuy={() => {
-            if (window.confirm("Hand the farm down? Everything this generation built is cleared.")) {
-              dispatch({ type: "prestige" });
+            const where =
+              farm.converged && outside
+                ? " The next farm starts outside the potato, and everything above the fold goes with it."
+                : "";
+            if (
+              window.confirm(
+                `Hand the farm down? Everything this generation built is cleared.${where}`,
+              )
+            ) {
+              dispatch({ type: "prestige", outside });
             }
           }}
         />
