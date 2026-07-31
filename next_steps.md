@@ -5,6 +5,47 @@ Four more rungs above the Tuber Singularity, and the event that unlocks them.
 Not built. This is the design plus the numbers the harness gave back for it, so
 that whoever builds it starts from measurements instead of a guess.
 
+## The constraint: one playthrough
+
+**The Convergence has to be reachable in a single dedicated run**, on a first
+save, with no prestige and no seeds. Not something you find out about three
+generations deep. That's a decision, not an observation — treat it as binding on
+anything that retunes the gate later.
+
+The good news is that the numbers already clear it comfortably, and the bad news
+is that the game currently talks a player out of it.
+
+**Every check-in cadence converges inside a week, from nothing.** Measured by
+playing sessions and then jumping the clock between them, so the farm runs
+unattended and nobody repairs anything in the gaps — which is the only thing that
+distinguishes this from the always-on bot:
+
+| Cadence | Active play | First singularity | Convergence | Full ladder |
+|---|---|---|---|---|
+| heavy | 4 × 30 min/day | day 2.0 | **day 3.3** | day 4.5 |
+| normal | 3 × 15 min/day | day 2.7 | **day 4.3** | day 5.7 |
+| light | 2 × 10 min/day | day 4.0 | **day 6.0** | day 7.5 |
+
+For reference the always-on bot converges at day 3.1 — so a player giving it two
+hours a day gets there at essentially the same wall-clock moment as one who never
+closes the tab. **Past the first hour this game is gated on elapsed time, not
+attention**: a 6x difference in play time moves the Convergence by less than 2x,
+because producers dwarf digs almost immediately and offline accrual is unpenalised.
+That is worth knowing before anyone tries to tune the endgame by making it
+grindier — grinding isn't the lever.
+
+**What does threaten the constraint is prestige.** `SEED_DIVISOR` is calibrated
+to put the first hand-down in day 1-2 of a run, and `App.tsx:197` reveals the
+Seeds tab the moment `pendingSeeds > 0`. So the game currently offers a reset
+one to two days *before* the world would have folded, and a player who takes the
+hint sees the Convergence in run 2 at the earliest.
+
+The fix is a gating change, not an economy change: **hold the Seeds tab until the
+Convergence has fired.** Then the first run is one unbroken climb to the fold, and
+prestige is introduced afterwards as the thing that makes the folded world
+repeatable — which is also the better fiction, since what you hand down from then
+on is a farm inside a potato.
+
 ## The Convergence
 
 **It fires when you buy The Ur-Potato.** That upgrade already exists as the last
@@ -136,6 +177,10 @@ as a damper below 1, or leave it and add a post-Convergence perk row priced at
 the new scale. The second is more interesting and is the recommendation — perks
 that only make sense inside the potato, paid for at inside-the-potato prices.
 
+Note this is entirely second-run-onward work. Nothing about the seed economy
+gates the Convergence, which is exactly as intended: the fold is what the first
+run is for, and seeds are what the runs after it are for.
+
 **Float64 is less of a problem than it looked.** Tier 16's 8e18 cost is past
 2^53, so costs stop being exact integers — but nothing depends on that. A 14-day
 run's harvest reaches 5.06e24, where `format` still has eight suffixes of
@@ -147,11 +192,16 @@ bignum swap. The brand is already there if that changes.
 
 1. **Prototype the fold in `farmScene.ts`.** Everything else is worthless if the
    inverted sky doesn't look good. Nothing downstream needs to exist to try it.
-2. Fix the seed economy — post-Convergence perk row. Independent of the fold, and
-   the extension is unshippable without it.
-3. Replace the `solo.test.ts:46` payback assertion with a reach-the-top-rung
+2. Replace the `solo.test.ts:46` payback assertion with a reach-the-top-rung
    check. Do this before adding tiers so the suite stays green throughout.
-4. Add the four producers, their tier upgrades and their globals; move and
+3. Add the four producers, their tier upgrades and their globals; move and
    reprice `ur_potato`; gate the new tiers on `converged` in `FarmShop.tsx:86`.
+4. Hold the Seeds tab until the Convergence (`App.tsx:197`), and add a test that
+   pins the one-playthrough constraint — a fresh farm at a modest check-in
+   cadence has to converge inside a week. That guard is the whole point of the
+   table above; without it the next retune quietly breaks the thing this document
+   is most specific about.
 5. The immune-response weather table and the two new `LANDS` buildings.
 6. Art and placement for the four new producers.
+7. Fix the seed economy — post-Convergence perk row. Last because it's the only
+   item here that a first playthrough never sees.
