@@ -31,6 +31,7 @@ import {
   PRODUCER_MARKS,
   SACK,
   SHED,
+  shrunk,
   SILO,
   TREE,
   TUFT,
@@ -136,6 +137,41 @@ const SKY: Record<Phase, { top: string; bottom: string; hill: string; hillFar: s
   dusk: { top: "#4a4a86", bottom: "#f0a878", hill: "#3f6b39", hillFar: "#557c48" },
   night: { top: "#1d1f42", bottom: "#3a3564", hill: "#25402c", hillFar: "#2f4a35" },
 };
+
+/**
+ * The ridges, farthest first: how far above the horizon each one crests, and
+ * how much it rolls doing it.
+ *
+ * There used to be two, both low, and between them they took up the bottom
+ * quarter of a sky that is otherwise the emptiest part of the picture. There
+ * are three now, and they're up where you can see them, because they stopped
+ * being decoration: the deep end of every lot stands on them. Land you can't
+ * see is land nothing can be built on.
+ *
+ * The upper two share a period and a phase so they run parallel, eleven pixels
+ * apart, which is what guarantees a building on the upper one clears the roof
+ * of the building on the lower one. The near one is on its own phase, because a
+ * third parallel copy reads as a printing error rather than as hills.
+ */
+interface Ridge {
+  amp: number;
+  base: number;
+  phase: number;
+}
+
+const RIDGES: Ridge[] = [
+  { amp: 4, base: 40, phase: 5 },
+  { amp: 4, base: 29, phase: 5 },
+  { amp: 4, base: 19, phase: 7 },
+];
+
+/** Sky the ridges need at full height. Less than this and they flatten out. */
+const RIDGE_ROOM = 56;
+
+/** How far above the horizon a ridge stands at `x`, given the sky it's got. */
+function ridgeAt(ridge: Ridge, x: number, scale: number): number {
+  return Math.round(scale * (ridge.base + ridge.amp * Math.cos((2 * Math.PI * x) / 61 + ridge.phase)));
+}
 
 // ---------------------------------------------------------------------------
 // Deterministic jitter — a farm's layout shouldn't reshuffle on every render.
@@ -515,6 +551,111 @@ const ORDER: solo.SoloProducerId[] = [
   "chorus",
   "second",
 ];
+
+// ---------------------------------------------------------------------------
+// The back edge, in depth
+// ---------------------------------------------------------------------------
+
+/**
+ * The property doesn't stop at the skyline: it runs back from it.
+ *
+ * The back edge used to be one row of the last few things you'd bought, and
+ * when the row filled up the *lowest* tiers were shifted off the left and gone
+ * — so the reward for buying a fusion reactor was your tuber labs being
+ * demolished, and every farm past the middle of the ladder looked like the same
+ * four buildings.
+ *
+ * It's a *plan* now. Each of the four back tiers owns a lot, in tier order,
+ * from the first frame — so a tier arrives where it was always going to stand
+ * and nothing already up there moves. One of it stands at the front of its lot
+ * at full size, forever, which is what you watch change as you buy that tier's
+ * upgrades. Everything else you own of it is built up the lot behind: two at a
+ * time, half size, stepping back and up the hillside, and at the counts you
+ * only reach on a long run, out onto the ridges themselves.
+ *
+ * So the lot's *depth* is the count, and it's read the way the yard is read —
+ * recognised, not counted. Ten of something, fifty and a hundred are three
+ * visibly different lots, and none of them is ever nothing.
+ */
+interface LotRow {
+  /** Where in the lot each one stands, as fractions of the lot's width. */
+  at: number[];
+  /** The ridge it stands on — where the counts you only reach late go. */
+  ridge?: number;
+  /**
+   * Which pass draws it. Higher is nearer: the deep rows are interleaved with
+   * the ridges so each ridge buries the feet of whatever's on the one behind,
+   * and the top layer is the building out front.
+   */
+  layer: number;
+  /** Half size, and how much of the distance is drawn over it. */
+  far: boolean;
+  haze: number;
+}
+
+/**
+ * The lot, front row first. Two at a time behind the one out front, so a lot
+ * grows evenly either side of it rather than lopsidedly.
+ *
+ * The files zigzag rather than running straight back. Two clean columns is what
+ * the first go did, and with a tall tier — the Vertical Farm is forty pixels of
+ * building, twenty when it's halved — each column overlapped itself into a
+ * single unbroken shaft, so a lot of ten towers read as three very tall ones.
+ * Off-setting every row sideways keeps them reading as separate buildings on a
+ * hillside however tall they are.
+ */
+const LOT_ROWS: LotRow[] = [
+  { at: [0.5], layer: 5, far: false, haze: 0 },
+  { at: [0.2, 0.8], layer: 4, far: true, haze: 0.14 },
+  { at: [0.31, 0.69], layer: 3, far: true, haze: 0.26 },
+  { at: [0.15, 0.85], ridge: 2, layer: 2, far: true, haze: 0.34 },
+  { at: [0.28, 0.72], ridge: 1, layer: 1, far: true, haze: 0.42 },
+  { at: [0.38, 0.62], ridge: 0, layer: 0, far: true, haze: 0.5 },
+];
+
+/** The rows flattened into the order they're filled in. */
+const LOT = LOT_ROWS.flatMap((row, r) => row.at.map((at) => ({ ...row, at, row: r })));
+
+/**
+ * How much ground a row is set back from the one in front, as a share of the
+ * building's own height. Held to a floor so a squat tier still steps back.
+ */
+const LOT_STEP = 0.55;
+const LOT_STEP_MIN = 6;
+
+/** The tiers with a lot, left to right. Fixed, so a lot is a lot forever. */
+const BACK_TIERS = ORDER.filter((id) => PLACEMENT[id].band === "back");
+
+/** A tier's lot, as laid out this frame. */
+interface Lot {
+  id: solo.SoloProducerId;
+  /** Whichever mark of it you're running. */
+  art: Art;
+  /** Left edge and width, in buffer pixels. */
+  x: number;
+  w: number;
+  /** How many of `LOT`'s slots are filled, and how many of those are dead. */
+  depth: number;
+  dead: number;
+  /** Empty, but staked out: the next tier's ground, waiting for it. */
+  pad: boolean;
+  /** Where each row's feet stand, so a row is a terrace and not a contour. */
+  ground: number[];
+}
+
+/**
+ * How far back a lot is built, given how many of the tier you own.
+ *
+ * Log, like everything else that has to survive counts running into the
+ * hundreds: the first one is the building out front, and after that it takes a
+ * bit over half a doubling to add another. Ten, fifty and a hundred come out at
+ * five, nine and ten — three lots you can tell apart across the room, which is
+ * the only test this has to pass.
+ */
+export function lotDepth(owned: number): number {
+  if (owned <= 0) return 0;
+  return Math.min(LOT.length, 1 + Math.floor(Math.log2(owned) * 1.45));
+}
 
 /**
  * How many of a tier to actually draw. Counts run to hundreds and the field
@@ -1235,13 +1376,21 @@ export class FarmScene {
     const fold = this.foldProgress(now);
     // Mid-fold the old sky is still down there under the advancing edge, so it
     // gets drawn and then covered rather than swapped out.
-    if (!this.view.converged || fold < 1) {
+    const open = !this.view.converged || fold < 1;
+    const lots = this.lots(horizon);
+    // The hills and the deep end of every lot go up together, back to front.
+    // Once the horizon has folded they go up *after* the ceiling instead of
+    // before it: the fold swallows the far half of the property along with the
+    // sky, and what comes back is the same hills and the same plant with the
+    // world they're standing in made of potato.
+    if (open) {
       this.drawSky(phase, t, horizon);
-      this.drawHills(phase, horizon);
+      this.drawDistance(lots, phase, horizon, fold, t);
     }
     if (this.view.converged) this.drawCeiling(horizon, fold, t);
+    if (!open) this.drawDistance(lots, phase, horizon, fold, t);
     this.drawGround(horizon, yardY);
-    this.drawBack(t, now, horizon);
+    this.drawBack(lots, t, now, horizon, phase, fold);
     this.drawField(t, now, horizon, yardY);
     this.drawSacks(now);
     this.drawPuffs(now, dt);
@@ -1686,20 +1835,42 @@ export class FarmScene {
     }
   }
 
-  private drawHills(phase: Phase, horizon: number): void {
+  /**
+   * The far half of the property: three ridges and the deep end of every lot
+   * standing on them, drawn back to front so each ridge buries the feet of
+   * what's on the one behind it.
+   *
+   * Interleaving them is the whole reason the depth reads as distance rather
+   * than as a second row of buildings floating over the first. A building whose
+   * base is cut off by a hill is over that hill.
+   */
+  private drawDistance(lots: Lot[], phase: Phase, horizon: number, fold: number, t: number): void {
     const ctx = this.ctx;
     const sky = SKY[phase];
-    // Two rolling ridges, drawn as 1px columns so they sit on the buffer's grid
-    // instead of being antialiased into a smear by a path fill.
-    for (const [amp, base, color] of [
-      [5, 16, sky.hillFar],
-      [7, 9, sky.hill],
-    ] as const) {
-      ctx.fillStyle = color;
+    const scale = Math.min(1, horizon / RIDGE_ROOM);
+    // Once the horizon folds there's no sky to be a hill against, so the hills
+    // go over to flesh — each ridge to its own shade of it, or three ridges the
+    // same colour is one flat wall.
+    const gone = this.view.converged ? fold : 0;
+    // The far ones wash out toward the sky they're seen against, which is the
+    // only thing that tells three ridges of the same green apart at night.
+    const colors = [
+      mix(mix(sky.hillFar, sky.bottom, 0.4), mix(FLESH_DEEP, FLESH_LIT, 0.3), gone),
+      mix(sky.hillFar, mix(FLESH_DEEP, FLESH_LIT, 0.18), gone),
+      mix(sky.hill, mix(FLESH_DEEP, FLESH_LIT, 0.06), gone),
+    ];
+
+    for (let i = 0; i < RIDGES.length; i++) {
+      // Drawn as 1px columns so the ridge sits on the buffer's grid instead of
+      // being antialiased into a smear by a path fill.
+      ctx.fillStyle = colors[i]!;
       for (let x = 0; x < SCENE_W; x++) {
-        const h = Math.round(base + amp * Math.cos((2 * Math.PI * x) / 61 + amp));
+        const h = ridgeAt(RIDGES[i]!, x, scale);
         ctx.fillRect(x, horizon - h, 1, h);
       }
+      // Layer i is the row standing on ridge i, so each ridge goes up under its
+      // own row and in front of the row above it.
+      this.drawLotLayer(lots, i, phase, fold, t);
     }
   }
 
@@ -1750,64 +1921,172 @@ export class FarmScene {
     ctx.fillRect(HEAP_X - 2, foot - 4, HEAP_W - HEAP_X + 4, 5);
   }
 
-  /** Buildings and the skyline: the far edge of the property. */
-  private drawBack(t: number, now: number, horizon: number): void {
-    const ctx = this.ctx;
-    const baseline = horizon + 8;
+  /**
+   * The back edge as lots: one per tier, in tier order, each with the art it's
+   * standing and how far back it's built.
+   *
+   * Worked out once a frame and handed to every pass, because a lot is drawn in
+   * six slices either side of the ridges, the ceiling and the ground, and they
+   * all have to agree about what's where.
+   */
+  private lots(horizon: number): Lot[] {
+    // The lots divide the back edge between them and keep their share whether
+    // the tier is bought or not — a refinery arrives in the space that was
+    // always the refinery's, and nothing already standing shuffles along.
+    const span = SCENE_W - artCanvas(TREE).w - 6;
+    const width = Math.floor(span / BACK_TIERS.length);
+    const scale = Math.min(1, horizon / RIDGE_ROOM);
+    // The lot after the last one you've built on gets staked out. Empty ground
+    // isn't dead space — it's the thing you're filling in, the same argument
+    // the field makes by ploughing a line across the rows you haven't bought.
+    // Only the one, though: four surveyed pads on a farm with no sheds on it
+    // reads as a building site rather than as a farm with room to grow.
+    const next = BACK_TIERS.findIndex((id) => ((this.view.working[id] ?? 0) + (this.view.broken[id] ?? 0)) <= 0);
 
+    return BACK_TIERS.map((id, i) => {
+      const working = this.view.working[id] ?? 0;
+      const broken = this.view.broken[id] ?? 0;
+      // Dead kit stands at the *back* of the lot, and the one out front only
+      // goes grey when there's nothing left working — the building you watch
+      // for the upgrade art shouldn't be the one the weather took.
+      const depth = lotDepth(working + broken);
+      const dead = working <= 0 ? depth : Math.min(depth - 1, Math.round((depth * broken) / (working + broken)));
+      const art = this.mark(id);
+      const x = 2 + i * width;
+
+      // Where each row stands. Sampled at the lot's middle rather than under
+      // each building, so a row comes out as a terrace cut into the hill and
+      // not as three sheds following a contour.
+      //
+      // Every row's feet are strictly higher on the screen than the row in
+      // front of it, whatever the ridge under it is doing. Without that rule a
+      // tall tier steps back further than the next ridge stands up, and its
+      // fourth row comes out standing *in front of* its third.
+      const tall = artCanvas(shrunk(art)).h;
+      const step = Math.max(LOT_STEP_MIN, Math.round(tall * LOT_STEP));
+      const ground: number[] = [];
+      let y = horizon + 8;
+      for (const [r, row] of LOT_ROWS.entries()) {
+        if (r > 0) y -= step;
+        if (row.ridge !== undefined) {
+          y = Math.min(y, horizon - ridgeAt(RIDGES[row.ridge]!, x + width / 2, scale));
+        }
+        // Clamped, so a squat landscape sky crowds the lot together rather than
+        // posting its far end off the top of the buffer.
+        ground.push(Math.max(tall + 1, y));
+      }
+      return { id, art, x, w: width, depth, dead, ground, pad: depth === 0 && i === next };
+    });
+  }
+
+  /** The tree, the steam, and the near end of every lot. */
+  private drawBack(
+    lots: Lot[],
+    t: number,
+    now: number,
+    horizon: number,
+    phase: Phase,
+    fold: number,
+  ): void {
     // Steam first, so it comes out from behind the towers rather than over
     // the front of them.
     this.drawPlumes(now);
+
+    this.drawLotLayer(lots, 3, phase, fold, t);
+    this.drawLotLayer(lots, 4, phase, fold, t);
 
     // No barn. It stood here for a long time as a bookend and it never meant
     // anything — nothing you buy touched it, and it was taking a third of the
     // back edge away from the tiers that do.
     const tree = artCanvas(TREE);
-    ctx.drawImage(tree.canvas, SCENE_W - tree.w - 3, baseline - tree.h + 2);
+    this.ctx.drawImage(tree.canvas, SCENE_W - tree.w - 3, horizon + 10 - tree.h);
 
-    // Everything else queues up along the back edge in tier order, so climbing
-    // the ladder reads as the skyline filling in.
-    const queue: { id: solo.SoloProducerId; art: Art; dead: boolean }[] = [];
-    for (const id of ORDER) {
-      const place = PLACEMENT[id];
-      if (place.band !== "back") continue;
-      const n = shownCount(this.view.working[id] ?? 0, place.cap, place.spread);
-      const brokenN = shownCount(this.view.broken[id] ?? 0, place.cap, place.spread);
-      const art = this.mark(id);
-      for (let i = 0; i < n; i++) queue.push({ id, art, dead: false });
-      for (let i = 0; i < brokenN; i++) queue.push({ id, art, dead: true });
-    }
+    this.drawLotLayer(lots, 5, phase, fold, t);
+  }
 
-    // When the skyline is full, the *lowest* tiers give up their spot. A farm
-    // with a fusion reactor shouldn't be showing you its third tuber lab
-    // instead — the newest thing you bought is the thing you want to look at.
-    const left = 4;
-    const right = SCENE_W - tree.w - 6;
-    let width = queue.reduce((w, item) => w + artCanvas(item.art).w + 2, 0);
-    while (queue.length > 1 && left + width > right) {
-      width -= artCanvas(queue.shift()!.art).w + 2;
-    }
+  /**
+   * One depth of every lot at once, so the whole back edge is drawn in order of
+   * distance rather than lot by lot — otherwise a lot's hillside would be drawn
+   * over its neighbour's foreground.
+   *
+   */
+  private drawLotLayer(lots: Lot[], layer: number, phase: Phase, fold: number, t: number): void {
+    const ctx = this.ctx;
+    // What the distance is seen through: the air over the hills, or once the
+    // horizon has closed, whatever the ceiling is made of.
+    const haze = mix(SKY[phase].hillFar, FLESH_DEEP, this.view.converged ? fold : 0);
 
-    let x = left;
-    let idx = 0;
-    for (const item of queue) {
-      const sprite = item.dead ? artTinted(item.art, "#6b6b74", 0.6) : artCanvas(item.art);
-      if (x + sprite.w > right) break;
-      ctx.drawImage(sprite.canvas, x, baseline - sprite.h);
-      if (!item.dead) {
-        this.buildingLife(item.id, x, baseline - sprite.h, sprite.w, sprite.h, t, idx);
+    for (const lot of lots) {
+      if (lot.pad && layer === LOT[0]!.layer) this.drawPad(lot);
+      for (let s = 0; s < lot.depth; s++) {
+        const slot = LOT[s]!;
+        if (slot.layer !== layer) continue;
+        const art = slot.far ? shrunk(lot.art) : lot.art;
+        // Dead and distant at once still has to come out as one blit, so the
+        // two washes are folded into a single tint rather than stacked.
+        const dead = s >= lot.depth - lot.dead;
+        const tint = dead ? mix(haze, "#6b6b74", 0.6) : haze;
+        const alpha = dead ? Math.max(0.6, slot.haze) : slot.haze;
+        const sprite = alpha > 0 ? artTinted(art, tint, alpha) : artCanvas(art);
+
+        const x = lot.x + Math.round(lot.w * slot.at - sprite.w / 2);
+        const ground = lot.ground[slot.row]!;
+        // A pixel of shadow under the ones up the hill. Without it a hillside
+        // is a flat wash of one colour and the buildings on it read as stuck to
+        // the sky rather than standing on anything.
+        if (slot.far) {
+          ctx.fillStyle = `rgba(24, 20, 30, ${0.3 - slot.haze * 0.25})`;
+          ctx.fillRect(x, ground - 1, sprite.w, 1);
+        }
+        ctx.drawImage(sprite.canvas, x, ground - sprite.h);
+        if (dead) continue;
+
+        // Up close you get the industry — lit windows, a flare, a reactor
+        // breathing. Further back you get a lamp on and the odd wisp off the
+        // roof, because the detail those routines draw is measured in single
+        // pixels off the top left corner and half of one is a smudge.
+        if (slot.far) this.farLife(x, ground - sprite.h, sprite.w, sprite.h, t, s);
+        else this.buildingLife(lot.id, x, ground - sprite.h, sprite.w, sprite.h, t, s);
         // Everything along the back edge stands on the pipeline, and every so
         // often drops something into it. A trickle, not a conveyor: the far
         // side of the property should read as a place that's busy.
         this.pipeEnd = Math.max(this.pipeEnd, x + Math.floor(sprite.w / 2));
-        // Each shed tips in about once a second. With a skyline of them the
-        // trunk runs properly full, which is what a farm making most of its
-        // potatoes up here should look like.
-        if (this.chance(1.1)) this.feedPipe(x + Math.floor(sprite.w / 2));
+        // The building out front tips in about once a second and the ones up
+        // the hill less often, or a farm with four full lots feeds the trunk
+        // forty times a second and the pipeline reads as solid potato.
+        if (this.chance(1.1 * (1 - slot.haze))) this.feedPipe(x + Math.floor(sprite.w / 2));
       }
-      idx++;
-      x += sprite.w + 2;
     }
+  }
+
+  /** A lot with nothing on it yet: ground cleared, footings in, pegs at the corners. */
+  private drawPad(lot: Lot): void {
+    const ctx = this.ctx;
+    const w = artCanvas(lot.art).w;
+    const x = lot.x + Math.round(lot.w * 0.5 - w / 2);
+    const y = lot.ground[0]!;
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = DIRT;
+    ctx.fillRect(x, y - 3, w, 3);
+    ctx.fillStyle = DIRT_DARK;
+    ctx.fillRect(x, y - 1, w, 1);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = INK;
+    ctx.fillRect(x, y - 6, 1, 4);
+    ctx.fillRect(x + w - 1, y - 6, 1, 4);
+  }
+
+  /**
+   * What a building two fields away does: a light on, and now and then
+   * something off the roof. That's all you'd see of one.
+   */
+  private farLife(x: number, top: number, w: number, h: number, t: number, idx: number): void {
+    const beat = Math.sin(t * 1.3 + idx * 2.7);
+    if (beat > 0.2) {
+      this.ctx.fillStyle = beat > 0.8 ? "#fff0b8" : "#ffd782";
+      this.ctx.fillRect(x + 1, top + Math.max(1, h >> 1), 1, 1);
+    }
+    if (this.chance(0.3)) this.puff(x + (w >> 1), top - 1, "steam", 2);
   }
 
   /** Which mark of a tier is standing, 0..2. */

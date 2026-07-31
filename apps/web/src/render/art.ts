@@ -285,6 +285,57 @@ export function withered(art: Art): Art {
   return dried;
 }
 
+const SHRUNK = new Map<Art, Art>();
+
+/**
+ * The same thing, half the size, for the ranks of the property that stand
+ * further back than the near one.
+ *
+ * Resampled on the char grid rather than by scaling a sprite, because the
+ * scene's one hard rule is that nothing gets a fractional transform: a half of
+ * the art is a *different picture*, authored here once, and it lands on the
+ * buffer's grid like everything else.
+ *
+ * Each 2x2 block votes, and the most common key in it wins with the top-left
+ * breaking ties. Nearest-neighbour — taking every other column — was the first
+ * go and it eats the 1px outline off whichever edge lands on an odd column, so
+ * half the skyline came out with its right-hand wall missing. A vote keeps the
+ * silhouette and lets the body colour through the middle, which is all a
+ * building three fields away is: a shape in the right colour.
+ */
+export function shrunk(art: Art): Art {
+  const hit = SHRUNK.get(art);
+  if (hit) return hit;
+
+  const w = art.rows.reduce((m, r) => Math.max(m, r.length), 0);
+  const rows: string[] = [];
+  for (let y = 0; y < art.rows.length; y += 2) {
+    let row = "";
+    for (let x = 0; x < w; x += 2) {
+      const votes = new Map<string, number>();
+      let best = ".";
+      for (const [dy, dx] of [
+        [0, 0],
+        [0, 1],
+        [1, 0],
+        [1, 1],
+      ] as const) {
+        const c = art.rows[y + dy]?.[x + dx] ?? ".";
+        if (c === "." || !art.palette[c]) continue;
+        const n = (votes.get(c) ?? 0) + 1;
+        votes.set(c, n);
+        if (n > (votes.get(best) ?? 0)) best = c;
+      }
+      row += best;
+    }
+    rows.push(row);
+  }
+
+  const small: Art = { rows, palette: art.palette };
+  SHRUNK.set(art, small);
+  return small;
+}
+
 const CROP_STAGES = new Map<Art, Art[]>();
 
 /**
