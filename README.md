@@ -126,7 +126,7 @@ and a player who takes the hint doesn't see the fold until run 2 at the earliest
 The first run is one unbroken climb to the fold; prestige arrives afterwards as
 the thing that makes the folded world repeatable.
 
-Three balance findings from the harness are worth knowing, because each was
+Four balance findings from the harness are worth knowing, because each was
 invisible until a long run was actually measured:
 
 - **Repairs can't be priced off the cost curve.** From the *working* count, a

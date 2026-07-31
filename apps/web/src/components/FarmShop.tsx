@@ -169,7 +169,11 @@ export function LandPanel({
             {damaged.map((prod) => {
               const broken = solo.brokenCount(farm, prod.id);
               const cost = solo.repairCost(farm, prod.id);
-              const back = broken * prod.baseRate * solo.producerMultiplier(farm, prod.id);
+              // What it gives back as things stand, tired soil included — the
+              // same convention the Grow panel quotes. The *price* stays on the
+              // clean rate, which is deliberate: repairs are billed against the
+              // production restored at full health.
+              const back = broken * solo.producerRateEach(farm, prod.id);
               return (
                 <Row
                   key={`repair-${prod.id}`}

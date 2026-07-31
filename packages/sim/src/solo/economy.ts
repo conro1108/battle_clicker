@@ -126,11 +126,23 @@ export function brokenRate(f: FarmState): Rate {
   return asRate(total * f.soil);
 }
 
-/** Production currently lost to tired soil, per second. */
+/**
+ * Production currently lost to tired soil, per second — what putting the dirt
+ * right would actually give back.
+ *
+ * Not `rate * (1 - soil)`. That's only the same thing for producers the soil
+ * multiplies once; the Mantle Tap's rate scales with soil *as well as* being
+ * multiplied by it, so what it loses is `1 - soil²`, and the short version
+ * understates it threefold at half health. This is the number the "Restore the
+ * soil" row advertises, and the Mantle Tap exists to make that row a decision.
+ */
 export function soilLossRate(f: FarmState): Rate {
-  let working = 0;
-  for (const prod of SOLO_PRODUCERS) working += producerRate(f, prod.id);
-  return asRate(working * (1 - f.soil));
+  let lost = 0;
+  for (const prod of SOLO_PRODUCERS) {
+    const clean = workingCount(f, prod.id) * prod.baseRate * producerMultiplier(f, prod.id);
+    lost += clean - clean * soilScale(f, prod.id) * f.soil;
+  }
+  return asRate(lost);
 }
 
 export function clickYield(f: FarmState): Potatoes {

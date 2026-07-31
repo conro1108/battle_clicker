@@ -108,7 +108,10 @@ const IMMUNE_KINDS: readonly WeatherKind[] = [
   { id: "phloem", name: "Phloem Surge", weight: 20, effect: { kind: "soil", loss: 0.09 } },
   { id: "necrosis", name: "Necrosis", weight: 13, effect: { kind: "soil", loss: 0.17 } },
   { id: "starch_flood", name: "Starch Flood", weight: 9, effect: { kind: "soil", loss: 0.13 } },
-  { id: "dormant", name: "Dormancy", weight: 9, effect: { kind: "boon", seconds: 90 } },
+  // Not "Dormancy": that's what the Dormancy Rig and Induced Dormancy are for,
+  // and a feed telling you dormancy was a good year right after you bought a
+  // building to cause more of it is one word doing three jobs.
+  { id: "quiescent", name: "Quiescence", weight: 9, effect: { kind: "boon", seconds: 90 } },
   { id: "flush", name: "Sap Flush", weight: 3, effect: { kind: "boon", seconds: 300 } },
 ];
 
@@ -116,7 +119,7 @@ function kindsFor(f: FarmState): readonly WeatherKind[] {
   return f.converged ? IMMUNE_KINDS : KINDS;
 }
 
-/** Which ids each table can produce. The scene and the tests both want this. */
+/** Which ids each table can produce, so a test can pin that the swap happened. */
 export const WEATHER_IDS = {
   sky: KINDS.map((k) => k.id),
   flesh: IMMUNE_KINDS.map((k) => k.id),

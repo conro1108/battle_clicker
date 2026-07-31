@@ -200,7 +200,14 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
   // hint doesn't see the fold until their second run at the earliest. The whole
   // point of the first run is that it's one unbroken climb to the fold. Prestige
   // arrives afterwards, as the thing that makes the folded world repeatable.
-  const showSeeds = farm.converged && (farm.seeds > 0 || farm.generation > 1 || solo.pendingSeeds(farm) > 0);
+  //
+  // Anyone who already has seeds or has already handed a farm down keeps the
+  // tab regardless. Seeds can only be got by prestiging and prestige can only
+  // be reached from here, so that costs a first run nothing — and without it a
+  // save that converged and then prestiged *before* the flag existed would come
+  // back with `upgrades` wiped, `converged` backfilling to false, and no way to
+  // spend the seeds it's holding short of re-climbing to the fold.
+  const showSeeds = farm.converged || farm.seeds > 0 || farm.generation > 1;
 
   // Right to left in order of how often you reach for it. The far left of a
   // bottom bar is the corner a thumb has to travel for, and Shop is where you

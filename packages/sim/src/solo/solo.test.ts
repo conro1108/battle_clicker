@@ -454,9 +454,14 @@ describe("the Convergence", () => {
       broken: {},
     };
     const half: FarmState = { ...base, soil: 0.5 };
+    const whole = currentRate({ ...base, soil: 1 });
     // A quarter, not a half: once for the farm-wide soil factor and once for
     // the tap's own.
-    expect(currentRate(half) / currentRate({ ...base, soil: 1 })).toBeCloseTo(0.25, 6);
+    expect(currentRate(half) / whole).toBeCloseTo(0.25, 6);
+    // And the row that sells you the fix has to quote what the fix gives back,
+    // which is three quarters here and not the one quarter that `rate * (1 -
+    // soil)` would report.
+    expect(soilLossRate(half)).toBeCloseTo(whole - currentRate(half), 6);
   });
 
   it("holds the perks that only make sense inside the potato until it happens", () => {
