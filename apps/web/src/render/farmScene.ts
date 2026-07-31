@@ -44,6 +44,15 @@ const YARD_SHARE = 0.23; // the hoard yard, front band — deep enough to stand 
 const FIELD_SHARE = 0.46; // the working field
 const MIN_SKY = 20;
 
+/**
+ * How long the horizon takes to close.
+ *
+ * Long for this codebase — nothing else on the farm animates for anywhere near
+ * three seconds. It's deliberate: this fires once per save, it's the payoff of
+ * the whole climb, and a fast version reads as a glitch rather than an event.
+ */
+const FOLD_MS = 3400;
+
 /** The shared outline ink, for the bits of the scene drawn as rects not art. */
 const INK = "#402e3a";
 
@@ -735,6 +744,10 @@ export class FarmScene {
   private clock = 0;
   private view: FarmView = EMPTY_VIEW;
   private rngSeed = 1;
+  /** When the horizon started closing. Null if it isn't, or if it already had. */
+  private foldAt: number | null = null;
+  /** Whether a view has ever been pushed. The first one never animates. */
+  private sawView = false;
   private hauls: Haul[] = [];
   private lumps: Lump[] = [];
   /** Sacks tipped out by the machines, waiting for a hand. */
@@ -805,8 +818,25 @@ export class FarmScene {
   }
 
   update(view: FarmView): void {
+    const was = this.view.converged;
     this.view = view;
     this.rngSeed = hashSeed(view.seed);
+    // The fold plays once, and only when it actually happens in front of you.
+    // A farm that was already folded when the tab opened is just folded — the
+    // first view a scene is handed is a restore, not an event, and replaying
+    // the best moment in the game on every reload would spend it.
+    if (view.converged && !was && this.sawView) this.foldAt = performance.now();
+    this.sawView = true;
+  }
+
+  /**
+   * How far through the fold we are, 0..1. Everything the animation does hangs
+   * off this one number so the phases can't drift out of step with each other.
+   */
+  private foldProgress(now: number): number {
+    if (!this.view.converged) return 0;
+    if (this.foldAt === null) return 1;
+    return clamp((now - this.foldAt) / FOLD_MS, 0, 1);
   }
 
   /** Which mark of a tier to draw, given the upgrades bought on it. */
@@ -1139,12 +1169,14 @@ export class FarmScene {
     this.stepHoard(dt, now);
     this.pipeEnd = 0;
 
-    if (this.view.converged) {
-      this.drawCeiling(horizon);
-    } else {
+    const fold = this.foldProgress(now);
+    // Mid-fold the old sky is still down there under the advancing edge, so it
+    // gets drawn and then covered rather than swapped out.
+    if (!this.view.converged || fold < 1) {
       this.drawSky(phase, t, horizon);
       this.drawHills(phase, horizon);
     }
+    if (this.view.converged) this.drawCeiling(horizon, fold);
     this.drawGround(horizon, yardY);
     this.drawBack(t, now, horizon);
     this.drawField(t, now, horizon, yardY);
@@ -1240,13 +1272,37 @@ export class FarmScene {
    * Night is not special-cased: `draw` already lays its dimming pass over
    * everything above the yard, and the ceiling wants that same treatment.
    */
-  private drawCeiling(horizon: number): void {
+  private drawCeiling(horizon: number, fold: number): void {
     const ctx = this.ctx;
     // Tired soil drags the flesh too. The land going grey is supposed to be the
     // whole world going grey, not just the floor of it.
     const dry = 1 - clamp(this.view.soil, 0, 1);
     const lit = mix("#ecd9a6", "#a09c78", dry * 0.6);
     const deep = mix("#7d5330", "#544f3c", dry * 0.6);
+
+    // The three beats. A pause on the old sky first — the fold shouldn't start
+    // on the same frame as the click, or nobody connects the two — then the
+    // sweep down, then the eyes opening once it's settled.
+    const sweep = clamp((fold - 0.22) / 0.6, 0, 1);
+    // Ease-out cubic: it comes down fast and arrives slowly, which is what makes
+    // it land rather than stop.
+    const eased = 1 - Math.pow(1 - sweep, 3);
+    const travel = 1 - eased;
+    const cover = Math.max(1, Math.round(horizon * eased));
+
+    // The light going out of the old world ahead of the thing replacing it.
+    if (fold < 1) {
+      ctx.fillStyle = `rgba(22, 17, 30, ${0.6 * eased})`;
+      ctx.fillRect(0, cover, SCENE_W, horizon - cover);
+    }
+
+    // The flesh is drawn at its full resting size and revealed through a moving
+    // window, so it descends rather than stretching into place. A band that
+    // scaled would put the vascular rings somewhere different every frame.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, SCENE_W, cover);
+    ctx.clip();
 
     const grad = ctx.createLinearGradient(0, 0, 0, horizon);
     grad.addColorStop(0, lit);
@@ -1256,14 +1312,30 @@ export class FarmScene {
     ctx.fillRect(0, 0, SCENE_W, horizon);
 
     this.drawFlesh(horizon, lit, deep);
-    this.drawEyes(horizon);
+    this.drawEyes(horizon, clamp((fold - 0.62) / 0.33, 0, 1));
+    ctx.restore();
 
-    // The seam. Where the flesh comes down to meet the field there's a bright
-    // edge of it, and it's the one hard line in the picture.
-    ctx.fillStyle = "rgba(232, 196, 140, 0.5)";
-    ctx.fillRect(0, horizon - 3, SCENE_W, 3);
+    // The leading edge, and the resting seam it becomes. Bright while it's
+    // moving, settling to the one hard line in the picture once it lands.
+    if (travel > 0.01) {
+      const glow = ctx.createLinearGradient(0, Math.max(0, cover - 16), 0, cover);
+      glow.addColorStop(0, "rgba(255, 230, 182, 0)");
+      glow.addColorStop(1, `rgba(255, 230, 182, ${0.55 * travel})`);
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, Math.max(0, cover - 16), SCENE_W, Math.min(16, cover));
+    }
+    ctx.fillStyle = `rgba(240, 208, 154, ${0.5 + 0.45 * travel})`;
+    ctx.fillRect(0, cover - 3, SCENE_W, 3);
     ctx.fillStyle = mix(lit, deep, 0.25);
-    ctx.fillRect(0, horizon - 1, SCENE_W, 1);
+    ctx.fillRect(0, cover - 1, SCENE_W, 1);
+
+    // And the moment of arrival: one short flash off the whole underside as the
+    // edge touches down.
+    const land = fold > 0.8 ? Math.max(0, 1 - (fold - 0.8) / 0.14) : 0;
+    if (land > 0) {
+      ctx.fillStyle = `rgba(255, 242, 210, ${0.4 * land})`;
+      ctx.fillRect(0, 0, SCENE_W, cover);
+    }
   }
 
   /** Starch marbling and the vascular ring — the texture of a cut potato. */
@@ -1308,18 +1380,31 @@ export class FarmScene {
    * inside of is still a potato, and it is still trying to grow. Placement is
    * seeded, so they're in the same spots every time you open the farm.
    */
-  private drawEyes(horizon: number): void {
+  private drawEyes(horizon: number, open = 1): void {
     const ctx = this.ctx;
-    const rng = mulberry32(this.rngSeed ^ 0x3ee5);
+    if (open <= 0) return;
 
-    for (let i = 0; i < 4; i++) {
-      const x = 10 + Math.floor(rng() * (SCENE_W - 24));
+    // Every roll happens up front, before anything can skip an eye. Drawing
+    // them lazily meant a hidden eye swallowed its own rng() call and shifted
+    // the stream for the ones after it, so they walked across the ceiling as
+    // the fold faded them in.
+    const rng = mulberry32(this.rngSeed ^ 0x3ee5);
+    const spots = Array.from({ length: 4 }, () => ({
+      x: 10 + Math.floor(rng() * (SCENE_W - 24)),
       // Upper half only: down at the fold there isn't the light to see one, and
       // a sprout near the seam looks like it's growing out of your own field.
-      const y = 5 + Math.floor(rng() * horizon * 0.42);
-      const fade = 0.95 - 0.35 * (y / horizon);
+      y: 5 + Math.floor(rng() * horizon * 0.42),
+      len: 5 + Math.floor(rng() * 4),
+    }));
 
-      ctx.globalAlpha = fade;
+    for (const [i, spot] of spots.entries()) {
+      const { x, y } = spot;
+      // Staggered, so they don't all open on the same frame like a light going
+      // on. Each one waits a little longer than the last.
+      const mine = clamp((open - i * 0.12) / 0.5, 0, 1);
+      if (mine <= 0) continue;
+
+      ctx.globalAlpha = (0.95 - 0.35 * (y / horizon)) * mine;
       // The dimple, with a lit lip above it so it reads as a pit rather than a
       // smudge. Six across rather than four: the band is only sixty-odd pixels
       // deep, and at four this was a speck nobody could find.
@@ -1334,13 +1419,16 @@ export class FarmScene {
       // four pixels a tuft upside down is a spider, which is not the note. Pale
       // rather than green on purpose: a potato sprouting in the dark etiolates,
       // and it also keeps the one growing thing up here from reading as crop.
-      const len = 5 + Math.floor(rng() * 4);
-      ctx.fillStyle = "#cbb8dc";
-      ctx.fillRect(x + 2, y + 3, 1, len);
-      ctx.fillStyle = "#e6dcef";
-      ctx.fillRect(x + 1, y + 3 + Math.floor(len * 0.45), 1, 1);
-      ctx.fillRect(x + 3, y + 3 + len - 2, 1, 1);
-      ctx.fillRect(x + 2, y + 3 + len, 1, 1);
+      // It grows out of the eye rather than arriving at full length.
+      const len = Math.round(spot.len * mine);
+      if (len > 0) {
+        ctx.fillStyle = "#cbb8dc";
+        ctx.fillRect(x + 2, y + 3, 1, len);
+        ctx.fillStyle = "#e6dcef";
+        ctx.fillRect(x + 1, y + 3 + Math.floor(len * 0.45), 1, 1);
+        ctx.fillRect(x + 3, y + 3 + len - 2, 1, 1);
+        ctx.fillRect(x + 2, y + 3 + len, 1, 1);
+      }
       ctx.globalAlpha = 1;
     }
   }

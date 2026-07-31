@@ -250,7 +250,24 @@ The ceiling rendered as flat grey smog with no error anywhere. It returns hex no
 so it composes. This whole class of failure is invisible to `tsc` and to every
 test in the repo; the screenshot was the only thing that caught it.
 
+**The fold animates, and nobody has watched it yet.** Written, typechecking and
+green: a 3.4s transition off a single `foldProgress` number — a beat on the old
+sky, the flesh sweeping down behind a bright leading edge while the light drains
+out of what's left below it, a flash as it lands, then the eyes opening in
+sequence with their sprouts growing out of them. It fires once, on the view
+flipping to converged mid-session; a farm that was already folded when the tab
+opened just renders folded, because replaying the best moment in the game on
+every reload would spend it.
+
+That last rule is also why `shot.mts` cannot photograph it — the tool seeds a
+converged save before first paint, which is exactly the case the scene refuses
+to animate. Verifying it means driving a real purchase: seed a farm holding every
+upgrade *except* `ur_potato`, open the shop, click the row (its own handler, not
+a synthetic click — the sheet's sticky footer intercepts pointer events over the
+lower rows), and grab frames off the transition. **Do this before trusting any of
+it.** The `mix()` bug above was invisible to `tsc` and to all 64 tests, and this
+is considerably more moving parts than that was.
+
 Still open: the refineries' steam plumes rise into the ceiling and pool against
 it. Arguably correct now that there's something up there to hit, but it wants a
-look. And the fold has no animation of any kind — the moment it fires is the
-payoff of the whole game and it currently just cuts.
+look.
