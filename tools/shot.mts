@@ -20,6 +20,12 @@
  *
  *   ... buy=lab burst=6 every=350 out=/tmp/build.png   ->  build-0.png ...
  *
+ * `buy=` takes upgrade ids too, so the Convergence can be photographed
+ * mid-arrival. The two wipes work the same way: `down=inside`/`down=outside`
+ * hands the farm on, `plough=1` ploughs it all under, and `open=Shop` just
+ * opens a sheet. Watch the namespace — every one of these shares it with the
+ * producer ids, which is why handing down isn't `hand=`.
+ *
  * `hour=` fakes the wall clock the sky runs on, so night can be shot at noon.
  */
 
@@ -112,15 +118,25 @@ if (args.buy) {
   // would close one that's still open.
   const close = page.getByRole("button", { name: "Close" });
   if (await close.isVisible().catch(() => false)) await close.click().catch(() => {});
-} else if (args.hand) {
-  // `hand=inside` / `hand=outside`: prestige, and which world to hand down. The
+} else if (args.down) {
+  // `down=inside` / `down=outside`: prestige, and which world to hand down. The
   // sky coming back is the other transition worth photographing.
+  //
+  // Not `hand=`, which is the Farmhand count. Every arg here shares one
+  // namespace with sixteen producer ids, and the collision is silent: a farm
+  // with `hand=143` on it quietly handed itself down instead.
   page.on("dialog", (d) => void d.accept());
   await page.getByRole("button", { name: "Seeds", exact: true }).click();
-  if (args.hand === "outside") await page.getByRole("button", { name: "Back under the sky" }).click();
+  if (args.down === "outside") await page.getByRole("button", { name: "Back under the sky" }).click();
   await page.getByRole("button").filter({ hasText: "Hand the farm down" }).first().click();
   const close = page.getByRole("button", { name: "Close" });
   if (await close.isVisible().catch(() => false)) await close.click().catch(() => {});
+  await page.waitForTimeout(Number(args.after ?? 2500));
+} else if (args.plough) {
+  // The other wipe: a new farm on a new seed, keeping nothing.
+  page.on("dialog", (d) => void d.accept());
+  await page.getByRole("button", { name: "Books", exact: true }).click();
+  await page.getByRole("button", { name: "Plough it all under" }).click();
   await page.waitForTimeout(Number(args.after ?? 2500));
 } else if (args.open) {
   // Any of the nav sheets by name: `open=Shop`, `open=Seeds`, `open=Weather`.

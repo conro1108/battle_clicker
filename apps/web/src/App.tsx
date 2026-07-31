@@ -302,11 +302,12 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
     const full = had === 0;
     setOmen({ kind: full ? "full" : "flash", n: omenId.current++, text: nudge.current });
     // The purchase happens in the shop, and the point of the omen is the sky.
-    // The full cut takes the sheet away so the lights come up on the farm rather
-    // than on the row of buttons you were just reading. The flash doesn't: by
-    // then you're buying ten of these, and a shop that shuts itself every time
-    // is a shop you have to reopen ten times.
-    if (full) setSheet(null);
+    // Every one of them puts you back on the farm for it, short version
+    // included — a cut that plays out behind the sheet you bought it from is a
+    // cut nobody watched, and the sky answering a Singularity is the only thing
+    // that says the tier is going anywhere. Reopening the shop is a tap; ten of
+    // these arriving unseen is the whole tier saying nothing.
+    setSheet(null);
     const id = setTimeout(() => setOmen(null), full ? OMEN_MS : OMEN_FLASH_MS);
     return () => clearTimeout(id);
   }, [singularities]);
@@ -555,10 +556,15 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
         <div className="converge" role="presentation">
           <div className="converge-skin" />
           <div className="converge-flesh" />
+          {/* In the order they arrive. The sentence lands first, on the frame
+              you come through the skin and can see where you are — the card is
+              the name for what just happened to you, and naming it before it
+              happens is a chapter heading on a thing you haven't read. It's
+              also what's still up as the farm comes back underneath it. */}
           <div className="converge-words">
             <p className="converge-line">The first potato was never in the ground</p>
-            <p className="converge-title">The Convergence</p>
             <p className="converge-call">You have always been inside it</p>
+            <p className="converge-title">The Convergence</p>
           </div>
         </div>
       )}

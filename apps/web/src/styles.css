@@ -713,16 +713,19 @@ input {
   text-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
   animation: converge-line 9600ms ease both;
 }
-/* The card, and the only time the game names anything at itself. Lands on the
-   frame you come through the skin, on the flesh rather than on the dark. */
+/* The card, and the only time the game names anything at itself. Last, and it
+   doesn't leave: the farm comes back up underneath it. */
 .converge-title {
   font-size: clamp(1.7rem, 9vw, 2.7rem);
   line-height: 1.1;
+  /* Indented by about the tracking it settles at, which otherwise hangs the
+     whole card a few pixels left of the middle. */
+  text-indent: 0.22em;
   color: #4a2a17;
   text-shadow: 0 0 8vmin rgba(255, 240, 200, 0.95);
   animation: converge-title 9600ms ease-out both;
 }
-/* And the sentence that's still up when the farm comes back under it. */
+/* The reveal, on the frame you can first see where you are. */
 .converge-call {
   font-size: 1.1rem;
   line-height: 1.45;
@@ -825,34 +828,38 @@ input {
     opacity: 0;
   }
 }
+/* Through the skin at 43%, and this is the first thing you read in there. */
+@keyframes converge-call {
+  0%,
+  44% {
+    opacity: 0;
+  }
+  50%,
+  64% {
+    opacity: 1;
+  }
+  70%,
+  100% {
+    opacity: 0;
+  }
+}
+/* And the card, which opens out as it holds and is still holding when the veil
+   goes — the tracking grows a fifth of an em over the last two and a half
+   seconds, which is too slow to catch happening and impossible to miss having
+   happened. */
 @keyframes converge-title {
   0%,
-  45% {
+  68% {
     opacity: 0;
     letter-spacing: 0.12em;
   }
-  52% {
+  76% {
     opacity: 1;
     letter-spacing: 0.22em;
   }
-  70% {
-    opacity: 1;
-    letter-spacing: 0.3em;
-  }
-  76%,
-  100% {
-    opacity: 0;
-    letter-spacing: 0.34em;
-  }
-}
-@keyframes converge-call {
-  0%,
-  72% {
-    opacity: 0;
-  }
-  79%,
   100% {
     opacity: 1;
+    letter-spacing: 0.32em;
   }
 }
 

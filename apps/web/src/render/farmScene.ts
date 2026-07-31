@@ -1189,6 +1189,8 @@ export class FarmScene {
 
   update(view: FarmView): void {
     const was = this.view.converged;
+    const wiped =
+      this.sawView && (view.generation !== this.view.generation || view.seed !== this.view.seed);
     this.view = view;
     this.rngSeed = hashSeed(view.seed);
     // The fold plays once, and only when it actually happens in front of you.
@@ -1197,6 +1199,49 @@ export class FarmScene {
     // the best moment in the game on every reload would spend it.
     if (view.converged && !was && this.sawView) this.foldAt = performance.now() + FOLD_HOLD_MS;
     this.sawView = true;
+    if (wiped) this.clearOut();
+  }
+
+  /**
+   * A different farm entirely: handed down, or ploughed under. Take everything
+   * the last one left standing off the canvas.
+   *
+   * The yard chases the hoard rather than snapping to it, which is what makes
+   * spending look like spending — but a chase is the wrong verb for a wipe.
+   * Coming down from a late-run hoard it's an exponential decay through
+   * twenty-odd orders of magnitude, so a farm you no longer own kept its silos,
+   * its crates, its pipeline and a heap up the side of the screen for twenty
+   * seconds after the generation that built them was cleared.
+   *
+   * A generation bump or a new seed is the whole tell: prestige does the first,
+   * ploughing it all under does the second, and nothing else does either.
+   */
+  private clearOut(): void {
+    this.shown = Math.max(0, this.view.hoard);
+    this.shownLayout = yardLayout(this.shown);
+    this.building.clear();
+    this.bundles = [];
+    this.porters = [];
+    this.hauls = [];
+    this.lumps = [];
+    this.sacks = [];
+    this.machineLoad.clear();
+    this.puffs = [];
+    this.plumes = [];
+    this.tills = [];
+    this.dug = [];
+    this.troughFill = 0;
+    // The pipeline is built once, by the farm that first needed one. The next
+    // generation builds its own.
+    this.pipeBuiltAt = null;
+    this.sawNoPipe = false;
+    // Lot depths are seeded rather than raised on a restore, and a wipe is a
+    // restore: the next farm shouldn't put its first plot up in a cloud of
+    // dust it didn't earn, and it definitely shouldn't demolish eleven
+    // refineries on the way out.
+    this.lotSeen.clear();
+    this.raising.clear();
+    this.sawLots = false;
   }
 
   /**
