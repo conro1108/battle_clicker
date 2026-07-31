@@ -27,6 +27,8 @@ import {
   FENCE,
   cropStages,
   FLOWERS,
+  LAMP,
+  LAMP_ON,
   POTATO_SPRITE,
   PRODUCER_MARKS,
   SACK,
@@ -77,9 +79,10 @@ export interface FarmView {
   /** Broken count per producer — drawn, greyed out, right where it stands. */
   broken: Partial<Record<solo.SoloProducerId, number>>;
   /**
-   * How many of a producer's two upgrades you own, 0-2. Picks which mark of
+   * How many of a producer's three upgrades you own, 0-3. Picks which mark of
    * that tier gets drawn — spending on a tier changes something out in the
-   * field, not just a number in a panel.
+   * field, not just a number in a panel. Mark 3 is the hundred-owned one, and
+   * the only one the scene draws extra effects for.
    */
   marks: Partial<Record<solo.SoloProducerId, number>>;
   /** 0..1. Drags the field's colour and wilts a share of the crop. */
@@ -137,6 +140,38 @@ const SKY: Record<Phase, { top: string; bottom: string; hill: string; hillFar: s
   dusk: { top: "#4a4a86", bottom: "#f0a878", hill: "#3f6b39", hillFar: "#557c48" },
   night: { top: "#1d1f42", bottom: "#3a3564", hill: "#25402c", hillFar: "#2f4a35" },
 };
+
+/** What the dark is made of, and what the lamp puts back. */
+const NIGHT = "#141630";
+const LAMP_LIGHT = "#ffdb8a";
+
+/**
+ * How far down the light goes, per phase — over the field, and over the yard.
+ *
+ * The yard used to be exempt outright: the dimming pass stopped dead at the
+ * fence line and the bottom fifth of a 2am farm was as bright as noon. That was
+ * the right *instinct* — the hoard is the thing you came back to look at — and
+ * the wrong execution, because nothing in the picture accounted for it. So the
+ * yard goes dark too now, just less, and what makes up the difference is a lamp
+ * you can see, throwing a pool you can see the edge of.
+ */
+const DARKNESS: Record<Phase, { field: number; yard: number }> = {
+  day: { field: 0, yard: 0 },
+  dusk: { field: 0.22, yard: 0.13 },
+  night: { field: 0.46, yard: 0.31 },
+};
+
+/**
+ * Where the lamp post stands, how far its light carries, and how wide the cone
+ * under it opens by the bottom of the screen.
+ *
+ * `LAMP_X` is picked to stand just clear of the mound, because the mound is the
+ * thing the light is for — the hoard is what you came back to look at, and a
+ * lamp at the far end of the yard from it would be a lamp lighting the crates.
+ */
+const LAMP_X = 46;
+const LAMP_REACH = 96;
+const LAMP_SPREAD = 52;
 
 /**
  * The ridges, farthest first: how far above the horizon each one crests, and
@@ -533,6 +568,39 @@ const PLACEMENT: Record<solo.SoloProducerId, Placement> = {
   second: { band: "ceiling", cap: 3, spread: 1 },
 };
 
+/**
+ * What a hundred-owned tier throws light in.
+ *
+ * The fourth mark is the only upgrade in the game that does anything to the
+ * scene beyond its own silhouette, and this is it: **primed kit is lit**. One
+ * rule, applied in every band, because that's what makes it read — a farm three
+ * tiers deep into hundred-marks is glowing in six places at once, and after dark
+ * it's the only thing keeping the field visible.
+ *
+ * Colours are per-tier and near enough to what the sprite is already made of
+ * that the light looks like it came off the thing: the refinery burns orange,
+ * the reactor and the towers run cold, the singularity's is the gold its fourth
+ * mark's jet is drawn in.
+ */
+const PRIME_GLOW: Record<solo.SoloProducerId, string> = {
+  plot: "#a8f07a",
+  hand: "#ffd782",
+  irrigation: "#8ec9e6",
+  tractor: "#ff8a4a",
+  harvester: "#ffe08a",
+  lab: "#c88fe6",
+  refinery: "#f0913c",
+  tower: "#a8f07a",
+  seeder: "#ffe066",
+  reactor: "#fff0b8",
+  orbital: "#a4e884",
+  singularity: "#ffe08a",
+  furrow: "#ffd166",
+  mantle: "#ff9a3c",
+  chorus: "#fff4c0",
+  second: "#f7e08a",
+};
+
 const ORDER: solo.SoloProducerId[] = [
   "plot",
   "hand",
@@ -768,6 +836,22 @@ const TROUGH_DRAIN = 0.8;
 /** Buffer pixels a second, for a potato in the pipeline. */
 const PIPE_SPEED = 40;
 
+/**
+ * How long the pipeline takes to build, in seconds.
+ *
+ * Second only to the fold, and deliberately so. This is the moment the farm
+ * stops being a field with people in it and becomes an industrial concern —
+ * the single biggest change to the picture that isn't the horizon closing — and
+ * it used to arrive between two frames, fully welded, because a number went up.
+ */
+const PIPE_BUILD_S = 3.4;
+
+/** How long one building takes to go up on its lot, in seconds. */
+const RAISE_S = 1.5;
+
+/** Scaffolding, which is the one thing on the farm that is meant to look cheap. */
+const SCAFFOLD = "#b8a37a";
+
 const MAX_HAULS = 24;
 
 /** Beds a machine takes on board before it tips a sack out at the headland. */
@@ -952,6 +1036,22 @@ export class FarmScene {
   private foldAt: number | null = null;
   /** Whether a view has ever been pushed. The first one never animates. */
   private sawView = false;
+  /**
+   * How deep each lot was last frame, and which of its slots are mid-build.
+   *
+   * Same argument the fold makes about `sawView`: the first frame a scene draws
+   * is a *restore*, so it seeds the depths and raises nothing. Otherwise every
+   * reload would put eleven refineries up in front of you at once.
+   */
+  private lotSeen = new Map<string, number>();
+  private raising = new Map<string, number>();
+  private sawLots = false;
+  /** What time of day it is, worked out once a frame and read by everything. */
+  private phase: Phase = "day";
+  /** When the pipeline started being built, on the scene clock. */
+  private pipeBuiltAt: number | null = null;
+  /** Whether a frame has ever been drawn with nothing feeding the pipeline. */
+  private sawNoPipe = false;
   private hauls: Haul[] = [];
   private lumps: Lump[] = [];
   /** Sacks tipped out by the machines, waiting for a hand. */
@@ -1291,12 +1391,15 @@ export class FarmScene {
     const sprite = artCanvas(this.mark("hand"));
     const spud = artCanvas(POTATO_SPRITE);
     const sack = artCanvas(SACK);
-    for (const hand of this.hands) {
+    for (const [i, hand] of this.hands.entries()) {
       const moving = hand.state !== "resting" && hand.state !== "picking";
       // A 1px bob while walking, and a deeper stoop while pulling a bed.
       const bob = moving ? Math.floor(t * 4) % 2 : hand.state === "picking" ? 2 : 0;
       const x = Math.round(hand.x);
       const y = Math.round(hand.y) - sprite.h + bob;
+      // A hand who owns a piece of the place carries a lamp. Sixteen of them
+      // walking a dark field is the single best thing the fourth marks do.
+      this.primeGlow("hand", x, y, sprite.w, sprite.h, t, i, 0.8);
       ctx.drawImage(sprite.canvas, x, y);
       if (hand.carrying === "potato") ctx.drawImage(spud.canvas, x + 1, y - 4);
       // Sacks ride on the shoulder, which is also why a hand carrying one
@@ -1360,13 +1463,12 @@ export class FarmScene {
   // --- Drawing -------------------------------------------------------------
 
   private draw(now: number): void {
-    const ctx = this.ctx;
     const dt = Math.min(0.1, (now - this.lastFrame) / 1000);
     this.dt = dt;
     this.lastFrame = now;
     this.clock += dt;
     const t = this.clock;
-    const phase = phaseNow();
+    const phase = (this.phase = phaseNow());
     const horizon = this.fieldTop();
     const yardY = this.yardTop();
 
@@ -1378,6 +1480,7 @@ export class FarmScene {
     // gets drawn and then covered rather than swapped out.
     const open = !this.view.converged || fold < 1;
     const lots = this.lots(horizon);
+    this.noteArrivals(lots, t);
     // The hills and the deep end of every lot go up together, back to front.
     // Once the horizon has folded they go up *after* the ceiling instead of
     // before it: the fold swallows the far half of the property along with the
@@ -1397,6 +1500,7 @@ export class FarmScene {
     // Among the crop, behind the fence — they're in the field, not the yard.
     this.drawChorus(t, yardY);
     this.drawFence(yardY);
+    this.drawLamp(yardY, phase);
     this.drawHoard(now);
     this.drawTaps(t);
     // The spout hangs over the yard on its way to the mound at the front of it,
@@ -1406,7 +1510,7 @@ export class FarmScene {
     this.drawPorters(now);
     // After the hoard: the pipeline runs down the near side of the yard, so it
     // passes in front of the silos rather than being swallowed by them.
-    this.drawPipeline(horizon, yardY, dt);
+    this.drawPipeline(horizon, yardY, dt, t);
     // The hands walk between the two bands, so they're drawn after both — and
     // after the field has said where this frame's beds are.
     this.stepHands(t, dt, shownCount(this.view.working.hand ?? 0, PLACEMENT.hand.cap, PLACEMENT.hand.spread), yardY);
@@ -1415,12 +1519,161 @@ export class FarmScene {
     this.drawDug(now);
     this.drawBundles(now);
 
-    // Night everywhere except the yard's lamp-lit patch, so the hoard stays
-    // readable at 2am — the one thing you came back to look at.
-    if (phase === "night") {
-      ctx.fillStyle = "rgba(20, 22, 48, 0.34)";
-      ctx.fillRect(0, 0, SCENE_W, yardY);
+    this.drawDark(phase, yardY, t);
+  }
+
+  /** Where the lamp's head hangs — the one light source the farm owns. */
+  private lampHead(yardY: number): { x: number; y: number; top: number } {
+    const art = artCanvas(LAMP);
+    const top = yardY + 3 - art.h;
+    return { x: LAMP_X + Math.floor(art.w / 2), y: top + 2, top };
+  }
+
+  /**
+   * The lamp post on the yard gate. Drawn with the fence, because that's where
+   * it stands — in front of the field, behind everything in the yard.
+   */
+  private drawLamp(yardY: number, phase: Phase): void {
+    const on = phase !== "day";
+    const sprite = artCanvas(on ? LAMP_ON : LAMP);
+    this.ctx.drawImage(sprite.canvas, LAMP_X, this.lampHead(yardY).top);
+  }
+
+  /**
+   * Nightfall, over the whole picture and not just the top four fifths of it.
+   *
+   * Three passes, in this order, and the order is the entire trick:
+   *  1. the field goes dark flat, because nothing out there is lit;
+   *  2. the yard goes dark too, less, because it's the yard;
+   *  3. the lamp puts its own light back — a warm pool over a cold wash, which
+   *     is what lamplight actually looks like and what stops the yard from
+   *     reading as a band the renderer forgot about.
+   *
+   * The lamp's head is re-blitted last so the one thing in the picture that is
+   * emitting light isn't also being dimmed by the pass that made it necessary.
+   */
+  private drawDark(phase: Phase, yardY: number, t: number): void {
+    const dark = DARKNESS[phase];
+    if (dark.field <= 0 && dark.yard <= 0) return;
+    const ctx = this.ctx;
+
+    ctx.fillStyle = rgba(NIGHT, dark.field);
+    ctx.fillRect(0, 0, SCENE_W, yardY);
+    ctx.fillStyle = rgba(NIGHT, dark.yard);
+    ctx.fillRect(0, yardY, SCENE_W, this.sh - yardY);
+
+    // A slow flicker, a couple of per cent deep. A lamp that holds perfectly
+    // steady is a rectangle of colour; one that breathes is a light.
+    const head = this.lampHead(yardY);
+    const flicker = 0.94 + 0.06 * Math.sin(t * 2.3) + 0.02 * Math.sin(t * 11.7);
+    const lit = (phase === "night" ? 1 : 0.55) * flicker;
+
+    // The cone. This is the difference between "the yard came out lighter" and
+    // "that lamp is lighting the yard", and it's the whole reason the post was
+    // worth drawing: you can see where the light comes from and where it stops.
+    const cone = ctx.createLinearGradient(0, head.y, 0, this.sh);
+    cone.addColorStop(0, rgba(LAMP_LIGHT, 0.24 * lit));
+    cone.addColorStop(0.55, rgba(LAMP_LIGHT, 0.12 * lit));
+    cone.addColorStop(1, rgba(LAMP_LIGHT, 0));
+    ctx.fillStyle = cone;
+    ctx.beginPath();
+    ctx.moveTo(head.x - 3, head.y + 2);
+    ctx.lineTo(head.x + 3, head.y + 2);
+    ctx.lineTo(head.x + LAMP_SPREAD, this.sh);
+    ctx.lineTo(head.x - LAMP_SPREAD, this.sh);
+    ctx.closePath();
+    ctx.fill();
+
+    // The pool it lands in, aimed down into the yard rather than centred on the
+    // bulb — the light is up on a post and what it lights is the ground.
+    this.glow(head.x, yardY + (this.sh - yardY) * 0.4, LAMP_REACH, LAMP_LIGHT, 0.26 * lit);
+    this.glow(head.x, head.y, 13, LAMP_LIGHT, 0.5 * lit);
+
+    const sprite = artCanvas(LAMP_ON);
+    ctx.drawImage(sprite.canvas, LAMP_X, head.top);
+  }
+
+  // --- Things going up -----------------------------------------------------
+  //
+  // Nothing on this farm should simply appear. The yard already had this: a
+  // crate arrives because somebody bagged the pile and carried it in. The back
+  // edge did not — a fusion reactor turned up between two frames because a
+  // number went up, which is the one place the picture stopped being a place
+  // where work happens and went back to being a readout.
+
+  /** Spot anything that arrived since last frame, and put it up. */
+  private noteArrivals(lots: Lot[], t: number): void {
+    const arrive = (key: string, n: number) => {
+      const before = this.lotSeen.get(key) ?? 0;
+      this.lotSeen.set(key, n);
+      // Counts fall on a prestige, and everything gets built again on the way
+      // back up — which is the right answer. Handing the farm down and watching
+      // it go back up is the point of handing it down.
+      if (this.sawLots) {
+        for (let i = before; i < n; i++) this.raising.set(`${key}:${i}`, t);
+      }
+    };
+
+    for (const lot of lots) arrive(lot.id, lot.depth);
+    // The Mantle Taps stand in the yard rather than on a lot, and a wellhead is
+    // every bit as much a thing you have to build as a shed is.
+    arrive(
+      "mantle",
+      shownCount(this.view.working.mantle ?? 0, PLACEMENT.mantle.cap, PLACEMENT.mantle.spread),
+    );
+
+    this.sawLots = true;
+    for (const [key, born] of this.raising) {
+      if (t - born > RAISE_S) this.raising.delete(key);
     }
+  }
+
+  /** How far through its build something is, or null if it isn't being built. */
+  private raiseOf(key: string, t: number): number | null {
+    const born = this.raising.get(key);
+    if (born === undefined) return null;
+    return clamp((t - born) / RAISE_S, 0, 1);
+  }
+
+  /**
+   * One building going up: scaffolding, then the thing rising into it, then
+   * the scaffolding coming off.
+   *
+   * A second and a half, which is a tenth of what the fold gets — this fires
+   * five times in a row when a lot goes from four deep to nine, and anything
+   * statelier would have the back edge permanently under construction. Returns
+   * how much of the sprite has cleared the ground, so the caller can blit that
+   * much of it: the building comes *up out of the pad*, which is both cheaper
+   * and a better read than fading one in.
+   */
+  private drawRaise(p: number, x: number, foot: number, w: number, h: number): number {
+    const ctx = this.ctx;
+    // Up fast, off at the end, and never quite opaque — it's scaffolding.
+    const frame = clamp(p / 0.2, 0, 1) * (1 - clamp((p - 0.76) / 0.24, 0, 1));
+    // Ease-out on the rise, so it settles onto the pad instead of stopping.
+    const rise = clamp((p - 0.1) / 0.62, 0, 1);
+    const shown = Math.max(1, Math.round(h * (1 - Math.pow(1 - rise, 2))));
+
+    if (frame > 0.03) {
+      const top = foot - h - 2;
+      ctx.globalAlpha = 0.8 * frame;
+      ctx.fillStyle = SCAFFOLD;
+      ctx.fillRect(x - 2, top, 1, h + 2);
+      ctx.fillRect(x + w + 1, top, 1, h + 2);
+      for (let y = top + 3; y < foot; y += 5) ctx.fillRect(x - 2, y, w + 4, 1);
+      ctx.globalAlpha = 1;
+    }
+
+    // Dirt coming off the pad the whole way up, and one last shove of it as the
+    // thing lands.
+    if (p < 0.75 && this.chance(9)) {
+      this.puff(x + Math.random() * w, foot - 1, "dust", (Math.random() - 0.5) * 16);
+    }
+    if (p > 0.72 && p < 0.78) {
+      this.puff(x - 1, foot - 1, "dust", -14);
+      this.puff(x + w, foot - 1, "dust", 14);
+    }
+    return Math.min(h, shown);
   }
 
   private drawSky(phase: Phase, t: number, horizon: number): void {
@@ -1730,6 +1983,7 @@ export class FarmScene {
         // Its coulters ride in the flesh, so the top of the sprite is pinned a
         // pixel or two under the ceiling rather than floating in the band.
         const y = 1 + Math.round(h * Math.max(1, horizon * 0.3));
+        this.primeGlow("furrow", x, y, sprite.w, sprite.h, t, i);
         ctx.drawImage(sprite.canvas, x, y);
         // Turned flesh behind it, on the same fading-furrow trick the tractor
         // uses down on the ground.
@@ -1754,6 +2008,7 @@ export class FarmScene {
         ctx.fillStyle = "#f0c68c";
         ctx.fillRect(x - 2, y - 2, sprite.w + 4, sprite.h + 4);
         ctx.globalAlpha = 1;
+        this.primeGlow("second", x, y, sprite.w, sprite.h, t, i);
         ctx.drawImage(sprite.canvas, x, y);
       }
     }
@@ -1778,6 +2033,26 @@ export class FarmScene {
       const x = HEAP_W + 4 + i * 28;
       if (x + sprite.w > SCENE_W - 2) break;
       const top = foot - sprite.h;
+      this.primeGlow("mantle", x, top, sprite.w, sprite.h, t, i);
+
+      // Still being sunk: the derrick goes up before there's a hole under it.
+      const raise = this.raiseOf(`mantle:${i}`, t);
+      if (raise !== null && raise < 1) {
+        const shown = this.drawRaise(raise, x, foot, sprite.w, sprite.h);
+        ctx.drawImage(
+          sprite.canvas,
+          0,
+          sprite.h - shown,
+          sprite.w,
+          shown,
+          x,
+          foot - shown,
+          sprite.w,
+          shown,
+        );
+        continue;
+      }
+
       ctx.drawImage(sprite.canvas, x, top);
       // The shaft carries on past the bottom of the screen.
       ctx.fillStyle = INK;
@@ -1829,6 +2104,7 @@ export class FarmScene {
       // The same stoop the hands use while they're pulling a bed, on a long
       // slow cycle — they're working, just not at anybody's pace.
       const stoop = Math.sin(t * 0.7 + h * 5) > 0.7 ? 2 : 0;
+      this.primeGlow("chorus", x, ground - sprite.h + stoop, sprite.w, sprite.h, t, i);
       ctx.globalAlpha = 0.72;
       ctx.drawImage(sprite.canvas, x, ground - sprite.h + stoop);
       ctx.globalAlpha = 1;
@@ -2038,6 +2314,34 @@ export class FarmScene {
           ctx.fillStyle = `rgba(24, 20, 30, ${0.3 - slot.haze * 0.25})`;
           ctx.fillRect(x, ground - 1, sprite.w, 1);
         }
+        // Primed lots light the hillside they stand on, and the ones up the
+        // back light it less — a lot of a hundred labs should read as a valley
+        // with the lights on, in depth, not as one bright building out front.
+        if (!dead) {
+          this.primeGlow(lot.id, x, ground - sprite.h, sprite.w, sprite.h, t, s, 1 - slot.haze);
+        }
+
+        // Still going up: blit only what's cleared the pad. A source rect, so
+        // it's still a 1:1 integer blit — the sprite is cropped, never scaled.
+        const raise = this.raiseOf(`${lot.id}:${s}`, t);
+        if (raise !== null && raise < 1) {
+          const shown = this.drawRaise(raise, x, ground, sprite.w, sprite.h);
+          ctx.drawImage(
+            sprite.canvas,
+            0,
+            sprite.h - shown,
+            sprite.w,
+            shown,
+            x,
+            ground - shown,
+            sprite.w,
+            shown,
+          );
+          // It isn't working yet, so it doesn't light its windows and it
+          // certainly doesn't tip anything into the pipeline.
+          continue;
+        }
+
         ctx.drawImage(sprite.canvas, x, ground - sprite.h);
         if (dead) continue;
 
@@ -2089,9 +2393,75 @@ export class FarmScene {
     if (this.chance(0.3)) this.puff(x + (w >> 1), top - 1, "steam", 2);
   }
 
-  /** Which mark of a tier is standing, 0..2. */
+  /** Which mark of a tier is standing, 0..3. */
   private markLevel(id: solo.SoloProducerId): number {
-    return Math.max(0, Math.min(2, this.view.marks[id] ?? 0));
+    return Math.max(0, Math.min(3, this.view.marks[id] ?? 0));
+  }
+
+  /** The hundred-owned mark, which is the one that gets its own effects. */
+  private primed(id: solo.SoloProducerId): boolean {
+    return this.markLevel(id) >= 3;
+  }
+
+  /**
+   * Light, as a radial fill rather than a sprite.
+   *
+   * The scene's one hard rule is that every *blit* is integer-aligned and
+   * unscaled, because art resampled off the pixel grid loses its outline. A
+   * gradient isn't art — the sky and the fold are both painted this way — and
+   * light is the one thing on this canvas that has no business having edges.
+   */
+  private glow(cx: number, cy: number, r: number, color: string, alpha: number): void {
+    if (alpha <= 0.02 || r <= 0) return;
+    const ctx = this.ctx;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0, rgba(color, alpha));
+    grad.addColorStop(0.45, rgba(color, alpha * 0.42));
+    grad.addColorStop(1, rgba(color, 0));
+    ctx.fillStyle = grad;
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  }
+
+  /**
+   * The halo a primed unit stands in. Drawn *before* its sprite, so the sprite
+   * lands crisp on top and what you see is a ring of light around the thing
+   * rather than a wash over it.
+   *
+   * It breathes, on a phase taken from the unit's index — a whole field of them
+   * pulsing in lockstep reads as a shader, and the farm is meant to read as a
+   * lot of separate machines that happen to all be expensive now.
+   */
+  private primeGlow(
+    id: solo.SoloProducerId,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    t: number,
+    idx = 0,
+    scale = 1,
+  ): void {
+    if (!this.primed(id)) return;
+    const pulse = 0.7 + 0.3 * Math.sin(t * 1.5 + idx * 2.3);
+    this.glow(
+      x + w / 2,
+      y + h / 2,
+      Math.max(w, h) * 0.8 * scale,
+      PRIME_GLOW[id],
+      0.3 * pulse * scale * this.lightGain(),
+    );
+  }
+
+  /**
+   * How much a light is worth right now.
+   *
+   * Full after dark and a third of that at noon, because a glow painted at full
+   * strength over a lit field isn't light — it's fog. Held well above zero in
+   * daylight anyway: the hundred-owned mark has to be visible at every hour, and
+   * in daylight what's left of it reads as heat haze off something expensive.
+   */
+  private lightGain(): number {
+    return { day: 0.34, dusk: 0.7, night: 1 }[this.phase];
   }
 
   /**
@@ -2136,7 +2506,7 @@ export class FarmScene {
         // Later marks draw a flame into the art, so the live one is anchored to
         // where the stack actually tops out rather than to the top of the
         // sprite — otherwise the upgrade lights a second fire above the first.
-        const stack = top + [0, 2, 3][this.markLevel("refinery")]!;
+        const stack = top + [0, 2, 3, 3][this.markLevel("refinery")]!;
         const flick = fract(Math.sin(t * 11.3 + idx * 4.1) * 4375.85);
         const tall = 2 + Math.round(flick * 2);
         ctx.fillStyle = "#f0913c";
@@ -2259,7 +2629,42 @@ export class FarmScene {
     this.lumps.push({ from: Math.max(8, Math.round(from)), d: 0 });
   }
 
-  private drawPipeline(horizon: number, yardY: number, dt: number): void {
+  /**
+   * How far through building the pipeline we are, 0..1.
+   *
+   * Latched the first time anything feeds it, and only if the scene has already
+   * drawn a frame without one — the same restore-versus-event rule the fold
+   * plays by. Coming back to a farm that already has a pipeline shouldn't put on
+   * a three-second show about it.
+   */
+  private pipeBuild(t: number, reach: number): number {
+    if (reach <= 0) {
+      // Nothing feeds it. Remember that we saw the farm without one — and drop
+      // the latch, so handing the farm down and climbing back to the industrial
+      // tiers puts the pipeline in again rather than restoring it.
+      this.sawNoPipe = true;
+      this.pipeBuiltAt = null;
+      return 0;
+    }
+    if (this.pipeBuiltAt === null) {
+      // Already standing on the frame the tab opened: a restore, not an event.
+      if (!this.sawNoPipe) return 1;
+      this.pipeBuiltAt = t;
+    }
+    return clamp((t - this.pipeBuiltAt) / PIPE_BUILD_S, 0, 1);
+  }
+
+  /**
+   * The pipeline, and the three and a half seconds of it being built.
+   *
+   * Erected in the order a real one would be, because that's what makes it read
+   * as construction rather than as a wipe: the riser goes up out of the yard
+   * first — it's the piece standing nearest to you — the outfall bolts onto the
+   * bottom of it, then the trunk runs out section by section toward the sheds
+   * with the trestles going in a beat ahead of it, and last the hopper drops
+   * onto the far end. Only then does anything go down it.
+   */
+  private drawPipeline(horizon: number, yardY: number, dt: number, t: number): void {
     const ctx = this.ctx;
     const y = this.pipeY(horizon);
     // The riser runs right down the west side of the yard to just above the
@@ -2267,7 +2672,19 @@ export class FarmScene {
     // meant a chute pointed at forty pixels of empty dirt.
     const foot = Math.max(yardY + 12, this.station(0) - 30);
     const reach = this.lumps.reduce((m, l) => Math.max(m, l.from), this.pipeEnd);
+    const build = this.pipeBuild(t, reach);
     if (reach <= 0) return;
+    // Nothing rides a pipe that isn't finished. The sheds carry on tipping into
+    // it while it's going up, so this is a bin rather than a gate.
+    if (build < 1) this.lumps.length = 0;
+
+    // The four beats, each overlapping the next so the sequence flows rather
+    // than clicking from stage to stage.
+    const ease = (v: number) => 1 - Math.pow(1 - clamp(v, 0, 1), 2);
+    const riser = ease(build / 0.26);
+    const chute = ease((build - 0.2) / 0.22);
+    const run = ease((build - 0.34) / 0.46);
+    const hopper = ease((build - 0.78) / 0.16);
 
     // Everything the industrial half of the farm makes comes down this thing,
     // and for a long time it was a five pixel drainpipe. It's now built like it
@@ -2280,10 +2697,16 @@ export class FarmScene {
     const W = 9; // outside width of the trunk
     const runTo = 2; // left edge of the riser
     const midY = y + 3; // where the potatoes ride inside the run
+    // How far out from the riser the trunk has got. The trestle under a section
+    // goes in before the section does, which is the whole reason the run reads
+    // as being built rather than extruded.
+    const runLen = Math.max(1, Math.round(reach * run));
+    const posts = Math.round(reach * clamp(run * 1.18, 0, 1));
 
     // Trestles under the horizontal run, so it's carried rather than floating.
     ctx.fillStyle = dark;
     for (let px = 22; px < reach - 6; px += 26) {
+      if (px > posts) break;
       ctx.fillRect(px, y + W, 1, 5);
       ctx.fillRect(px + 4, y + W, 1, 5);
       ctx.fillRect(px - 1, y + W + 5, 7, 1);
@@ -2291,38 +2714,60 @@ export class FarmScene {
 
     // The run: dark rims top and bottom, lit body, and a highlight line along
     // the top so it reads as a tube and not a rectangle.
-    ctx.fillStyle = edge;
-    ctx.fillRect(1, y, reach, W);
-    ctx.fillStyle = body;
-    ctx.fillRect(1, y + 1, reach, W - 3);
-    ctx.fillStyle = "#c3cad1";
-    ctx.fillRect(1, y + 1, reach, 1);
-    // Seams, every so often along the run.
-    ctx.fillStyle = dark;
-    for (let px = 14; px < reach - 2; px += 18) ctx.fillRect(px, y, 1, W);
+    if (run > 0) {
+      ctx.fillStyle = edge;
+      ctx.fillRect(1, y, runLen, W);
+      ctx.fillStyle = body;
+      ctx.fillRect(1, y + 1, runLen, W - 3);
+      ctx.fillStyle = "#c3cad1";
+      ctx.fillRect(1, y + 1, runLen, 1);
+      // Seams, every so often along the run.
+      ctx.fillStyle = dark;
+      for (let px = 14; px < runLen - 2; px += 18) ctx.fillRect(px, y, 1, W);
+      // The welder working the leading edge, and the dust it throws down onto
+      // the field. Only while it's actually running out.
+      if (run < 1) {
+        ctx.fillStyle = fract(t * 13) > 0.4 ? "#fff0b8" : "#ffb454";
+        ctx.fillRect(runLen, y + 2, 2, 3);
+        if (this.chance(14)) this.puff(runLen, y + W + 2, "dust", (Math.random() - 0.5) * 20);
+      }
+    }
 
     // The hopper at the far end, where the sheds tip in: a funnel wider than
-    // the pipe, so the run has somewhere to have come from.
-    const hx = Math.min(SCENE_W - 3, reach);
-    ctx.fillStyle = dark;
-    ctx.fillRect(hx - 10, y - 6, 12, 1);
-    ctx.fillStyle = body;
-    for (let i = 0; i < 5; i++) ctx.fillRect(hx - 9 + i, y - 5 + i, 11 - i * 2, 1);
+    // the pipe, so the run has somewhere to have come from. It comes down onto
+    // the trunk once the trunk has got there.
+    if (hopper > 0) {
+      const hx = Math.min(SCENE_W - 3, reach);
+      const drop = Math.round((1 - hopper) * 12);
+      ctx.fillStyle = dark;
+      ctx.fillRect(hx - 10, y - 6 - drop, 12, 1);
+      ctx.fillStyle = body;
+      for (let i = 0; i < 5; i++) ctx.fillRect(hx - 9 + i, y - 5 - drop + i, 11 - i * 2, 1);
+    }
 
-    // The riser, with collars.
+    // The riser, with collars. Erected from the yard upward, because that's the
+    // way you put a standpipe in and it's the beat that starts the sequence.
+    const top = Math.round(foot - (foot - y) * riser);
     ctx.fillStyle = edge;
-    ctx.fillRect(runTo - 1, y, W, foot - y);
+    ctx.fillRect(runTo - 1, top, W, foot - top);
     ctx.fillStyle = body;
-    ctx.fillRect(runTo, y, W - 2, foot - y);
+    ctx.fillRect(runTo, top, W - 2, foot - top);
     ctx.fillStyle = "#c3cad1";
-    ctx.fillRect(runTo, y, 1, foot - y);
+    ctx.fillRect(runTo, top, 1, foot - top);
     ctx.fillStyle = dark;
-    for (let cy = y + 14; cy < foot - 8; cy += 16) ctx.fillRect(runTo - 2, cy, W + 2, 2);
+    for (let cy = y + 14; cy < foot - 8; cy += 16) {
+      if (cy < top) continue;
+      ctx.fillRect(runTo - 2, cy, W + 2, 2);
+    }
+    if (riser < 1 && this.chance(12)) {
+      this.puff(runTo + 4, foot - 2, "dust", (Math.random() - 0.5) * 18);
+    }
 
     // The outfall: a chute, angled the way the potatoes actually leave. It was
     // drawn as a right-angled box with a lip, and the crop came out of it on a
     // diagonal — the pipe was telling you one thing and the potatoes another.
-    for (let i = 0; i < CHUTE_LEN; i++) {
+    const chuteLen = Math.round(CHUTE_LEN * chute);
+    for (let i = 0; i < chuteLen; i++) {
       const cx = runTo + i;
       const cy = Math.round(foot - 4 + i * CHUTE_SLOPE);
       ctx.fillStyle = dark;
@@ -2339,10 +2784,22 @@ export class FarmScene {
       }
     }
     // The open end, squared off so it reads as a mouth and not a broken pipe.
-    const endX = runTo + CHUTE_LEN;
-    const endY = Math.round(foot - 4 + CHUTE_LEN * CHUTE_SLOPE);
+    const endX = runTo + chuteLen;
+    const endY = Math.round(foot - 4 + chuteLen * CHUTE_SLOPE);
     ctx.fillStyle = dark;
     ctx.fillRect(endX, endY, 1, 9);
+
+    if (build < 1) return;
+
+    // Commissioning: one flash down the whole length of it as the last bolt
+    // goes in. It's the only thing that says *finished*, and without it the
+    // build just stops.
+    const done = (t - (this.pipeBuiltAt ?? 0) - PIPE_BUILD_S) / 0.45;
+    if (done >= 0 && done < 1) {
+      ctx.fillStyle = rgba("#fff0b8", 0.5 * (1 - done));
+      ctx.fillRect(1, y - 1, reach, W + 2);
+      ctx.fillRect(runTo - 2, y, W + 2, foot - y);
+    }
 
     // Whole potatoes in the pipe, not tan squares: outlined, so a hundred of
     // them nose to tail still reads as a hundred potatoes rather than a stripe.
@@ -2464,6 +2921,20 @@ export class FarmScene {
       ctx.fillStyle = GRASS_DARK;
       for (let c = count; c < perRow; c++) ctx.fillRect(left + c * step, ground, step - 2, 1);
 
+      // A hundred plots is a crop that glows in the dark. One band the length
+      // of the row rather than a halo per plant: at ninety beds the haloes
+      // would merge into a single wash anyway, and cost ninety gradients a
+      // frame to arrive at it.
+      if (count > 0 && this.primed("plot")) {
+        const lit = (0.7 + 0.3 * Math.sin(t * 1.2 + r)) * this.lightGain();
+        const band = ctx.createLinearGradient(0, ground - plant.h - 3, 0, ground + 2);
+        band.addColorStop(0, rgba(PRIME_GLOW.plot, 0));
+        band.addColorStop(0.65, rgba(PRIME_GLOW.plot, 0.26 * lit));
+        band.addColorStop(1, rgba(PRIME_GLOW.plot, 0));
+        ctx.fillStyle = band;
+        ctx.fillRect(left - 3, ground - plant.h - 3, worked + 2, plant.h + 5);
+      }
+
       for (let c = 0; c < count; c++) {
         const i = r * perRow + c;
         const x = left + c * step;
@@ -2506,6 +2977,7 @@ export class FarmScene {
           : Math.max(2, row.left - sprinkler.w - 3)
         : 14 + i * 42;
       const ground = row ? row.y : lane(0.2);
+      this.primeGlow("irrigation", x, ground - sprinkler.h, sprinkler.w, sprinkler.h, t, i);
       ctx.drawImage(sprinkler.canvas, x, ground - sprinkler.h);
       // Droplets sweep out over the crop on a slow sine, so the arc reads as
       // one head turning rather than a static spray.
@@ -2541,6 +3013,7 @@ export class FarmScene {
         const h = fract(Math.sin((i + 1) * (id === "harvester" ? 63.7 : 21.3)) * 4375.85);
         const pace = place.speed! * (0.78 + 0.44 * fract(h * 7.13));
         const x = Math.floor((((t * pace + h * span) % span) + span) % span) - sprite.w;
+        this.primeGlow(id, x, ground - sprite.h, sprite.w, sprite.h, t, i);
         ctx.drawImage(sprite.canvas, x, ground - sprite.h);
         if (this.chance(2.5)) this.puff(x + 1, ground - 2, "dust");
 
@@ -2638,6 +3111,7 @@ export class FarmScene {
           // through each other's altitude rather than flying in a stack.
           const lane = 3 + Math.round(h3 * 26);
           const y = lane + Math.round(Math.sin(t * (0.25 + h2 * 0.4) + h * 9) * 4);
+          this.primeGlow(id, x, y, sprite.w, sprite.h, t, i);
           ctx.drawImage(sprite.canvas, x, y);
 
           // The greenhouse runs a grow-light down onto the rows in sweeps.
@@ -2653,6 +3127,7 @@ export class FarmScene {
           const x = 14 + Math.round(h * 120) + Math.round(Math.sin(t * 0.31 + h2 * 6) * 4);
           const y = 8 + Math.round(h2 * 26) + Math.round(Math.sin(t * 0.43 + h3 * 6) * 3);
           this.drawPulse(x + sprite.w / 2, y + sprite.h / 2, t + i);
+          this.primeGlow(id, x, y, sprite.w, sprite.h, t, i);
           ctx.drawImage(sprite.canvas, x, y);
           this.pipeEnd = Math.max(this.pipeEnd, x + Math.floor(sprite.w / 2));
           if (this.chance(1.4)) this.feedPipe(x + Math.floor(sprite.w / 2));
@@ -2691,7 +3166,7 @@ export class FarmScene {
     while (this.flyers.length < n) this.flyers.push(this.newFlyer(sprite.w));
     if (this.flyers.length > n) this.flyers.length = Math.max(0, n);
 
-    for (const f of this.flyers) {
+    for (const [i, f] of this.flyers.entries()) {
       if (f.hold > 0) {
         // Parked. It bobs on the spot and drips, and the drops are aimed at
         // whatever's underneath rather than halfway across the field.
@@ -2715,7 +3190,10 @@ export class FarmScene {
         }
       }
       const bob = f.hold > 0 ? Math.round(Math.sin(t * 3.1 + f.x) * 1) : 0;
-      ctx.drawImage(sprite.canvas, Math.round(f.x), Math.round(f.y) + bob);
+      const fx = Math.round(f.x);
+      const fy = Math.round(f.y) + bob;
+      this.primeGlow("seeder", fx, fy, sprite.w, sprite.h, t, i);
+      ctx.drawImage(sprite.canvas, fx, fy);
     }
   }
 

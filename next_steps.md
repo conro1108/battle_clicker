@@ -315,6 +315,14 @@ sweep behind a bright leading edge, the eyes opening — and the new ceiling tie
 are drawn inside the same clip, so they're revealed by the sweep rather than
 appearing after it.
 
+That last one is no longer true, and it's worth saying so because it was the
+one piece of scene work with no tooling under it. `shot.mts` now takes `buy=`
+and `burst=` and does that dance itself — settle the farm, click the row in the
+real shop, then take a run of frames — plus `hour=`, which pins the wall clock
+the sky reads so night can be shot at noon. Anything that only happens *once*,
+in front of you, is now photographable: the fold, the pipeline going in, a shed
+going up on its lot.
+
 ### The seed economy, still
 
 The post-Convergence perk row exists: Flesh Tithe, Induced Dormancy, Ur-Yield,

@@ -312,36 +312,43 @@ function fleetCost(id: SoloProducerId, count: number, share = 1): Potatoes {
 }
 
 /**
- * Two boosts per tier: one when you have a few, one when you're deep in.
+ * Three boosts per tier: one when you have a few, one when you're deep in, and
+ * one for the players who go all the way in on a rung.
  *
  * The first is a doubling (x2) gated on owning ten units.
  * The second is a +50% boost (x1.5) gated on fifty units — not another
  * doubling. Stacking two doublings per tier meant every tier self-amplified
  * 4x the moment you were deep in it, which is a big part of why the ladder
- * used to evaporate. Priced against the fleet you must already own.
+ * used to evaporate.
+ * The third is a doubling again, gated on **a hundred**. That gate is the whole
+ * design: a hundred of anything is a full day of aiming at one rung rather than
+ * spreading, so the reward is allowed to be loud — and it's the only upgrade in
+ * the game that changes the silhouette of the thing rather than its paint.
+ *
+ * All three are priced against the fleet you must already own.
  */
 function tierUpgrades(): SoloUpgrade[] {
-  const naming: Record<SoloProducerId, [string, string]> = {
-    plot: ["Raised Beds", "Terraced Slopes"],
-    hand: ["Overtime Pay", "Profit Sharing"],
-    irrigation: ["Drip Lines", "Aquifer Rights"],
-    tractor: ["Turbo Diesel", "Autosteer"],
-    harvester: ["Wider Header", "Night Shift Cab"],
-    lab: ["Peer Review", "Tenure"],
-    refinery: ["Catalytic Cracking", "Continuous Flow"],
-    tower: ["Full Spectrum LEDs", "Nutrient Telemetry"],
-    seeder: ["Silver Iodide", "Jet Stream Permit"],
-    reactor: ["Magnetic Confinement", "Tritium Blanket"],
-    orbital: ["Solar Sails", "Second Ring"],
-    singularity: ["Closed Timelike Furrow", "Retroactive Yield"],
-    furrow: ["Reversed Gravity", "Ceiling Yield"],
-    mantle: ["Deep Core Sampling", "Geothermal Assist"],
-    chorus: ["Perfect Unison", "Every Generation"],
-    second: ["Seed Stock", "It's Started"],
+  const naming: Record<SoloProducerId, [string, string, string]> = {
+    plot: ["Raised Beds", "Terraced Slopes", "Heirloom Strain"],
+    hand: ["Overtime Pay", "Profit Sharing", "Equity Stake"],
+    irrigation: ["Drip Lines", "Aquifer Rights", "Centre Pivot"],
+    tractor: ["Turbo Diesel", "Autosteer", "Tracked Chassis"],
+    harvester: ["Wider Header", "Night Shift Cab", "Twin Rotor"],
+    lab: ["Peer Review", "Tenure", "The Prize"],
+    refinery: ["Catalytic Cracking", "Continuous Flow", "Cogeneration"],
+    tower: ["Full Spectrum LEDs", "Nutrient Telemetry", "Cloud Deck"],
+    seeder: ["Silver Iodide", "Jet Stream Permit", "Eye of the Storm"],
+    reactor: ["Magnetic Confinement", "Tritium Blanket", "Ignition"],
+    orbital: ["Solar Sails", "Second Ring", "Lagrange Station"],
+    singularity: ["Closed Timelike Furrow", "Retroactive Yield", "Event Horizon Lease"],
+    furrow: ["Reversed Gravity", "Ceiling Yield", "Second Pass"],
+    mantle: ["Deep Core Sampling", "Geothermal Assist", "Core Breach"],
+    chorus: ["Perfect Unison", "Every Generation", "All At Once"],
+    second: ["Seed Stock", "It's Started", "It's Awake"],
   };
   const out: SoloUpgrade[] = [];
   for (const prod of SOLO_PRODUCERS) {
-    const [first, second] = naming[prod.id];
+    const [first, second, third] = naming[prod.id];
     out.push({
       id: `${prod.id}_x2a`,
       name: first,
@@ -357,6 +364,14 @@ function tierUpgrades(): SoloUpgrade[] {
       cost: fleetCost(prod.id, 50, 0.4),
       effect: { kind: "producer_mult", producer: prod.id, factor: 1.5 },
       requires: { producer: prod.id, count: 50 },
+    });
+    out.push({
+      id: `${prod.id}_x2c`,
+      name: third,
+      blurb: `${prod.name}s produce twice as much — and stop looking like the old ones.`,
+      cost: fleetCost(prod.id, 100, 1.2),
+      effect: { kind: "producer_mult", producer: prod.id, factor: 2 },
+      requires: { producer: prod.id, count: 100 },
     });
   }
   return out;
@@ -413,18 +428,29 @@ const CLICK_UPGRADES: SoloUpgrade[] = [
 ];
 
 /**
- * Global multipliers deliberately kept modest. Each one compounds against every
- * tier below it, so a 2x here is louder than it looks — it effectively halves
- * the time to reach the next milestone. Capped at 1.5x for most rungs; only the
- * late-game unlocks reach 2x. The previous x2/x3/x5 chain was the main reason
- * a week-long run evaporated into an afternoon.
+ * Global multipliers deliberately kept modest, and deliberately **dear**.
+ *
+ * Two separate knobs, and they got out of step. The factor is small — 1.3 to 2,
+ * where an early draft had a x2/x3/x5 chain that evaporated a week-long run in
+ * an afternoon. But the *price* had drifted down to a few hundred seconds of
+ * production, so the thing that permanently lifts every rung of the ladder at
+ * once cost less than the rung you were standing on. These are now priced in the
+ * thousands of seconds each: a global is something you stop and save for, on
+ * roughly the scale the Ur-Potato always was, and passing one over to keep
+ * climbing has to be a real option.
+ *
+ * The shares below look arbitrary because they are: each is tuned so the upgrade
+ * lands in that band at the moment its gate opens, and the fleet it's quoted
+ * against sits at wildly different points on the curve from one rung to the next.
+ * `solo.test.ts` holds the floor; `probe` in this package's history is how the
+ * band was measured.
  */
 const GLOBAL_UPGRADES: SoloUpgrade[] = [
   {
     id: "fertilizer",
     name: "Fertilizer",
     blurb: "Everything produces +30%.",
-    cost: fleetCost("hand", 15, 70),
+    cost: fleetCost("hand", 15, 340),
     effect: { kind: "global_mult", factor: 1.3 },
     requires: { producer: "hand", count: 15 },
   },
@@ -432,7 +458,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "crop_rotation",
     name: "Crop Rotation",
     blurb: "Everything produces +30%.",
-    cost: fleetCost("irrigation", 25, 30),
+    cost: fleetCost("irrigation", 25, 190),
     effect: { kind: "global_mult", factor: 1.3 },
     requires: { producer: "irrigation", count: 25 },
   },
@@ -440,7 +466,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "gmo_seed",
     name: "GMO Seed Stock",
     blurb: "Everything produces +50%. Don't read the label.",
-    cost: fleetCost("harvester", 20, 6),
+    cost: fleetCost("harvester", 20, 42),
     effect: { kind: "global_mult", factor: 1.5 },
     requires: { producer: "harvester", count: 20 },
   },
@@ -448,7 +474,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "co_op",
     name: "Growers' Co-op",
     blurb: "Everything produces +50%.",
-    cost: fleetCost("refinery", 25),
+    cost: fleetCost("refinery", 25, 14),
     effect: { kind: "global_mult", factor: 1.5 },
     requires: { producer: "refinery", count: 25 },
   },
@@ -456,7 +482,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "subsidy",
     name: "Agricultural Subsidy",
     blurb: "Everything produces +50%. Paperwork was involved.",
-    cost: fleetCost("seeder", 25),
+    cost: fleetCost("seeder", 25, 5),
     effect: { kind: "global_mult", factor: 1.5 },
     requires: { producer: "seeder", count: 25 },
   },
@@ -464,7 +490,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "monopoly",
     name: "Vertical Integration",
     blurb: "Everything produces x2.",
-    cost: fleetCost("reactor", 25),
+    cost: fleetCost("reactor", 25, 3),
     effect: { kind: "global_mult", factor: 2 },
     requires: { producer: "reactor", count: 25 },
   },
@@ -472,7 +498,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "terraform",
     name: "Terraforming Charter",
     blurb: "Everything produces x2.",
-    cost: fleetCost("orbital", 25),
+    cost: fleetCost("orbital", 25, 6),
     effect: { kind: "global_mult", factor: 2 },
     requires: { producer: "orbital", count: 25 },
   },
@@ -498,7 +524,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "ceiling_rights",
     name: "Ceiling Tenancy",
     blurb: "The roof is yours to work too. Everything produces x2.",
-    cost: fleetCost("furrow", 25),
+    cost: fleetCost("furrow", 25, 5),
     effect: { kind: "global_mult", factor: 2 },
     requires: { producer: "furrow", count: 25 },
   },
@@ -506,7 +532,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "mineral_rights",
     name: "Mineral Rights",
     blurb: "Whatever's down there was always yours. Everything produces x2.",
-    cost: fleetCost("mantle", 25),
+    cost: fleetCost("mantle", 25, 9),
     effect: { kind: "global_mult", factor: 2 },
     requires: { producer: "mantle", count: 25 },
   },
@@ -514,7 +540,7 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     id: "unbroken_line",
     name: "Unbroken Line",
     blurb: "Nobody has stopped farming. Everything produces x2.",
-    cost: fleetCost("chorus", 25),
+    cost: fleetCost("chorus", 25, 2),
     effect: { kind: "global_mult", factor: 2 },
     requires: { producer: "chorus", count: 25 },
   },

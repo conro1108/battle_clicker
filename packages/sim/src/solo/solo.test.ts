@@ -139,6 +139,69 @@ describe("the ladder", () => {
     console.log(`globals: ${paid.map((u) => `${u.id}=${u.seconds.toFixed(0)}s`).join(" ")}`);
     for (const { seconds: s } of paid) expect(s).toBeGreaterThan(60);
   });
+
+  /**
+   * The same question, asked of the globals the 24-hour bot above never gets
+   * near. Those are the ones that had drifted: priced at a flat share of the
+   * fleet that unlocks them, the late ones came out at two or three hundred
+   * seconds each — so the upgrade that permanently lifts every rung of the
+   * ladder at once cost a fraction of the rung you were standing on, and
+   * "should I save for this or keep climbing?" had one obvious answer.
+   *
+   * Measured two ways, because one number can't say it. What each one costs
+   * depends on how far along the rest of the farm happens to be when its gate
+   * opens, and that swings by a factor of four between seeds — so the *median*
+   * is what carries the intent ("a global is half an hour of production"), and
+   * the floor is only there to catch one of them falling back into the couple-
+   * of-hundred-seconds range the whole set used to sit in.
+   *
+   * No ceiling on purpose: the Ur-Potato and the Third Potato are deliberately
+   * dearer still, and the Convergence test below holds their end of it.
+   */
+  it("makes every cross-farm multiplier something you stop and save for", () => {
+    const style = FARMER_STYLES.keen!;
+    let farm = createFarm({ seed: "globals", startedAt: ms(0) });
+    const paid: { id: string; seconds: number }[] = [];
+    const cadence = { sessionsPerDay: 4, sessionMs: seconds(1_800) };
+    const gap = DAY / cadence.sessionsPerDay;
+
+    for (let d = 0; d < 10; d++) {
+      for (let s = 0; s < cadence.sessionsPerDay; s++) {
+        const start = Math.round(d * DAY + s * gap);
+        farm = advance(farm, ms(start), true).farm;
+        let nextDecision = start;
+        for (let t = start; t < start + cadence.sessionMs; t += 1_000) {
+          const dig = applyFarmCommand(farm, { type: "dig", count: style.digsPerSecond }, ms(t));
+          if (dig.ok) farm = dig.farm;
+          if (t >= nextDecision) {
+            nextDecision = t + style.decisionMs;
+            for (const cmd of farmerTurn(farm, style)) {
+              const rate = currentRate(farm);
+              const before = farm.upgrades.length;
+              const res = applyFarmCommand(farm, cmd, ms(t));
+              if (res.ok) farm = res.farm;
+              const id = farm.upgrades.at(-1);
+              if (farm.upgrades.length > before && id) {
+                const u = SOLO_UPGRADE_BY_ID[id]!;
+                if (u.effect.kind === "global_mult") paid.push({ id, seconds: u.cost / rate });
+              }
+            }
+          }
+          farm = advance(farm, ms(t + 1_000)).farm;
+        }
+      }
+    }
+
+    console.log(`globals (10d heavy): ${paid.map((u) => `${u.id}=${u.seconds.toFixed(0)}s`).join(" ")}`);
+    // The run has to actually get far enough to buy the late ones, or this
+    // passes by never measuring them.
+    const globals = SOLO_UPGRADES.filter((u) => u.effect.kind === "global_mult");
+    expect(paid.length).toBeGreaterThanOrEqual(globals.length - 1);
+
+    const sorted = paid.map((u) => u.seconds).sort((a, b) => a - b);
+    expect(sorted[Math.floor(sorted.length / 2)]).toBeGreaterThan(2_000);
+    for (const { id, seconds: s } of paid) expect(s, id).toBeGreaterThan(700);
+  });
 });
 
 describe("offline resolution", () => {
