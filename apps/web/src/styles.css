@@ -390,7 +390,7 @@ input {
 /* --- The omen ------------------------------------------------------------ */
 
 /* The lights going out. Over everything — HUD, nav, whichever sheet the
-   purchase was made from — and eating input for its four seconds, because a
+   purchase was made from — and eating input for its seven seconds, because a
    dig landing in the middle of this would say it was only ever a banner.
    Timings track `OMEN_MS` in App.tsx. */
 .omen-veil {
@@ -401,21 +401,31 @@ input {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18px;
+  gap: 20px;
   padding: 0 24px;
   text-align: center;
   background: #06040a;
-  animation: omen-veil 4600ms ease both;
+  animation: omen-veil 7600ms ease both;
 }
-/* Every Singularity after the first of a run. Same darkness, a fifth of the
-   time, and lit from the middle in the colour of the thing you just bought so
-   it reads as the sky answering rather than as a frame that dropped.
-   Tracks `OMEN_FLASH_MS`. */
+/* Something behind the words, in the colour of the thing that caused all this,
+   swelling in under the instruction and going out with it. The dark alone held
+   for seven seconds is a loading screen. */
+.omen-veil:not(.flash)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 52%, rgba(122, 90, 192, 0.55), rgba(6, 4, 10, 0) 62%);
+  animation: omen-bloom 7600ms ease both;
+}
+/* Every Singularity after the first of a run. Same darkness, a quarter of the
+   time, lit from the middle so it reads as the sky answering rather than as a
+   frame that dropped. Tracks `OMEN_FLASH_MS`. */
 .omen-veil.flash {
   background:
-    radial-gradient(circle at 50% 46%, rgba(122, 90, 192, 0.5), rgba(6, 4, 10, 0) 55%),
+    radial-gradient(circle at 50% 50%, rgba(122, 90, 192, 0.5), rgba(6, 4, 10, 0) 55%),
     #06040a;
-  animation: omen-flash 1200ms ease both;
+  animation: omen-flash 1900ms ease both;
 }
 .omen-line {
   margin: 0;
@@ -429,44 +439,86 @@ input {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: #efe2cd;
-  animation: omen-line 4600ms ease both;
+  animation: omen-line 7600ms ease both;
+  /* Everything in here sits over the bloom. */
+  position: relative;
+  z-index: 1;
 }
-/* The instruction, and the only part of it that's allowed to be loud. */
+/* The instruction, and the only part of it that's allowed to be loud. It opens
+   out as it holds — the tracking grows a tenth of an em over four seconds, which
+   is too slow to catch happening and impossible to miss having happened. */
 .omen-call {
   margin: 0;
+  position: relative;
+  z-index: 1;
   font-size: 1.6rem;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.24em;
   /* Indented by the tracking, which otherwise hangs a gap off the right. */
-  text-indent: 0.22em;
+  text-indent: 0.24em;
   color: #ffcf90;
   text-shadow: 0 0 22px rgba(255, 176, 84, 0.45);
-  animation: omen-call 4600ms ease both;
+  animation: omen-call 7600ms ease both;
+}
+/* The short one's whole message. Smaller than the call — it's a nudge in
+   passing, not the moment — and it has to arrive, be read and leave inside two
+   seconds, so it doesn't move while it's up. */
+.omen-nudge {
+  margin: 0;
+  position: relative;
+  z-index: 1;
+  max-width: 20ch;
+  text-wrap: balance;
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.35;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  text-indent: 0.18em;
+  color: #ffcf90;
+  text-shadow: 0 0 18px rgba(255, 176, 84, 0.4);
+  animation: omen-nudge 1900ms ease both;
 }
 
 @keyframes omen-veil {
   0% {
     opacity: 0;
   }
-  /* 600ms to black, and a slow 1.1s back off it at the end — the farm arriving
-     is the reveal, so it takes its time. */
-  13%,
-  76% {
+  /* 900ms down to black, then a beat of nothing before the first word — and a
+     slow 1.5s back off it at the end, because the farm arriving is the reveal. */
+  12%,
+  80% {
     opacity: 1;
   }
   100% {
     opacity: 0;
   }
 }
+@keyframes omen-bloom {
+  0%,
+  30% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  60%,
+  76% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.25);
+  }
+}
 @keyframes omen-flash {
   0% {
     opacity: 0;
   }
-  /* Snaps on in 250ms, holds just long enough to register as dark, then takes
-     twice as long to let go — the same shape as the long one, in a fifth of it. */
-  21%,
-  42% {
+  /* On in 300ms, held long enough to read four words, then let go over the last
+     half — the same shape as the long one, in a quarter of it. */
+  16%,
+  55% {
     opacity: 1;
   }
   100% {
@@ -475,16 +527,16 @@ input {
 }
 @keyframes omen-line {
   0%,
-  13% {
+  24% {
     opacity: 0;
     transform: translateY(8px);
   }
-  26%,
-  67% {
+  36%,
+  76% {
     opacity: 1;
     transform: translateY(0);
   }
-  76%,
+  84%,
   100% {
     opacity: 0;
     transform: translateY(-6px);
@@ -492,19 +544,42 @@ input {
 }
 @keyframes omen-call {
   0%,
-  30% {
+  45% {
     opacity: 0;
     transform: scale(0.94);
+    letter-spacing: 0.18em;
   }
-  43%,
-  67% {
+  57% {
     opacity: 1;
     transform: scale(1);
   }
-  74%,
+  76% {
+    opacity: 1;
+    transform: scale(1);
+    letter-spacing: 0.28em;
+  }
+  84%,
   100% {
     opacity: 0;
     transform: scale(1.05);
+    letter-spacing: 0.3em;
+  }
+}
+@keyframes omen-nudge {
+  0%,
+  14% {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  28%,
+  62% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  82%,
+  100% {
+    opacity: 0;
+    transform: translateY(-4px);
   }
 }
 
@@ -1208,7 +1283,9 @@ input {
   /* The blackout still happens — it's the moment, not decoration — but it
      arrives and leaves without the drift and the scale on the type. */
   .omen-line,
-  .omen-call {
+  .omen-call,
+  .omen-nudge,
+  .omen-veil:not(.flash)::after {
     animation: none;
   }
 }
