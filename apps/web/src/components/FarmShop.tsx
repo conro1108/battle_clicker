@@ -50,6 +50,82 @@ function Row({
   );
 }
 
+/**
+ * How long the farm has to run before it can afford the thing, in words.
+ *
+ * Coarse on purpose, and never a ticking clock: this is a wait measured in
+ * hours at the point it first appears, and a seconds-precise countdown on a
+ * two-hour number is just a spinner. It rounds to the unit above so it's always
+ * a little pessimistic — the wait shortening under you is the right surprise.
+ */
+function waitText(msLeft: number): string {
+  if (!Number.isFinite(msLeft)) return "nothing is growing";
+  const mins = Math.ceil(msLeft / 60000);
+  if (mins <= 1) return "moments away";
+  if (mins < 60) return `about ${mins} minutes away`;
+  const hours = Math.floor(mins / 60);
+  const rest = mins % 60;
+  return `about ${hours}h${rest ? ` ${rest}m` : ""} away`;
+}
+
+/**
+ * The shop with one thing in it, which is not a shop.
+ *
+ * The rest of this file is a catalogue: a row, an icon, a price, next. That
+ * form is the problem here — the last purchase of the run rendered as row
+ * thirteen reads as another sidegrade, and the player who's been buying rows
+ * for three days has no reason to look up. So the whole surface changes at
+ * once. The cream goes out, the thing itself is out there in the dark at the
+ * top of the sheet, the price stops being a tag and becomes a bar you are
+ * visibly filling, and the button doesn't say Buy.
+ *
+ * Deliberately says nothing about what it does — see the blurb's note in
+ * content.ts. What it costs and how far off it is, is the whole readout.
+ */
+function Convergence({
+  farm,
+  budget,
+  dispatch,
+}: {
+  farm: solo.FarmState;
+  budget: Potatoes;
+  dispatch: (cmd: solo.FarmCommand) => void;
+}) {
+  const ur = solo.SOLO_UPGRADE_BY_ID[solo.CONVERGENCE_UPGRADE]!;
+  const affordable = P.gte(budget, ur.cost);
+  const held = Math.max(0, Math.min(1, budget / ur.cost));
+  const rate = solo.currentRate(farm);
+  const left = rate > 0 ? ((ur.cost - budget) / rate) * 1000 : Infinity;
+
+  return (
+    <div className="grave">
+      <div className="grave-mark" aria-hidden />
+      <h3 className="grave-name">{ur.name}</h3>
+      <p className="grave-blurb">{ur.blurb}</p>
+      <p className="grave-line">You have spent this whole run on its skin.</p>
+
+      <div className="grave-price">
+        <div className="grave-track">
+          <div className="grave-fill" style={{ width: `${held * 100}%` }} />
+        </div>
+        <div className="grave-figures">
+          <span>{format(budget)}</span>
+          <span>{format(ur.cost)}</span>
+        </div>
+      </div>
+
+      <button
+        className="grave-take"
+        disabled={!affordable}
+        onClick={() => dispatch({ type: "buy_upgrade", upgrade: ur.id })}
+      >
+        {affordable ? "Take it" : "Not yet"}
+      </button>
+      {!affordable && <p className="grave-wait">{waitText(left)}</p>}
+    </div>
+  );
+}
+
 export function GrowPanel({
   farm,
   budget,
@@ -63,7 +139,7 @@ export function GrowPanel({
 
   // The last stretch. Once the tenth Tuber Singularity is standing, the shop
   // stops being a shop: every other rung and every other upgrade comes off the
-  // board and the only thing you can buy is the one that ends the climb.
+  // board and the only thing left is the one that ends the climb.
   //
   // Nothing else in the game does this, and nothing else should. It's the one
   // moment where "what do I spend this on" has a wrong answer — the tier was a
@@ -72,25 +148,7 @@ export function GrowPanel({
   // Ur-Potato another hour out. Emptying the board is the game finally saying
   // out loud that there's only one thing left to save for.
   if (solo.convergencePending(farm)) {
-    const ur = solo.SOLO_UPGRADE_BY_ID[solo.CONVERGENCE_UPGRADE]!;
-    return (
-      <>
-        <p className="hint">
-          The ladder stops here. Everything the farm makes goes to one purchase now.
-        </p>
-        <div className="rows">
-          <Row
-            accent="row-upgrade"
-            name={ur.name}
-            blurb={ur.blurb}
-            cost={format(ur.cost)}
-            affordable={P.gte(budget, ur.cost)}
-            art={upgradePreview(farm, ur)}
-            onBuy={() => dispatch({ type: "buy_upgrade", upgrade: ur.id })}
-          />
-        </div>
-      </>
-    );
+    return <Convergence farm={farm} budget={budget} dispatch={dispatch} />;
   }
 
   return (

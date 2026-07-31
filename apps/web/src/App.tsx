@@ -378,6 +378,12 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
 
   const soilPct = Math.round(farm.soil * 100);
 
+  // The shop has emptied itself for the Ur-Potato. Worth knowing out here as
+  // well as inside the sheet: the bottom bar is the only part of the game a
+  // player sees without opening anything, so it's where the change announces
+  // itself.
+  const lastPurchase = solo.convergencePending(farm);
+
   return (
     <div className="app farm-app">
       <header className="hud">
@@ -432,7 +438,14 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
         {nav.map((item) => (
           <button
             key={item.id}
-            className={item.id === "weather" && needsAttention ? "alert" : undefined}
+            className={
+              [
+                item.id === "weather" && needsAttention ? "alert" : "",
+                item.id === "shop" && lastPurchase ? "waiting" : "",
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined
+            }
             onClick={() => setSheet(item.id)}
           >
             <PxIcon name={item.icon} size={20} />
@@ -442,16 +455,28 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
         ))}
       </nav>
 
+      {/* Past the threshold the shop isn't a shop any more, and the frame around
+          it has to go too — a dark sheet with one thing in it still reads as a
+          catalogue if it's captioned "More kit on the land" and footed with a
+          running total of what you have to spend. There's nothing to compare
+          and nothing to budget: the only number that matters is on the bar. */}
       {sheet === "shop" && (
         <Sheet
-          title="Shop"
-          sub="More kit on the land, and the upgrades that make it worth more."
+          tone={lastPurchase ? "grave" : undefined}
+          title={lastPurchase ? "Nothing left to sell you" : "Shop"}
+          sub={
+            lastPurchase
+              ? "What's below was never stock."
+              : "More kit on the land, and the upgrades that make it worth more."
+          }
           onClose={() => setSheet(null)}
           foot={
-            <>
-              <span className="muted">To spend</span>
-              <strong>{format(budget)}</strong>
-            </>
+            lastPurchase ? undefined : (
+              <>
+                <span className="muted">To spend</span>
+                <strong>{format(budget)}</strong>
+              </>
+            )
           }
         >
           <GrowPanel farm={farm} budget={budget} dispatch={dispatch} />

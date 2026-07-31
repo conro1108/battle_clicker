@@ -515,7 +515,16 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
   {
     id: "ur_potato",
     name: "The Ur-Potato",
-    blurb: "The first potato. Everything produces x2.",
+    /**
+     * The only upgrade in the game that doesn't say what it does.
+     *
+     * Every other blurb is a price tag's other half — you read the number, you
+     * read the multiplier, you decide. This one isn't a decision, and quoting
+     * "everything produces x2" next to it puts it back on the same shelf as
+     * Fertilizer at the exact moment the game most needs it off that shelf.
+     * It still doubles everything; the shop just doesn't lead with it.
+     */
+    blurb: "The first potato. Everything since has been a copy.",
     cost: fleetCost("singularity", 10),
     effect: { kind: "global_mult", factor: 2 },
     requires: { producer: "singularity", count: 10 },

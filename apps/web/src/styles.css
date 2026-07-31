@@ -971,6 +971,23 @@ input {
 .nav button.alert .pxicon {
   animation: nudge 0.9s ease-in-out infinite;
 }
+/* The shop, once the only thing in it is the Ur-Potato. Not the weather's
+   red dot and jump — nothing is wrong and nothing needs doing this minute.
+   It's a slow warm light under one tab, and the only cool colour in the bar. */
+.nav button.waiting {
+  color: #3d2a4d;
+  background: radial-gradient(120% 90% at 50% 120%, rgba(122, 90, 192, 0.26), rgba(122, 90, 192, 0) 70%);
+  animation: nav-waiting 3.6s ease-in-out infinite;
+}
+@keyframes nav-waiting {
+  0%,
+  100% {
+    background-color: rgba(122, 90, 192, 0);
+  }
+  50% {
+    background-color: rgba(122, 90, 192, 0.14);
+  }
+}
 @keyframes nudge {
   0%,
   100% {
@@ -1092,6 +1109,178 @@ input {
 .sheet-foot strong {
   color: var(--wood-dark);
   font-size: 1.05rem;
+}
+
+/* --- The shop, once there's one thing left in it -------------------------- */
+
+/* Everything in this block exists to stop the last purchase of the run from
+   looking like shopping. The palette is the omens' — #06040a, the Singularity's
+   purple, the same amber the sky calls in — so the sheet reads as the thing
+   that's been staining the horizon for the last three days rather than as a
+   tab of the shop with the lights off. */
+.overlay-grave {
+  background: rgba(6, 4, 10, 0.88);
+}
+.sheet-grave {
+  background: #0b0810;
+  border-top-color: #ffcf90;
+  color: #d9cdbb;
+}
+.sheet-grave h2 {
+  color: #ffcf90;
+  font-size: 0.92rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  text-shadow: 0 0 20px rgba(255, 176, 84, 0.35);
+}
+.sheet-grave .sheet-sub {
+  color: #8c7f9a;
+}
+.sheet-grave .sheet-close {
+  background: #1a1326;
+  color: #cbbfd6;
+}
+
+.grave {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  padding: 20px 0 calc(24px + env(safe-area-inset-bottom));
+}
+/* The thing itself, out there. Same lopsided blob the Convergence falls into,
+   at rest and breathing — a player who buys this is about to watch it fill the
+   screen, and this is the first time they see it at all.
+
+   Darker than the one in the fold, and by a lot. That one is lit because you're
+   falling into it; this one is a long way off in the dark with the same amber
+   behind it as the sky has been carrying, and at full brightness it stops being
+   an object out there and turns into a bread roll on a shelf. */
+.grave-mark {
+  position: relative;
+  flex-shrink: 0;
+  width: 104px;
+  height: 78px;
+  border-radius: 54% 46% 48% 52% / 60% 58% 42% 40%;
+  background: radial-gradient(72% 78% at 36% 30%, #7d5433 0%, #5c3b23 42%, #3a2415 74%, #1c110a 100%);
+  box-shadow: 0 0 54px 14px rgba(255, 176, 84, 0.16), inset -10px -12px 22px rgba(0, 0, 0, 0.55);
+  animation: grave-breathe 6.5s ease-in-out infinite;
+}
+/* One sprout pit, low and off to the side. The fold's tuber has the pair, and
+   the pair is what makes this one a face: two dark dots at eye height on a blob
+   is a cartoon no matter how the rest of it is lit. */
+.grave-mark::before {
+  content: "";
+  position: absolute;
+  left: 29%;
+  top: 56%;
+  width: 7%;
+  height: 9%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 40%, #150c07 0%, #2d1a10 62%, rgba(45, 26, 16, 0) 100%);
+  box-shadow: 0 -1px 0 rgba(214, 160, 106, 0.22);
+}
+@keyframes grave-breathe {
+  50% {
+    transform: scale(1.045);
+    box-shadow: 0 0 80px 24px rgba(255, 176, 84, 0.34);
+  }
+}
+.grave-name {
+  margin: 0;
+  font-size: clamp(1.2rem, 6.5vw, 1.6rem);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  /* Indented by the tracking, which otherwise hangs a gap off the right. */
+  text-indent: 0.2em;
+  color: #ffcf90;
+  text-shadow: 0 0 26px rgba(255, 176, 84, 0.45);
+}
+.grave-blurb {
+  margin: 0;
+  max-width: 30ch;
+  text-wrap: balance;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: #efe2cd;
+}
+.grave-line {
+  margin: 0;
+  max-width: 26ch;
+  text-wrap: balance;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: #8c7f9a;
+}
+
+/* The price, as a thing you are filling rather than a tag you are reading.
+   Every other cost in the game is a number you either have or don't; this one
+   is hours away when it first appears, so what the player wants from it is
+   *how far*, and a bar answers that from across the room. */
+.grave-price {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
+}
+.grave-track {
+  height: 7px;
+  background: #1a1326;
+  border: 1px solid #33254a;
+  overflow: hidden;
+}
+.grave-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #7a5ac0, #ffcf90);
+  transition: width 0.3s linear;
+}
+.grave-figures {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #d9cdbb;
+}
+
+.grave-take {
+  width: 100%;
+  max-width: 320px;
+  padding: 14px;
+  border: 2px solid #4a3a5f;
+  border-radius: 12px;
+  background: #150f22;
+  box-shadow: none;
+  color: #8c7f9a;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  text-indent: 0.18em;
+}
+/* Affordable, and it says so from the other side of the room. */
+.grave-take:not(:disabled) {
+  border-color: #ffcf90;
+  background: linear-gradient(#ffd79f, #e0a45c);
+  color: #2a1a10;
+  animation: grave-ready 2.6s ease-in-out infinite;
+}
+@keyframes grave-ready {
+  0%,
+  100% {
+    box-shadow: 0 0 18px rgba(255, 176, 84, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(255, 176, 84, 0.6);
+  }
+}
+.grave-wait {
+  margin: -6px 0 0;
+  font-size: 0.72rem;
+  color: #6f6480;
 }
 
 /* --- The back room ------------------------------------------------------- */
@@ -1565,7 +1754,12 @@ input {
   .omen-line,
   .omen-call,
   .omen-nudge,
-  .omen-veil:not(.flash)::after {
+  .omen-veil:not(.flash)::after,
+  /* The last purchase keeps its palette and its glow, and loses the two things
+     in it that move on their own. */
+  .grave-mark,
+  .grave-take:not(:disabled),
+  .nav button.waiting {
     animation: none;
   }
 

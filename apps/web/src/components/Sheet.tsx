@@ -10,16 +10,22 @@ export function Sheet({
   onClose,
   children,
   foot,
+  /**
+   * The one sheet that isn't furniture. `grave` takes the cream out of it for
+   * the last purchase of the run — see `.sheet-grave` in styles.css.
+   */
+  tone,
 }: {
   title: string;
   sub?: string;
   onClose: () => void;
   children: ReactNode;
   foot?: ReactNode;
+  tone?: "grave";
 }) {
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+    <div className={`overlay ${tone ? `overlay-${tone}` : ""}`} onClick={onClose}>
+      <div className={`sheet ${tone ? `sheet-${tone}` : ""}`} onClick={(e) => e.stopPropagation()}>
         <div className="sheet-head">
           <div>
             <h2>{title}</h2>

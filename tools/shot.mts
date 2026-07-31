@@ -113,7 +113,13 @@ if (args.buy) {
     solo.SOLO_PRODUCER_BY_ID[args.buy as solo.SoloProducerId] ?? solo.SOLO_UPGRADE_BY_ID[args.buy];
   if (!thing) throw new Error(`nothing called ${args.buy} in the shop`);
   await page.getByRole("button", { name: "Shop" }).click();
-  await page.getByRole("button").filter({ hasText: thing.name }).first().click();
+  // The Ur-Potato isn't a shop row and its button doesn't carry its name — the
+  // sheet is given over to it, and the only thing to press says "Take it".
+  const row =
+    args.buy === solo.CONVERGENCE_UPGRADE
+      ? page.getByRole("button", { name: "Take it" })
+      : page.getByRole("button").filter({ hasText: thing.name }).first();
+  await row.click();
   // The Convergence takes the sheet away itself, and it eats the click that
   // would close one that's still open.
   const close = page.getByRole("button", { name: "Close" });
