@@ -3085,10 +3085,30 @@ export class FarmScene {
 
     // The sky tiers, above everything on the ground — and each of them doing
     // its own job to the field below rather than sliding past it.
+    //
+    // How much sky there is to do it in: the top of the frame down to where the
+    // far ridge crests, which is as low as anything up here should get before
+    // it's flying in front of the hills instead of above them. Floored, because
+    // a squat landscape sky has no room at all and everything in it has always
+    // just flown a bit low in that case.
+    const ridge = RIDGES[0]!;
+    const deck = Math.max(
+      34,
+      Math.round(horizon - Math.min(1, horizon / RIDGE_ROOM) * (ridge.base + ridge.amp)),
+    );
+    // And how it's shared out. Three tiers were drawing from one range of
+    // altitudes, which is three tiers taking turns being in front of each other.
+    // Now it's stacked by how long an overlap would last: the singularities hang
+    // and never move, so they get the top and everything passes underneath them;
+    // the greenhouses cross, so they get the middle; the seeders dash, hold and
+    // drip, so they get the bottom, nearest the rows they're seeding.
+    const hangDeck = Math.round(deck * 0.44);
+
     this.stepFlyers(
       shownCount(this.view.working.seeder ?? 0, PLACEMENT.seeder.cap, PLACEMENT.seeder.spread),
       artCanvas(this.mark("seeder")),
       t,
+      deck,
     );
 
     for (const id of ["orbital", "singularity"] as const) {
@@ -3096,21 +3116,35 @@ export class FarmScene {
       const n = shownCount(this.view.working[id] ?? 0, place.cap, place.spread);
       const sprite = artCanvas(this.mark(id));
       for (let i = 0; i < n; i++) {
-        // Same problem the machines had: one shared speed and evenly dealt
-        // starting positions is a formation, not traffic. Everything up here
-        // gets its own pace, its own start, its own altitude and its own slow
-        // wander off a hash, so no two of them ever line up for long.
+        // Everything up here gets its own pace, its own altitude and its own
+        // slow wander off a hash, so it doesn't fly in formation — but *only*
+        // off a hash meant nothing kept two of them apart, and a hash that deals
+        // two greenhouses the same corner and near enough the same speed parks
+        // them on top of each other for a minute at a time. So the hash is the
+        // variation now and the spacing is dealt: each index owns a share of the
+        // sky, and the hash moves it around inside its share.
         const h = fract(Math.sin((i + 1) * 47.3 + id.length * 13.1) * 4375.85);
         const h2 = fract(h * 137.7);
         const h3 = fract(h2 * 91.3);
+        // Off `cap` rather than `n`, so buying the fourth greenhouse doesn't
+        // shuffle the three already up there.
+        const share = i / place.cap;
         if (place.speed) {
           const span = SCENE_W + sprite.w;
-          const pace = place.speed * (0.68 + 0.7 * h);
-          const x = Math.floor((((t * pace + h2 * span) % span) + span) % span) - sprite.w;
-          // Its own lane, plus a slow rise and fall across it — they drift
-          // through each other's altitude rather than flying in a stack.
-          const lane = 3 + Math.round(h3 * 26);
-          const y = lane + Math.round(Math.sin(t * (0.25 + h2 * 0.4) + h * 9) * 4);
+          // A tenth either side of the tier's speed. Wide enough that they pull
+          // apart and drift back together over a couple of minutes, narrow
+          // enough that a lap doesn't close the quarter-screen gap they start
+          // with — the old spread was two to one, which caught the one in front
+          // up inside a single crossing.
+          const pace = place.speed * (0.9 + 0.2 * h);
+          const start = (share + h2 * 0.12) * span;
+          const x = Math.floor((((t * pace + start) % span) + span) % span) - sprite.w;
+          // Its own lane in the middle deck, plus a slow rise and fall across
+          // it — they drift through each other's altitude rather than flying in
+          // a stack, without ever climbing into what's hanging above them.
+          const room = Math.max(0, deck - sprite.h - 3 - hangDeck);
+          const lane = hangDeck + Math.round(h3 * room);
+          const y = lane + Math.round(Math.sin(t * (0.25 + h2 * 0.4) + h * 9) * 3);
           this.primeGlow(id, x, y, sprite.w, sprite.h, t, i);
           ctx.drawImage(sprite.canvas, x, y);
 
@@ -3122,10 +3156,23 @@ export class FarmScene {
           // what it makes goes into the same pipeline as everything else the
           // industrial half of the farm produces — it just doesn't need a shed
           // to do it from.
+          //
+          // Which is exactly why it can't be placed by hash: a greenhouse that
+          // overlaps another one has passed it by the time you look up, and two
+          // of these hanging in the same spot are still hanging in the same spot
+          // ten minutes later. So each one owns a column — `cap` even lots
+          // across the width — and wanders inside it.
+          //
           // It hangs, but it doesn't hang still: a slow lissajous a few pixels
           // wide, on its own phase, so two of them never breathe together.
-          const x = 14 + Math.round(h * 120) + Math.round(Math.sin(t * 0.31 + h2 * 6) * 4);
-          const y = 8 + Math.round(h2 * 26) + Math.round(Math.sin(t * 0.43 + h3 * 6) * 3);
+          const lot = SCENE_W / place.cap;
+          const home = share * SCENE_W + (lot - sprite.w) / 2;
+          const x = Math.round(home + Math.sin(t * 0.31 + h2 * 6) * 5);
+          // The top deck, above the traffic, and staggered off the hash by what
+          // room is left so three of them aren't a row of portals at one exact
+          // altitude.
+          const room = Math.max(0, hangDeck - sprite.h - 2);
+          const y = 1 + Math.round(h2 * room) + Math.round(Math.sin(t * 0.43 + h3 * 6) * 2);
           this.drawPulse(x + sprite.w / 2, y + sprite.h / 2, t + i);
           this.primeGlow(id, x, y, sprite.w, sprite.h, t, i);
           ctx.drawImage(sprite.canvas, x, y);
@@ -3161,9 +3208,17 @@ export class FarmScene {
    * somewhere on purpose rather than a cloud being blown about: it leans on,
    * runs, and settles.
    */
-  private stepFlyers(n: number, sprite: { w: number; h: number; canvas: CanvasImageSource }, t: number): void {
+  private stepFlyers(
+    n: number,
+    sprite: { w: number; h: number; canvas: CanvasImageSource },
+    t: number,
+    deck: number,
+  ): void {
     const ctx = this.ctx;
-    while (this.flyers.length < n) this.flyers.push(this.newFlyer(sprite.w));
+    // The bottom of the sky, and the bottom of what a seeder is allowed to
+    // climb to: they work the rows, so they belong under the traffic.
+    const band = { top: Math.round(deck * 0.5), bottom: Math.max(2, deck - sprite.h) };
+    while (this.flyers.length < n) this.flyers.push(this.newFlyer(sprite.w, band));
     if (this.flyers.length > n) this.flyers.length = Math.max(0, n);
 
     for (const [i, f] of this.flyers.entries()) {
@@ -3176,7 +3231,7 @@ export class FarmScene {
           f.drip = 0.22 + Math.random() * 0.16;
           if (this.seeds.length < 24) this.dropSeedNear(f.x + sprite.w / 2, f.y + sprite.h);
         }
-        if (f.hold <= 0) this.aimFlyer(f, sprite.w);
+        if (f.hold <= 0) this.aimFlyer(f, sprite.w, band);
       } else {
         f.t += this.dt;
         const p = Math.min(1, f.t / f.dur);
@@ -3197,22 +3252,38 @@ export class FarmScene {
     }
   }
 
-  private newFlyer(w: number): Flyer {
+  private newFlyer(w: number, band: { top: number; bottom: number }): Flyer {
     const x = Math.random() * (SCENE_W - w);
-    const y = 3 + Math.random() * 24;
+    const y = band.top + Math.random() * Math.max(0, band.bottom - band.top);
     const f: Flyer = { x, y, x0: x, y0: y, tx: x, ty: y, t: 0, dur: 1, hold: 0, drip: 0 };
-    this.aimFlyer(f, w);
+    this.aimFlyer(f, w, band);
     return f;
   }
 
-  /** Send a seeder somewhere worth going: over the patch that needs it most. */
-  private aimFlyer(f: Flyer, w: number): void {
+  /**
+   * Send a seeder somewhere worth going: over the patch that needs it most, and
+   * not over one another seeder is already working.
+   *
+   * The neediest bed is the neediest bed for all five of them at once, so aiming
+   * on need alone sent the whole fleet to the same corner and left them hovering
+   * there in a heap. Picking the neediest of a handful of *candidates that
+   * nothing else is sitting on* keeps them working the field they're supposed to
+   * be working, spread across it.
+   */
+  private aimFlyer(f: Flyer, w: number, band: { top: number; bottom: number }): void {
     let tx = Math.random() * (SCENE_W - w);
     if (this.beds.length > 0) {
+      const taken = this.flyers.filter((o) => o !== f).map((o) => o.tx);
+      /** Ripest wins, but anything under another seeder is worth much less. */
+      const worth = (i: number) => {
+        const x = clamp((this.beds[i]?.x ?? 0) - w / 2, 0, SCENE_W - w);
+        const crowded = taken.some((o) => Math.abs(o - x) < w + 6);
+        return (this.planted[i] ?? 0) - (crowded ? 1e6 : 0);
+      };
       let pick = Math.floor(Math.random() * this.beds.length);
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 7; i++) {
         const other = Math.floor(Math.random() * this.beds.length);
-        if ((this.planted[other] ?? 0) > (this.planted[pick] ?? 0)) pick = other;
+        if (worth(other) > worth(pick)) pick = other;
       }
       tx = clamp((this.beds[pick]?.x ?? tx) - w / 2, 0, SCENE_W - w);
     }
@@ -3223,7 +3294,7 @@ export class FarmScene {
     // to be a climb or a dive. Taken off where it already is rather than off
     // the whole band, so the move is relative to the machine that's making it
     // instead of a fresh draw from the whole sky every time.
-    f.ty = clamp(f.y + (Math.random() - 0.5) * 34, 2, 28);
+    f.ty = clamp(f.y + (Math.random() - 0.5) * 34, band.top, band.bottom);
     f.t = 0;
     f.hold = 0;
     f.dur = Math.max(1, Math.hypot(f.tx - f.x, f.ty - f.y) / FLY_SPEED);

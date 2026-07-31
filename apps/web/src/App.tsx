@@ -103,9 +103,8 @@ function Home({ onGo }: { onGo: (screen: Screen) => void }) {
  */
 type FarmSheet = "shop" | "weather" | "seeds" | "books";
 
-/** Both of the one-sentence hints. Each is worth showing once, ever. */
+/** The one-sentence hint, which is worth showing once, ever. */
 const TAUGHT_KEY = "potatoes-inc:taught-tap";
-const OMEN_KEY = "potatoes-inc:told-omen";
 
 /** A blocked localStorage reports everything as already seen. Harmless. */
 function wasSeen(key: string): boolean {
@@ -136,6 +135,18 @@ function markSeen(key: string): void {
  * on a horizon that's moved.
  */
 const OMEN_MS = 4600;
+
+/**
+ * And the same thing for every Singularity after the first of a run.
+ *
+ * Ten of them stand between the first one and the Ur-Potato, and ten blackouts
+ * with a held sentence in them would turn the best stretch of the ladder into a
+ * cutscene you tap through. So the repeats keep the cut and drop everything that
+ * made it long: one dark pull across the screen and back, no text, over whatever
+ * you were doing. It reads as the sky answering the purchase, which is the part
+ * worth having every time.
+ */
+const OMEN_FLASH_MS = 1200;
 
 /**
  * Everything that isn't the farm: the parked head-to-head prototype and the
@@ -216,28 +227,33 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
   // and nothing on the screen said so — the ceiling has begun bleeding through
   // the sky by now, but a player who hasn't seen the fold before has no reason
   // to read that as a promise rather than as a sunset.
-  const [omen, setOmen] = useState<"unseen" | "showing" | "done">(() =>
-    wasSeen(OMEN_KEY) ? "done" : "unseen",
-  );
-  const looming = solo.convergenceProgress(farm);
+  //
+  // Hung off the count going up rather than off a threshold or a once-ever flag,
+  // so it's an answer to a purchase: the first of a run gets the whole cut, and
+  // every one after it gets the short version. `n` restarts the animation when
+  // two land close together — same element, so without it the second is silent.
+  const [omen, setOmen] = useState<{ kind: "full" | "flash"; n: number } | null>(null);
+  const omenId = useRef(0);
+  const singularities = farm.producers.singularity ?? 0;
+  // Seeded from the first render, so opening a save that already has a sky full
+  // of them is not eleven purchases' worth of news.
+  const hadSingularities = useRef(singularities);
   useEffect(() => {
-    // If the fold lands while it's still up, it goes immediately: "keep going"
-    // is a strange thing to be told about something that has just happened.
-    if (farm.converged) {
-      markSeen(OMEN_KEY);
-      setOmen((was) => (was === "done" ? was : "done"));
-      return;
-    }
-    if (omen !== "unseen" || looming <= 0) return;
-    setOmen("showing");
-    markSeen(OMEN_KEY);
-    // The purchase that triggers this happens in the shop, and the point of the
-    // omen is the sky. Take the sheet away under the blackout so the lights come
-    // up on the farm rather than on the row of buttons you were just reading.
-    setSheet(null);
-    const id = setTimeout(() => setOmen("done"), OMEN_MS);
+    const had = hadSingularities.current;
+    hadSingularities.current = singularities;
+    // Prestige takes them all away again, and that isn't an omen.
+    if (singularities <= had) return;
+    const full = had === 0;
+    setOmen({ kind: full ? "full" : "flash", n: omenId.current++ });
+    // The purchase happens in the shop, and the point of the omen is the sky.
+    // The full cut takes the sheet away so the lights come up on the farm rather
+    // than on the row of buttons you were just reading. The flash doesn't: by
+    // then you're buying ten of these, and a shop that shuts itself every time
+    // is a shop you have to reopen ten times.
+    if (full) setSheet(null);
+    const id = setTimeout(() => setOmen(null), full ? OMEN_MS : OMEN_FLASH_MS);
     return () => clearTimeout(id);
-  }, [omen, looming, farm.converged]);
+  }, [singularities]);
 
   const perDig = solo.clickYield(farm);
   const rate = solo.currentRate(farm);
@@ -283,7 +299,7 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
     setTimeout(() => setPops((p) => p.filter((x) => x.id !== id)), 700);
   }, [dig, farm]);
 
-  useSpaceToDig(onDig, report === null && sheet === null && omen !== "showing");
+  useSpaceToDig(onDig, report === null && sheet === null && omen === null);
 
   const soilPct = Math.round(farm.soil * 100);
 
@@ -425,16 +441,27 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
 
       {report && <AwayReport report={report} onDismiss={dismissReport} />}
 
-      {/* The first Tuber Singularity, and the only time the game takes the
-          screen off you. Everything goes out, one sentence and one instruction
-          arrive in the dark, and the farm fades back up underneath them.
-          Deliberately says nothing about what's coming — the punchline has to
-          land on a button the player chose to press, not on a label that gave it
-          away. It eats taps for its four seconds, which is the point. */}
-      {omen === "showing" && (
-        <div className="omen-veil" role="presentation">
-          <p className="omen-line">The horizon isn't where you left it</p>
-          <p className="omen-call">Keep going</p>
+      {/* The first Tuber Singularity of a run, and the only time the game takes
+          the screen off you. Everything goes out, one sentence and one
+          instruction arrive in the dark, and the farm fades back up underneath
+          them. Deliberately says nothing about what's coming — the punchline has
+          to land on a button the player chose to press, not on a label that gave
+          it away. It eats taps for its four seconds, which is the point.
+
+          Every Singularity after that gets the same dark pull with none of the
+          words, over whatever's on screen. */}
+      {omen && (
+        <div
+          key={omen.n}
+          className={omen.kind === "full" ? "omen-veil" : "omen-veil flash"}
+          role="presentation"
+        >
+          {omen.kind === "full" && (
+            <>
+              <p className="omen-line">The horizon isn't where you left it</p>
+              <p className="omen-call">Keep going</p>
+            </>
+          )}
         </div>
       )}
     </div>

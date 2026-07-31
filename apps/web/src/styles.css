@@ -407,6 +407,16 @@ input {
   background: #06040a;
   animation: omen-veil 4600ms ease both;
 }
+/* Every Singularity after the first of a run. Same darkness, a fifth of the
+   time, and lit from the middle in the colour of the thing you just bought so
+   it reads as the sky answering rather than as a frame that dropped.
+   Tracks `OMEN_FLASH_MS`. */
+.omen-veil.flash {
+  background:
+    radial-gradient(circle at 50% 46%, rgba(122, 90, 192, 0.5), rgba(6, 4, 10, 0) 55%),
+    #06040a;
+  animation: omen-flash 1200ms ease both;
+}
 .omen-line {
   margin: 0;
   /* Two even lines rather than four words and an orphaned "it". The max-width
@@ -443,6 +453,20 @@ input {
      is the reveal, so it takes its time. */
   13%,
   76% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes omen-flash {
+  0% {
+    opacity: 0;
+  }
+  /* Snaps on in 250ms, holds just long enough to register as dark, then takes
+     twice as long to let go — the same shape as the long one, in a fifth of it. */
+  21%,
+  42% {
     opacity: 1;
   }
   100% {
