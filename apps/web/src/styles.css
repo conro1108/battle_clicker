@@ -359,7 +359,8 @@ input {
 }
 
 /* One sentence over the farm, until the first dig retires it for good. */
-.tap-hint {
+.tap-hint,
+.omen-hint {
   position: absolute;
   left: 0;
   right: 0;
@@ -376,6 +377,29 @@ input {
   text-shadow: 0 2px 0 rgba(40, 26, 16, 0.65);
   animation: hint-breathe 2s ease-in-out infinite;
 }
+/* The same sentence, moved up over the sky — because the sky is what it's
+   about, and by the time this shows the sky has started going the wrong
+   colour. Slower breath than the tap hint: this one is ominous, not helpful. */
+.omen-hint {
+  top: 7%;
+  color: #fff3dd;
+  /* A halo as well as a drop shadow. The tap hint only ever sits on grass; this
+     one sits on whatever the sky happens to be, which at this point in a run is
+     somewhere between midday blue and the colour of the inside of a potato. */
+  text-shadow:
+    0 0 7px rgba(28, 16, 10, 0.95),
+    0 0 3px rgba(28, 16, 10, 0.9),
+    0 2px 0 rgba(40, 26, 16, 0.8);
+  animation: hint-breathe 3.4s ease-in-out infinite;
+}
+.omen-hint span {
+  display: block;
+  margin-top: 5px;
+  font-size: 0.92em;
+  letter-spacing: 0.16em;
+  color: #ffcf90;
+}
+
 @keyframes hint-breathe {
   0%,
   100% {

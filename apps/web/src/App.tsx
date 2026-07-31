@@ -103,16 +103,29 @@ function Home({ onGo }: { onGo: (screen: Screen) => void }) {
  */
 type FarmSheet = "shop" | "weather" | "seeds" | "books";
 
-/** How often the tap hint is worth showing: once, ever. */
+/** Both of the one-sentence hints. Each is worth showing once, ever. */
 const TAUGHT_KEY = "potatoes-inc:taught-tap";
+const OMEN_KEY = "potatoes-inc:told-omen";
 
-function wasTaught(): boolean {
+/** A blocked localStorage reports everything as already seen. Harmless. */
+function wasSeen(key: string): boolean {
   try {
-    return localStorage.getItem(TAUGHT_KEY) === "1";
+    return localStorage.getItem(key) === "1";
   } catch {
     return true;
   }
 }
+
+function markSeen(key: string): void {
+  try {
+    localStorage.setItem(key, "1");
+  } catch {
+    // A blocked localStorage just means the hint comes back. Harmless.
+  }
+}
+
+/** How long the omen stays up. Long enough to read twice, then gone for good. */
+const OMEN_MS = 14_000;
 
 /**
  * Everything that isn't the farm: the parked head-to-head prototype and the
@@ -187,7 +200,30 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
   const sceneRef = useRef<FarmSceneHandle>(null);
   const [pops, setPops] = useState<{ id: number; text: string }[]>([]);
   const popId = useRef(0);
-  const [taught, setTaught] = useState(wasTaught);
+  const [taught, setTaught] = useState(() => wasSeen(TAUGHT_KEY));
+  // The only nudge in the game. The first Tuber Singularity is where the run
+  // stops being "buy the next rung" and starts being a climb toward something,
+  // and nothing on the screen said so — the ceiling has begun bleeding through
+  // the sky by now, but a player who hasn't seen the fold before has no reason
+  // to read that as a promise rather than as a sunset.
+  const [omen, setOmen] = useState<"unseen" | "showing" | "done">(() =>
+    wasSeen(OMEN_KEY) ? "done" : "unseen",
+  );
+  const looming = solo.convergenceProgress(farm);
+  useEffect(() => {
+    // If the fold lands while it's still up, it goes immediately: "keep going"
+    // is a strange thing to be told about something that has just happened.
+    if (farm.converged) {
+      markSeen(OMEN_KEY);
+      setOmen((was) => (was === "done" ? was : "done"));
+      return;
+    }
+    if (omen !== "unseen" || looming <= 0) return;
+    setOmen("showing");
+    markSeen(OMEN_KEY);
+    const id = setTimeout(() => setOmen("done"), OMEN_MS);
+    return () => clearTimeout(id);
+  }, [omen, looming, farm.converged]);
 
   const perDig = solo.clickYield(farm);
   const rate = solo.currentRate(farm);
@@ -225,11 +261,7 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
     sceneRef.current?.dig(at);
     setTaught((was) => {
       if (was) return was;
-      try {
-        localStorage.setItem(TAUGHT_KEY, "1");
-      } catch {
-        // A blocked localStorage just means the hint comes back. Harmless.
-      }
+      markSeen(TAUGHT_KEY);
       return true;
     });
     const id = popId.current++;
@@ -271,6 +303,15 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
         {/* The whole scene digs, which is not something a farm looks like it
             does. One sentence, once, and then never again. */}
         {!taught && <p className="tap-hint">Tap the farm to dig</p>}
+        {/* Up at the top, over the thing it's about. Deliberately says nothing
+            about what's coming — the punchline has to land on a button the
+            player chose to press, not on a label that gave it away. */}
+        {omen === "showing" && (
+          <p className="omen-hint">
+            The horizon isn't where you left it
+            <span>Keep going</span>
+          </p>
+        )}
       </FarmScene>
 
       {/* The button is no longer the way you dig — the scene is. What's left is

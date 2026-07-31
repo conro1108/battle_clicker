@@ -86,6 +86,7 @@ export const FarmScene = forwardRef<FarmSceneHandle, {
       hoard,
       seed: farm.seed,
       converged: farm.converged,
+      looming: solo.convergenceProgress(farm),
       generation: farm.generation,
     };
   }, [farm, hoard]);

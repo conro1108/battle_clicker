@@ -41,6 +41,10 @@ export const MAX_DIGS_PER_FLUSH = 25;
 /** The purchase that folds the horizon. See `converged` on `FarmState`. */
 export const CONVERGENCE_UPGRADE = "ur_potato";
 
+/** The rung that gates it, and so the first sign that anything is coming. */
+export const CONVERGENCE_GATE_PRODUCER: SoloProducerId =
+  SOLO_UPGRADE_BY_ID[CONVERGENCE_UPGRADE]!.requires!.producer;
+
 /**
  * Ceiling on how many weather events one `advance` will resolve. A year-long
  * absence shouldn't spin for a hundred thousand iterations; past this the
@@ -213,11 +217,18 @@ export function applyFarmCommand(f0: FarmState, cmd: FarmCommand, now: Millis): 
       if (!isProducerAvailable(farm, producer.id)) return fail("There's nowhere to put it yet.");
       const qty = Math.max(1, Math.floor(cmd.qty));
       const cost = producerCost(farm, producer.id, qty);
+      const had = farm.producers[producer.id] ?? 0;
       if (!spend(cost)) return fail("Not enough potatoes.");
       farm = {
         ...farm,
-        producers: { ...farm.producers, [producer.id]: (farm.producers[producer.id] ?? 0) + qty },
+        producers: { ...farm.producers, [producer.id]: had + qty },
       };
+      // The one purchase in the game that's the start of something rather than
+      // more of the same. Buying a rung is otherwise silent, and it should stay
+      // that way — this is the exception because nothing else told you.
+      if (had === 0 && producer.id === CONVERGENCE_GATE_PRODUCER) {
+        note("the first Tuber Singularity is running. the horizon looks wrong.", "neutral");
+      }
       break;
     }
 
@@ -362,6 +373,27 @@ export function mustApplyFarm(f: FarmState, cmd: FarmCommand, now: Millis): Farm
   const res = applyFarmCommand(f, cmd, now);
   if (!res.ok) throw new Error(`command rejected: ${res.reason}`);
   return res.farm;
+}
+
+/**
+ * How close the horizon is to closing, 0..1, off whatever gates the Ur-Potato.
+ *
+ * The Convergence is the only thing in the game you can't be told about in
+ * advance without spoiling it, and it was also the only thing with no build-up
+ * at all: you bought a Tuber Singularity, nothing acknowledged it, and nine
+ * purchases later the world folded. This is what the scene leans on to start
+ * showing its hand — the ceiling bleeding through the sky well before it lands —
+ * so the fold reads as arriving rather than as happening to you.
+ *
+ * Stays at 1 once folded, because the sky is still drawn underneath the sweep
+ * for the three seconds it takes to come down and it shouldn't snap back to
+ * blue on the frame you press the button.
+ */
+export function convergenceProgress(f: FarmState): number {
+  if (f.converged) return 1;
+  const gate = SOLO_UPGRADE_BY_ID[CONVERGENCE_UPGRADE]?.requires;
+  if (!gate || gate.count <= 0) return 0;
+  return Math.min(1, (f.producers[gate.producer] ?? 0) / gate.count);
 }
 
 /** What a prestige right now would pay. Zero means it isn't worth doing yet. */

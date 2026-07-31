@@ -56,6 +56,14 @@ const FOLD_MS = 3400;
 /** The shared outline ink, for the bits of the scene drawn as rects not art. */
 const INK = "#402e3a";
 
+/**
+ * The flesh, at its two extremes. Shared with the sky, because what stains the
+ * sky before the fold has to be the exact thing that replaces it — a warm wash
+ * in some other ochre would just read as a sunset.
+ */
+const FLESH_LIT = "#ecd9a6";
+const FLESH_DEEP = "#7d5330";
+
 const GRASS = "#6aa348";
 const GRASS_DARK = "#5b8f3d";
 const DIRT = "#8a5f3f";
@@ -85,6 +93,12 @@ export interface FarmView {
    */
   converged: boolean;
   /**
+   * How close the horizon is to closing, 0..1. The ceiling starts bleeding
+   * through the sky from the first Tuber Singularity, so the fold arrives
+   * rather than happening to you.
+   */
+  looming: number;
+  /**
    * How many farms you've handed down. The Chorus is the only thing on the
    * canvas that knows about the meta-layer, and it's the reason the meta-layer
    * is visible in the picture at all.
@@ -100,6 +114,7 @@ export const EMPTY_VIEW: FarmView = {
   hoard: 0,
   seed: "0",
   converged: false,
+  looming: 0,
   generation: 1,
 };
 
@@ -159,6 +174,12 @@ function mix(a: string, b: string, k: number): string {
   return `#${out.join("")}`;
 }
 
+/** `#rrggbb` at an alpha, for the one place that needs a translucent stop. */
+function rgba(hex: string, alpha: number): string {
+  const c = [0, 1, 2].map((i) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16));
+  return `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${alpha})`;
+}
+
 function mulberry32(seed: number): () => number {
   let a = seed;
   return () => {
@@ -175,23 +196,38 @@ function mulberry32(seed: number): () => number {
 
 /**
  * The working heap: a mound, front-left, where every potato the farm sends
- * down lands. Eight wide at the base, each course half a potato in from the one
- * below, and the potatoes overlapping by two pixels — a heap of anything
- * touches itself, and spaced out on a grid it reads as a row of items instead.
+ * down lands. Each course sits half a potato in from the one below, and the
+ * potatoes overlap by two pixels — a heap of anything touches itself, and
+ * spaced out on a grid it reads as a row of items instead.
+ *
+ * **It runs off the bottom-left corner on purpose.** The base course starts
+ * well left of the canvas and the whole pile sits low enough to touch the
+ * bottom edge, so what you can see is the upper-right shoulder of something
+ * larger — the yard's job is to be recognised, not counted, and a mound that
+ * ends neatly inside the frame is a mound you can take the measure of. Ten
+ * courses off an eleven-wide base rather than a full pyramid: the extra width
+ * is all spill, and the crown stays at the height it always was so nothing
+ * standing behind it gets swallowed.
  *
  * Slots fill center-out *and* upward at the same time, weighted so a course
  * starts before the one below it is finished. Filling a whole course first laid
  * a flat line of potatoes along the yard and only stacked once it ran out of
  * room, which is the one shape a dumped pile never has: three potatoes were a
- * row, and a dozen were a fence.
+ * row, and a dozen were a fence. That weighting is also what keeps the first
+ * potato of a brand-new farm on screen — it goes to the middle of the base,
+ * which is well clear of the corner the ends run out of.
  */
-const HEAP_BASE = 8;
-const HEAP_X = 6;
+const HEAP_BASE = 11;
+const HEAP_COURSES = 10;
+const HEAP_X = -16;
 const HEAP_STEP = 5;
-export const HEAP_CAP = (HEAP_BASE * (HEAP_BASE + 1)) / 2;
+export const HEAP_CAP = ((HEAP_BASE + (HEAP_BASE - HEAP_COURSES + 1)) * HEAP_COURSES) / 2;
 
 /** How eagerly the pile climbs. Higher stacks sooner; 0 is a flat row. */
 const HEAP_CLIMB = 1.15;
+
+/** How far below the yard's front station the base course sits. */
+const HEAP_SPILL = 4;
 
 let heapCache: { x: number; y: number }[] | null = null;
 
@@ -199,7 +235,7 @@ function heapSlots(): { x: number; y: number }[] {
   if (!heapCache) {
     const h = artCanvas(POTATO_SPRITE).h;
     const slots: { x: number; y: number; key: number }[] = [];
-    for (let course = 0; course < HEAP_BASE; course++) {
+    for (let course = 0; course < HEAP_COURSES; course++) {
       const n = HEAP_BASE - course;
       for (let i = 0; i < n; i++) {
         slots.push({
@@ -217,6 +253,10 @@ function heapSlots(): { x: number; y: number }[] {
 
 /** How wide the mound gets at the base, for anything that has to clear it. */
 const HEAP_W = HEAP_X + (HEAP_BASE - 1) * HEAP_STEP + 7;
+
+/** Where the crown of a full pile sits, relative to the base course's feet. */
+const HEAP_CROWN_X = HEAP_X + Math.round((HEAP_COURSES - 1) * (HEAP_STEP / 2));
+const HEAP_CROWN_UP = 3 * (HEAP_COURSES - 1);
 
 /**
  * The yard doesn't count your potatoes. It shows what you've built with them.
@@ -1278,6 +1318,54 @@ export class FarmScene {
         ctx.globalAlpha = 1;
       }
     }
+
+    this.drawBleed(horizon, t);
+  }
+
+  /**
+   * The ceiling, showing through early.
+   *
+   * From the first Tuber Singularity the top of the sky starts taking on the
+   * colour of the flesh, deepening with every one you buy until the Ur-Potato
+   * is affordable and it's unmistakable. It's over the clouds and the sun
+   * rather than under them, because it isn't weather — it's the far side of
+   * something, and the things in front of it should be stained by it too.
+   *
+   * This is the only build-up the fold gets. Without it you buy a rung, nothing
+   * acknowledges it, and nine purchases later the world folds with no warning
+   * that it was ever going to.
+   */
+  private drawBleed(horizon: number, t: number): void {
+    const looming = clamp(this.view.looming, 0, 1);
+    if (looming <= 0) return;
+    const ctx = this.ctx;
+    // A slow breath on top of the level, so it reads as something alive on the
+    // other side rather than as a filter someone left on.
+    const pulse = 0.88 + 0.12 * Math.sin(t * 0.42);
+    // Front-loaded rather than linear, let alone squared. The whole point is
+    // that the *first* Tuber Singularity changes something you can see — on a
+    // curve that only gets going in the back half, one of them is a tenth of
+    // the way to a wash nobody would notice, which is the same as nothing.
+    const strength = Math.pow(looming, 0.55) * pulse;
+
+    const grad = ctx.createLinearGradient(0, 0, 0, horizon);
+    grad.addColorStop(0, rgba(FLESH_LIT, 0.62 * strength));
+    grad.addColorStop(0.5, rgba(FLESH_DEEP, 0.2 * strength));
+    grad.addColorStop(1, rgba(FLESH_DEEP, 0));
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, SCENE_W, horizon);
+
+    // And once it's close, the first hint of the vascular ring — the one piece
+    // of structure the ceiling has, arriving before the ceiling does.
+    if (looming > 0.55) {
+      ctx.globalAlpha = 0.16 * (looming - 0.55) / 0.45;
+      ctx.fillStyle = FLESH_DEEP;
+      const base = Math.round(horizon * 0.3);
+      for (let x = 0; x < SCENE_W; x++) {
+        ctx.fillRect(x, base + Math.round(2.5 * Math.sin(x / 23) + 1.5 * Math.sin(x / 7 + 2)), 1, 1);
+      }
+      ctx.globalAlpha = 1;
+    }
   }
 
   /**
@@ -1303,8 +1391,8 @@ export class FarmScene {
     // Tired soil drags the flesh too. The land going grey is supposed to be the
     // whole world going grey, not just the floor of it.
     const dry = 1 - clamp(this.view.soil, 0, 1);
-    const lit = mix("#ecd9a6", "#a09c78", dry * 0.6);
-    const deep = mix("#7d5330", "#544f3c", dry * 0.6);
+    const lit = mix(FLESH_LIT, "#a09c78", dry * 0.6);
+    const deep = mix(FLESH_DEEP, "#544f3c", dry * 0.6);
 
     // The three beats. A pause on the old sky first — the fold shouldn't start
     // on the same frame as the click, or nobody connects the two — then the
@@ -1651,8 +1739,10 @@ export class FarmScene {
 
     // The apron: the patch in front of the mound is walked over all day and
     // has everything on the farm tipped onto it, so it's bare and paler than
-    // the rest. It also gives the heap somewhere to sit.
-    const foot = this.station(0);
+    // the rest. It also gives the heap somewhere to sit — and like the heap it
+    // runs off the left edge, because the ground under a pile that continues
+    // off the corner has to continue with it.
+    const foot = this.heapFoot();
     ctx.fillStyle = "#9a6c48";
     ctx.fillRect(HEAP_X - 5, foot - 3, HEAP_W - HEAP_X + 10, 6);
     ctx.fillRect(HEAP_X - 3, foot - 5, HEAP_W - HEAP_X + 6, 10);
@@ -2548,6 +2638,14 @@ export class FarmScene {
   }
 
   /**
+   * The base course's feet — below the front station, so the bottom of the pile
+   * runs into the bottom edge of the buffer rather than stopping short of it.
+   */
+  private heapFoot(): number {
+    return this.station(0) + HEAP_SPILL;
+  }
+
+  /**
    * Crossing a threshold. Going up, the heap gets carried into whatever just
    * arrived and the new thing rises out of the ground behind a cloud of its own
    * dust; going down, it sinks back into the ground it came out of. Either way
@@ -2706,10 +2804,12 @@ export class FarmScene {
 
     if (this.shown < 1 && this.building.size === 0) {
       // Empty yard, but not an empty frame — a couple of strays in the dirt.
+      // Placed off the crown rather than off the base, which now starts well
+      // off the left edge and would have put both of them out of shot.
       const spud = artCanvas(POTATO_SPRITE);
-      const baseline = this.station(0);
-      ctx.drawImage(spud.canvas, HEAP_X + 4, baseline - spud.h);
-      ctx.drawImage(spud.canvas, HEAP_X + 12, baseline - spud.h + 1);
+      const baseline = this.heapFoot();
+      ctx.drawImage(spud.canvas, HEAP_CROWN_X, baseline - spud.h);
+      ctx.drawImage(spud.canvas, HEAP_CROWN_X + 8, baseline - spud.h + 1);
       return;
     }
 
@@ -2726,7 +2826,7 @@ export class FarmScene {
     }
 
     const spud = artCanvas(POTATO_SPRITE);
-    const baseline = this.station(0);
+    const baseline = this.heapFoot();
     const heap = heapSlots();
     for (let j = 0; j < layout.heap; j++) {
       ctx.drawImage(spud.canvas, heap[j]!.x, baseline + heap[j]!.y);
@@ -2955,13 +3055,15 @@ export class FarmScene {
     const y0 = box.y - 2;
     // Ends over the crown of the mound and stops just above a full one, so
     // it's tipping onto the pile rather than buried in it or pointing at the
-    // dirt beside it. It leans back the other way from the pipeline's outfall,
-    // so the yard's two arrivals aren't the same line drawn twice.
+    // dirt beside it. Both ends are taken off the heap's own geometry now that
+    // its base runs off the corner — the crown is the only part of it that's
+    // reliably on screen. It leans back the other way from the pipeline's
+    // outfall, so the yard's two arrivals aren't the same line drawn twice.
     return {
       x0,
       y0,
-      x1: HEAP_X + 20,
-      y1: Math.max(y0 + 16, this.station(0) - 29),
+      x1: HEAP_CROWN_X - 2,
+      y1: Math.max(y0 + 16, this.heapFoot() - HEAP_CROWN_UP - 8),
     };
   }
 
