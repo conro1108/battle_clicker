@@ -1446,8 +1446,13 @@ export class FarmScene {
       const moving = hand.state !== "resting" && hand.state !== "picking";
       // A 1px bob while walking, and a deeper stoop while pulling a bed.
       const bob = moving ? Math.floor(t * 4) % 2 : hand.state === "picking" ? 2 : 0;
-      const x = Math.round(hand.x);
-      const y = Math.round(hand.y) - sprite.h + bob;
+      // Lifted off the ground if one of them comes down in the row they're
+      // working. They keep walking the route they were walking — see `warp` —
+      // so what it looks like is a farmhand being picked up and put back down,
+      // which is the correct response to a hole in the world arriving overhead.
+      const at = this.warp(hand.x + sprite.w / 2, hand.y - sprite.h / 2 + bob);
+      const x = Math.round(at.x - sprite.w / 2);
+      const y = Math.round(at.y - sprite.h / 2);
       // A hand who owns a piece of the place carries a lamp. Sixteen of them
       // walking a dark field is the single best thing the fourth marks do.
       this.primeGlow("hand", x, y, sprite.w, sprite.h, t, i, 0.8);
@@ -1553,16 +1558,15 @@ export class FarmScene {
     const place = PLACEMENT.singularity;
     const n = shownCount(this.view.working.singularity ?? 0, place.cap, place.spread ?? 1);
     const sprite = artCanvas(this.mark("singularity"));
-    const { deck, hang } = this.decks(horizon);
+    const { hang } = this.decks(horizon);
     const lot = SCENE_W / place.cap;
-    // As low as a dive gets: down past the traffic and out over the hills, but
-    // not all the way to the skyline. It's coming down to be among the things it
-    // drags, and a hole that parks itself on the village is both lost against it
-    // and too far from the sky to be pulling on any of it.
-    const floor = Math.min(
-      Math.max(hang, horizon - sprite.h - 6),
-      deck + Math.round((horizon - deck) * 0.3),
-    );
+    // As low as a dive gets: down through the traffic, past the hills and into
+    // the middle of the field itself.
+    //
+    // Stopping it at the skyline made it a weather event happening to the sky.
+    // Down here it's happening to the farm — it comes down among the rows and
+    // the crew, and what it drags is the work.
+    const floor = Math.max(hang, Math.round(horizon + (this.yardTop() - horizon) * 0.5 - sprite.h / 2));
 
     this.wells.length = 0;
     for (let i = 0; i < n; i++) {
@@ -1596,6 +1600,12 @@ export class FarmScene {
         pull: 0.16 + dive * 0.64,
         dive,
       });
+      // What it makes goes into the same pipeline as everything else the
+      // industrial half of the farm produces — it just doesn't need a shed to
+      // do it from. Booked here rather than where it's drawn, because the pipe
+      // is laid out long before the last thing on top of it is painted.
+      this.pipeEnd = Math.max(this.pipeEnd, x + Math.floor(sprite.w / 2));
+      if (this.chance(1.4)) this.feedPipe(x + Math.floor(sprite.w / 2));
     }
   }
 
@@ -1606,6 +1616,13 @@ export class FarmScene {
    * never told, so it stays on whatever route it was flying and springs back as
    * the well leaves. Falls off with the square of the distance, so the edge of
    * the field is a lean and the middle of it is a swallow.
+   *
+   * One rule about what gets to move: anything loose does — clouds, machines,
+   * the crew, dust, seeds in the air. Anything rooted doesn't. The crop stays in
+   * the ground, the rigs stay on their stands and the sheds stay on the hill,
+   * because a farm that comes apart every thirty seconds isn't a farm, and the
+   * point of the thing coming down is what it does to the work going on around
+   * it rather than to the place itself.
    */
   private warp(x: number, y: number): { x: number; y: number } {
     let ox = x;
@@ -1683,6 +1700,9 @@ export class FarmScene {
     this.drawHauls(now);
     this.drawDug(now);
     this.drawBundles(now);
+    // In front of the whole farm, because one of them may be hanging in the
+    // middle of it.
+    this.drawWells(t);
 
     this.drawDark(phase, yardY, t);
   }
@@ -3184,8 +3204,14 @@ export class FarmScene {
         const h = fract(Math.sin((i + 1) * (id === "harvester" ? 63.7 : 21.3)) * 4375.85);
         const pace = place.speed! * (0.78 + 0.44 * fract(h * 7.13));
         const x = Math.floor((((t * pace + h * span) % span) + span) % span) - sprite.w;
-        this.primeGlow(id, x, ground - sprite.h, sprite.w, sprite.h, t, i);
-        ctx.drawImage(sprite.canvas, x, ground - sprite.h);
+        // Where it's drawn, once anything hanging over the field has had its
+        // say. The work it does is off `x` and `ground` regardless: a tractor
+        // being lifted out of the row still ploughs the row.
+        const at = this.warp(x + sprite.w / 2, ground - sprite.h / 2);
+        const mx = Math.round(at.x - sprite.w / 2);
+        const my = Math.round(at.y - sprite.h / 2);
+        this.primeGlow(id, mx, my, sprite.w, sprite.h, t, i);
+        ctx.drawImage(sprite.canvas, mx, my);
         if (this.chance(2.5)) this.puff(x + 1, ground - 2, "dust");
 
         if (id === "tractor") {
@@ -3309,18 +3335,26 @@ export class FarmScene {
       if (cycle < 0.22) this.drawBeam(x + sprite.w / 2, y + sprite.h, t, cycle / 0.22);
     }
 
-    // And the singularities, wherever this frame's dive has left them.
+    this.stepSeeds(t);
+    this.stepTrough(now);
+  }
+
+  /**
+   * The singularities, wherever this frame's dive has left them.
+   *
+   * Drawn last of anything in the world, because a dive takes one down through
+   * the pipeline, the fence and the crew, and every one of those passing in
+   * front of it made it a sticker on the back of the picture. It isn't standing
+   * in the farm — it's a hole between you and the farm, and it should occlude
+   * whatever it comes down over.
+   */
+  private drawWells(t: number): void {
     const hole = artCanvas(this.mark("singularity"));
     for (const [i, well] of this.wells.entries()) {
       this.drawPulse(well.cx, well.cy, t + i, 1 + well.dive * 1.6);
       this.primeGlow("singularity", well.x, well.y, hole.w, hole.h, t, i);
-      ctx.drawImage(hole.canvas, well.x, well.y);
-      this.pipeEnd = Math.max(this.pipeEnd, well.x + Math.floor(hole.w / 2));
-      if (this.chance(1.4)) this.feedPipe(well.x + Math.floor(hole.w / 2));
+      this.ctx.drawImage(hole.canvas, well.x, well.y);
     }
-
-    this.stepSeeds(t);
-    this.stepTrough(now);
   }
 
   /** Furrow behind a tractor: fresh dark soil that grasses back over. */
@@ -3542,7 +3576,9 @@ export class FarmScene {
       p.y += p.vy * dt;
       ctx.globalAlpha = 0.7 * (1 - age / p.dur);
       ctx.fillStyle = p.color;
-      ctx.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
+      // The loosest thing on the ground, so the first thing off it.
+      const at = this.warp(p.x, p.y);
+      ctx.fillRect(Math.round(at.x), Math.round(at.y), p.size, p.size);
       ctx.globalAlpha = 1;
       return true;
     });
