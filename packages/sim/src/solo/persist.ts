@@ -8,7 +8,7 @@
 
 import { P, ms, type Millis, type Potatoes } from "../numbers.js";
 import { MAX_SOIL } from "./content.js";
-import { advance } from "./farm.js";
+import { advance, CONVERGENCE_UPGRADE } from "./farm.js";
 import type { FarmState } from "./state.js";
 import type { WeatherEvent } from "./weather.js";
 
@@ -43,6 +43,8 @@ export function parseFarm(raw: string): FarmState | null {
   const f = save.farm as Partial<FarmState>;
   if (typeof f.seed !== "string" || typeof f.checkpointAt !== "number") return null;
 
+  const upgrades = Array.isArray(f.upgrades) ? f.upgrades : [];
+
   // Fill anything a hand-edited or partial save is missing, so one absent field
   // doesn't produce NaN potatoes forever.
   return {
@@ -53,11 +55,15 @@ export function parseFarm(raw: string): FarmState | null {
     checkpointAt: ms(f.checkpointAt),
     producers: f.producers ?? {},
     broken: f.broken ?? {},
-    upgrades: Array.isArray(f.upgrades) ? f.upgrades : [],
+    upgrades,
     land: f.land ?? {},
     soil: Number.isFinite(f.soil) ? Math.min(MAX_SOIL, f.soil as number) : MAX_SOIL,
     weatherIndex: Math.max(0, Math.floor(f.weatherIndex ?? 0)),
     nextWeatherAt: ms(f.nextWeatherAt ?? f.checkpointAt),
+    // Saves written before the flag existed still know whether the world
+    // folded: they're holding the upgrade that did it. Without this backfill a
+    // farm that had already converged would open with its sky back.
+    converged: f.converged ?? upgrades.includes(CONVERGENCE_UPGRADE),
     seeds: Math.max(0, Math.floor(f.seeds ?? 0)),
     perks: f.perks ?? {},
     lifetimeHarvested: finite(f.lifetimeHarvested),

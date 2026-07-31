@@ -6,9 +6,11 @@ something is always working against you.
 The app opens onto your farm. There are two modes; the second one lives behind
 the House door in the bottom nav, along with the dev tooling:
 
-- **Your farm** — the persistent single-player homestead. Twelve tiers, forty
+- **Your farm** — the persistent single-player homestead. Sixteen tiers, fifty
   upgrades, a prestige loop, and weather that damages your land permanently
-  whether or not the tab is open. This is where development is going.
+  whether or not the tab is open. Four of those tiers and the last of that
+  weather only exist after the Convergence, which is below. This is where
+  development is going.
 - **Versus a bot** — the original head-to-head prototype from
   [VISION.md](VISION.md), where the thing working against you is another player
   spending their own potatoes to do it. Still playable, parked in the house.
@@ -81,10 +83,48 @@ levelled and permanent, stack with diminishing returns, and never reach zero
 exposure. They're worth roughly 3x the harvest of never building them — the
 difference between weather as a 6% running cost and weather as a 65% one.
 
+**The Convergence** fires when you buy The Ur-Potato. The horizon closes: the
+sky band stops being sky and becomes the inside of the tuber, and four more
+rungs arrive that farm the parts of it you're now standing in. It's permanent
+rather than per-run — a flag that survives prestige, because the point is that
+it happens to you once.
+
+Its mechanical payoff is the weather, not a multiplier. Inside the potato
+there's no sky, so hail and frost and drought stop and the tuber's immune
+response takes over: same three effect kinds, soil-heavier mix, two more
+buildings to hold it off. That gives the second axis a second act at the same
+moment the ladder gets one.
+
+**It has to be reachable in a single dedicated run**, on a first save, with no
+prestige and no seeds — that's a decision, not an observation, and
+`solo.test.ts` pins it. Every check-in cadence clears it inside a week from
+nothing, measured by playing sessions and jumping the clock between them so
+nobody repairs anything in the gaps:
+
+| Cadence | Active play | First singularity | Convergence | Full ladder |
+|---|---|---|---|---|
+| heavy | 4 × 30 min/day | day 2.0 | **day 3.3** | day 4.5 |
+| normal | 3 × 15 min/day | day 2.7 | **day 4.3** | day 5.7 |
+| light | 2 × 10 min/day | day 4.0 | **day 5.5** | — |
+
+Past the first hour this game is gated on elapsed time, not attention: a 6x
+difference in play time moves the Convergence by less than 2x, because producers
+dwarf digs almost immediately and offline accrual is unpenalised. Which is worth
+knowing before anyone tries to tune the endgame by making it grindier — grinding
+isn't the lever.
+
 **Prestige** hands the farm down for Heirloom Seed, cube-rooted off the run's
 harvest. Seeds do two jobs and you can't have both: held, they multiply output;
 spent, they buy permanent perks. Same shape as the rest of the game — one pile,
 competing uses.
+
+The Seeds tab is held until the Convergence has fired, and that's a gating
+decision rather than a cosmetic one. `SEED_DIVISOR` puts the first hand-down in
+day 1-2, which is a day or two *before* the world would have folded — so
+revealing prestige when it first pays offers a reset just short of the payoff,
+and a player who takes the hint doesn't see the fold until run 2 at the earliest.
+The first run is one unbroken climb to the fold; prestige arrives afterwards as
+the thing that makes the folded world repeatable.
 
 Three balance findings from the harness are worth knowing, because each was
 invisible until a long run was actually measured:
@@ -99,6 +139,15 @@ invisible until a long run was actually measured:
   storm in a session, which made the entire mitigation half of the game pointless.
 - **Weather has to cost enough for mitigation to pay for itself.** At a ~7% tax
   no amount of building could earn its price back.
+- **The seed economy is the loose end.** A converged run mints ~37x the seeds an
+  unconverged one did, because harvest goes up ~52,000x and the cube root of
+  that is 37. There's a post-Convergence perk row priced at the new scale to
+  give that somewhere to go, but the underlying problem is that held seeds
+  multiply output *linearly and without bound* — so each run funds the next one
+  many times over and any perk table clears in a handful of generations.
+  Damping `MULT_PER_UNSPENT_SEED`, or `seedsFor`'s unused `vigor` parameter as a
+  damper below 1, is the actual lever. Not pulled yet, because it changes how
+  every generation after the first one feels.
 
 ## What's implemented (versus)
 

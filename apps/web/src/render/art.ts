@@ -686,6 +686,108 @@ export const SINGULARITY: Art = {
 };
 
 // ---------------------------------------------------------------------------
+// Above the fold — the four tiers that farm the potato you're inside
+// ---------------------------------------------------------------------------
+//
+// These are drawn against the ceiling's warm ochre rather than against sky and
+// grass, so they're cool and hard-edged where everything else on the farm is
+// warm: the flesh is the quiet half of the screen and a machine on it should be
+// the one thing up there that isn't soft.
+
+/**
+ * Hangs off the ceiling with its coulters biting *upward*. Everything about a
+ * plough says which way is down, so the one drawn upside down is the cheapest
+ * way to say the ground is over your head now.
+ */
+export const FURROW: Art = {
+  rows: [
+    "m..m..m..m..m",
+    "m..m..m..m..m",
+    "kkkkkkkkkkkkk",
+    "kbbbbbbbbbbbk",
+    "kbggbbbbggbbk",
+    "kkkkkkkkkkkkk",
+    ".kk.......kk.",
+    "kwwk.....kwwk",
+    ".kk.......kk.",
+  ],
+  palette: { k: K, b: "#3f6b74", g: "#ffe08a", m: "#cfd6dc", w: "#4d4148" },
+};
+
+/** A wellhead with the shaft running off the bottom of the world. */
+export const MANTLE: Art = {
+  rows: [
+    "...kkkk...",
+    "..kmmmmk..",
+    "..kmggmk..",
+    ".kkmmmmkk.",
+    ".kmmmmmmk.",
+    "kkmmmmmmkk",
+    "km.kkkk.mk",
+    "km.khhk.mk",
+    "km.khhk.mk",
+    "kmmkhhkmmk",
+    "kkkkhhkkkk",
+    "...khhk...",
+    "...khhk...",
+    "...khhk...",
+  ],
+  palette: { k: K, m: "#8d959d", g: "#ffb454", h: "#5b3f2c" },
+};
+
+/**
+ * One of the other yous. Deliberately the farmhand's exact silhouette in a
+ * different finish — the joke doesn't survive being redrawn as something else,
+ * and at eleven pixels tall a changed shape would just read as a new tier of
+ * worker rather than as you.
+ */
+export const CHORUS_FIGURE: Art = {
+  rows: [
+    "...a...",
+    "..ttt..",
+    ".ttttt.",
+    "..fff..",
+    "..fef..",
+    "..fff..",
+    ".bbbbb.",
+    "bbbbbbb",
+    ".bbbbb.",
+    ".b...b.",
+    ".v...v.",
+    ".k...k.",
+  ],
+  palette: {
+    k: "#6a5c7a",
+    a: "#e6dcef",
+    t: "#b9a8cc",
+    f: "#d8cde4",
+    e: "#4a3f5c",
+    b: "#8f7fb0",
+    v: "#6a5c7a",
+  },
+};
+
+/** The last rung, hanging where the sun was. It has eyes. */
+export const SECOND_POTATO: Art = {
+  rows: [
+    "....kkkkkkk.....",
+    "..kkpppppppkk...",
+    ".kpplppppppppk..",
+    "kplllppppppdppk.",
+    "kpllppppppdddppk",
+    "kppppppppppddppk",
+    "kpppppdppppppppk",
+    "kppppdddpppppppk",
+    "kpppppdpppplpppk",
+    "kppppppppplllppk",
+    ".kpppdppppplppk.",
+    "..kkppdppppkkk..",
+    "....kkkkkkk.....",
+  ],
+  palette: { k: K, p: "#c98b4b", l: "#e2b077", d: "#7a4a24" },
+};
+
+// ---------------------------------------------------------------------------
 // Marks — what a producer looks like once you've bought its upgrades
 // ---------------------------------------------------------------------------
 //
@@ -972,6 +1074,26 @@ export const PRODUCER_MARKS = {
     SINGULARITY,
     repaint(SINGULARITY, { p: "#b98ae6", v: "#7a5ac0" }),
     repaint(SINGULARITY, { p: "#e0c04a", v: "#a8792c", n: "#120c1c" }),
+  ],
+  furrow: [
+    FURROW,
+    repaint(FURROW, { b: "#4f8f7a", g: "#b6f2fb" }),
+    repaint(FURROW, { b: "#7a5ac0", g: "#ffd166", m: "#e2e8ee" }),
+  ],
+  mantle: [
+    MANTLE,
+    repaint(MANTLE, { g: "#ff7a4a", h: "#7a4a24" }),
+    repaint(MANTLE, { g: "#ffe08a", m: "#cfd6dc", h: "#8a5a2c" }),
+  ],
+  chorus: [
+    CHORUS_FIGURE,
+    repaint(CHORUS_FIGURE, { b: "#7f9fc0", t: "#a8c0d8", a: "#dceaf4" }),
+    repaint(CHORUS_FIGURE, { b: "#c0a86a", t: "#d8c894", a: "#f4ecd0" }),
+  ],
+  second: [
+    SECOND_POTATO,
+    repaint(SECOND_POTATO, { p: "#d69a58", l: "#f0c68c" }),
+    repaint(SECOND_POTATO, { p: "#e0c04a", l: "#f7e08a", d: "#8a6a1c" }),
   ],
 } as const satisfies Record<string, readonly [Art, Art, Art]>;
 

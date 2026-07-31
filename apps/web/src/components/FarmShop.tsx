@@ -77,17 +77,24 @@ export function GrowPanel({
           const owned = farm.producers[prod.id] ?? 0;
           const n = qty === "max" ? Math.max(1, solo.affordableCount(farm, prod.id, budget)) : qty;
           const cost = solo.producerCost(farm, prod.id, n);
-          const each = prod.baseRate * solo.producerMultiplier(farm, prod.id);
+          // What it would actually add to the farm as it stands, tired soil and
+          // all — the Mantle Tap's rate moves with the dirt, so a clean-rate
+          // quote would be advertising a machine you can't currently buy.
+          const each = solo.producerRateEach(farm, prod.id);
           const broken = solo.brokenCount(farm, prod.id);
 
           // The ladder reveals itself a rung at a time, but the first rung is
-          // always there or an empty shop greets you at zero potatoes.
+          // always there or an empty shop greets you at zero potatoes. The four
+          // rungs above the fold are a harder gate than that: they farm parts of
+          // a potato you haven't discovered you're inside yet, so they aren't in
+          // the shop at all until the horizon closes.
           const prev = solo.SOLO_PRODUCERS[i - 1];
           const visible =
-            i === 0 ||
-            owned > 0 ||
-            (prev !== undefined && (farm.producers[prev.id] ?? 0) > 0) ||
-            P.gte(P.mul(budget, 3), prod.baseCost);
+            solo.isProducerAvailable(farm, prod.id) &&
+            (i === 0 ||
+              owned > 0 ||
+              (prev !== undefined && (farm.producers[prev.id] ?? 0) > 0) ||
+              P.gte(P.mul(budget, 3), prod.baseCost));
           if (!visible) return null;
 
           return (
@@ -143,7 +150,8 @@ export function LandPanel({
         <>
           <p className="hint">
             Nothing here heals on its own. Broken kit stays broken and tired soil stays tired
-            until you spend on it — that's what the weather actually costs.
+            until you spend on it — that's what {farm.converged ? "the tuber" : "the weather"}{" "}
+            actually costs.
           </p>
           <div className="rows">
             {soilBill > 0 && (
@@ -180,10 +188,11 @@ export function LandPanel({
 
       <p className="hint">
         Buildings work whether you're here or not, which is the only kind of defence worth having
-        against weather that lands while the tab is closed. They never stop it outright.
+        against {farm.converged ? "something that stirs" : "weather that lands"} while the tab is
+        closed. They never stop it outright.
       </p>
       <div className="rows">
-        {solo.LANDS.map((land) => {
+        {solo.LANDS.filter((land) => solo.isLandAvailable(farm, land.id)).map((land) => {
           const level = solo.landLevel(farm, land.id);
           const cost = solo.landCost(farm, land.id);
           const now = solo.mitigation(farm, land.role);
@@ -256,7 +265,7 @@ export function LegacyPanel({
       </div>
 
       <div className="rows">
-        {solo.PERKS.map((perk) => {
+        {solo.PERKS.filter((perk) => solo.isPerkAvailable(farm, perk.id)).map((perk) => {
           const level = farm.perks[perk.id] ?? 0;
           const maxed = level >= perk.maxLevel;
           const cost = solo.perkCost(perk, level);

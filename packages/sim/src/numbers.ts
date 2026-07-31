@@ -2,6 +2,14 @@
  * The resource is wrapped in a branded type so that swapping f64 for a bignum
  * later touches this file and nothing else. Arithmetic must go through these
  * helpers — that's the whole point of the brand.
+ *
+ * The homestead's top rung costs 8e18, which is past 2^53, so prices up there
+ * are no longer exact integers. Nothing depends on that: costs are compared and
+ * subtracted, never counted. A fortnight-long run reaches about 5e24 harvested,
+ * where `format` still has eight suffixes of headroom and a single dig is some
+ * nine orders of magnitude larger than the representable step, so digging still
+ * registers. Worth knowing rather than worth fixing — but the brand is here if
+ * that ever changes.
  */
 
 export type Potatoes = number & { readonly __brand: "Potatoes" };

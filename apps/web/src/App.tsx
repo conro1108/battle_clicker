@@ -192,9 +192,15 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
   const perDig = solo.clickYield(farm);
   const rate = solo.currentRate(farm);
   const needsAttention = solo.brokenRate(farm) > 0 || farm.soil < 1;
-  // Nothing to hand down and nothing handed down yet means the whole idea is
-  // still spoilers. It arrives in the nav the moment it's a real choice.
-  const showSeeds = farm.seeds > 0 || farm.generation > 1 || solo.pendingSeeds(farm) > 0;
+  // Held until the world has folded, and then never taken away.
+  //
+  // `SEED_DIVISOR` puts the first hand-down in day 1-2 of a run, which is a day
+  // or two *before* the Convergence — so revealing this the moment it pays
+  // would offer a reset just short of the payoff, and a player who takes the
+  // hint doesn't see the fold until their second run at the earliest. The whole
+  // point of the first run is that it's one unbroken climb to the fold. Prestige
+  // arrives afterwards, as the thing that makes the folded world repeatable.
+  const showSeeds = farm.converged && (farm.seeds > 0 || farm.generation > 1 || solo.pendingSeeds(farm) > 0);
 
   // Right to left in order of how often you reach for it. The far left of a
   // bottom bar is the corner a thumb has to travel for, and Shop is where you

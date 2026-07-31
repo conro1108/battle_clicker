@@ -21,6 +21,9 @@ import {
   brokenCount,
   clickYield,
   currentRate,
+  isLandAvailable,
+  isPerkAvailable,
+  isProducerAvailable,
   isUnlocked,
   landCost,
   perkLevel,
@@ -34,6 +37,9 @@ import { fireWeather, scheduleNext, type WeatherEvent } from "./weather.js";
 
 /** Clamp on batched digs, matching the versus mode's flush window. */
 export const MAX_DIGS_PER_FLUSH = 25;
+
+/** The purchase that folds the horizon. See `converged` on `FarmState`. */
+export const CONVERGENCE_UPGRADE = "ur_potato";
 
 /**
  * Ceiling on how many weather events one `advance` will resolve. A year-long
@@ -57,6 +63,7 @@ export function createFarm(opts: { seed: string; startedAt: Millis }): FarmState
     soil: MAX_SOIL,
     weatherIndex: 0,
     nextWeatherAt: opts.startedAt,
+    converged: false,
     seeds: 0,
     perks: {},
     lifetimeHarvested: P.zero,
@@ -203,6 +210,7 @@ export function applyFarmCommand(f0: FarmState, cmd: FarmCommand, now: Millis): 
     case "buy_producer": {
       const producer = SOLO_PRODUCER_BY_ID[cmd.producer];
       if (!producer) return fail("No such producer.");
+      if (!isProducerAvailable(farm, producer.id)) return fail("There's nowhere to put it yet.");
       const qty = Math.max(1, Math.floor(cmd.qty));
       const cost = producerCost(farm, producer.id, qty);
       if (!spend(cost)) return fail("Not enough potatoes.");
@@ -221,12 +229,20 @@ export function applyFarmCommand(f0: FarmState, cmd: FarmCommand, now: Millis): 
       if (!spend(upgrade.cost)) return fail("Not enough potatoes.");
       farm = { ...farm, upgrades: [...farm.upgrades, upgrade.id] };
       note(`bought ${upgrade.name}.`, "neutral");
+      // The Convergence. You acquire the first potato and discover you have
+      // always been inside it — on a button you chose to press, rather than on
+      // a threshold crossing while you were looking somewhere else.
+      if (upgrade.id === CONVERGENCE_UPGRADE && !farm.converged) {
+        farm = { ...farm, converged: true };
+        note("the horizon closed.", "good");
+      }
       break;
     }
 
     case "buy_land": {
       const land = LAND_BY_ID[cmd.land];
       if (!land) return fail("No such building.");
+      if (!isLandAvailable(farm, land.id)) return fail("Nothing to build that against yet.");
       const cost = landCost(farm, land.id);
       if (!spend(cost)) return fail("Not enough potatoes.");
       const level = (farm.land[land.id] ?? 0) + 1;
@@ -259,6 +275,7 @@ export function applyFarmCommand(f0: FarmState, cmd: FarmCommand, now: Millis): 
     case "buy_perk": {
       const perk = PERK_BY_ID[cmd.perk];
       if (!perk) return fail("No such perk.");
+      if (!isPerkAvailable(farm, perk.id)) return fail("Nothing to grow that in yet.");
       const level = farm.perks[perk.id] ?? 0;
       if (level >= perk.maxLevel) return fail("Already fully grown.");
       const cost = perkCost(perk, level);
@@ -289,7 +306,9 @@ export function applyFarmCommand(f0: FarmState, cmd: FarmCommand, now: Millis): 
 /**
  * Everything a generation earns is wiped except the seeds and what they bought.
  * `lifetimeHarvested` deliberately survives — it's the only number in the game
- * that never goes backwards.
+ * that never goes backwards — and so does `converged`, by not being named here:
+ * the world stays folded, and the next generation re-climbs to the tiers that
+ * only exist inside it.
  */
 function resetForNextGeneration(f: FarmState, earned: number, at: Millis): FarmState {
   const seeds = f.seeds + earned;

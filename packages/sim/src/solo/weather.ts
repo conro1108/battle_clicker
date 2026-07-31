@@ -81,7 +81,46 @@ const KINDS: readonly WeatherKind[] = [
   { id: "perfect", name: "Perfect Season", weight: 3, effect: { kind: "boon", seconds: 300 } },
 ];
 
-const TOTAL_WEIGHT = KINDS.reduce((sum, k) => sum + k.weight, 0);
+/**
+ * What the weather becomes once the horizon closes.
+ *
+ * Inside the potato there is no sky, so hail and frost and drought stop. What
+ * replaces them is the tuber's immune response — it has noticed it is being
+ * farmed. Same three effect kinds, because the second axis is the same axis and
+ * splitting it would mean two mitigation systems to balance; the mix is soil-
+ * heavier, because what the flesh does to you is mostly close over the ground
+ * rather than smash the machinery.
+ *
+ * This is the mechanical payoff of the Convergence, and deliberately the whole
+ * of it. There is no Convergence multiplier: the ladder gets a second act at
+ * the same moment the land half does, which is what the design has always
+ * rested on.
+ */
+const IMMUNE_KINDS: readonly WeatherKind[] = [
+  { id: "suberin", name: "Suberin Bloom", weight: 14, effect: { kind: "break", scope: "cheapest", share: 0.28 } },
+  { id: "callus", name: "Callus Growth", weight: 10, effect: { kind: "break", scope: "best", share: 0.26 } },
+  {
+    id: "sprout_pressure",
+    name: "Sprout Pressure",
+    weight: 8,
+    effect: { kind: "break", scope: "all", share: 0.2, soil: 0.06 },
+  },
+  { id: "phloem", name: "Phloem Surge", weight: 20, effect: { kind: "soil", loss: 0.09 } },
+  { id: "necrosis", name: "Necrosis", weight: 13, effect: { kind: "soil", loss: 0.17 } },
+  { id: "starch_flood", name: "Starch Flood", weight: 9, effect: { kind: "soil", loss: 0.13 } },
+  { id: "dormant", name: "Dormancy", weight: 9, effect: { kind: "boon", seconds: 90 } },
+  { id: "flush", name: "Sap Flush", weight: 3, effect: { kind: "boon", seconds: 300 } },
+];
+
+function kindsFor(f: FarmState): readonly WeatherKind[] {
+  return f.converged ? IMMUNE_KINDS : KINDS;
+}
+
+/** Which ids each table can produce. The scene and the tests both want this. */
+export const WEATHER_IDS = {
+  sky: KINDS.map((k) => k.id),
+  flesh: IMMUNE_KINDS.map((k) => k.id),
+} as const;
 
 /** Average gap between events, before any mitigation stretches it. */
 export const MEAN_WEATHER_GAP_MS = seconds(300);
@@ -128,13 +167,14 @@ function hashIndex(index: number, tag: string): number {
   return h >>> 0;
 }
 
-function pickKind(rng: Rng): WeatherKind {
-  let roll = rng.next() * TOTAL_WEIGHT;
-  for (const kind of KINDS) {
+function pickKind(rng: Rng, kinds: readonly WeatherKind[]): WeatherKind {
+  const total = kinds.reduce((sum, k) => sum + k.weight, 0);
+  let roll = rng.next() * total;
+  for (const kind of kinds) {
     roll -= kind.weight;
     if (roll <= 0) return kind;
   }
-  return KINDS[KINDS.length - 1]!;
+  return kinds[kinds.length - 1]!;
 }
 
 /** Producer types this event can hit, worst-first by scope. */
@@ -170,7 +210,7 @@ export function fireWeather(f: FarmState, at: Millis): { farm: FarmState; event:
   }
 
   const rng = rngFor(f.seed, hashIndex(index, "event"));
-  const kind = pickKind(rng);
+  const kind = pickKind(rng, kindsFor(f));
 
   let farm = advanced;
   const rateBefore = currentRate(farm);

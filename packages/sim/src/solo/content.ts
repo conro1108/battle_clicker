@@ -21,7 +21,11 @@ export type SoloProducerId =
   | "seeder"
   | "reactor"
   | "orbital"
-  | "singularity";
+  | "singularity"
+  | "furrow"
+  | "mantle"
+  | "chorus"
+  | "second";
 
 export interface SoloProducer {
   id: SoloProducerId;
@@ -32,6 +36,28 @@ export interface SoloProducer {
   baseCost: Potatoes;
   /** Cost of the Nth unit is baseCost * growth^N. */
   growth: number;
+  /**
+   * Only exists inside the potato. Hidden and unbuyable until the Convergence,
+   * which is enforced in `applyFarmCommand` rather than only in the shop — the
+   * sim is the authority on what a farm is allowed to own.
+   */
+  afterFold?: boolean;
+  /**
+   * Rate scales with soil health *as well as* being multiplied by it, so
+   * restoring the dirt is a live decision at the top of the ladder instead of a
+   * rounding error. Soil only moves on weather events and purchases, so this
+   * leaves the rate piecewise-constant — which is what the whole offline model
+   * rests on.
+   */
+  soilScaled?: boolean;
+  /** Rate scales with `generation`. Every farm you handed down is still working. */
+  generationScaled?: boolean;
+  /**
+   * Stretches the gap between weather events, per unit owned, on the same
+   * `1-(1-p)^n` shape the land buildings use and under the same clamp. Small:
+   * a hundred of these must not zero the weather.
+   */
+  calmPerUnit?: number;
 }
 
 /**
@@ -142,6 +168,58 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     baseCost: P.of(200_000_000_000_000),
     growth: 1.19,
   },
+
+  // --- Above the fold ------------------------------------------------------
+  //
+  // Four more rungs, each farming a different part of the potato you're now
+  // standing inside — which also solves placement, since they occupy the screen
+  // regions the fold just created rather than competing for field space. Same
+  // x8 rate and x14 cost per rung as everything below, and one x2 global each,
+  // which is the pairing that has kept real payback flat at a few minutes for
+  // the whole ladder. There is deliberately no one-off Convergence multiplier:
+  // the pacing doesn't need it, and the x2/x3/x5 global chain is what once
+  // evaporated a week-long run.
+  {
+    id: "furrow",
+    name: "Inversion Furrow",
+    blurb: "Ploughs the ceiling. The weather falls up now, which helps.",
+    baseRate: 44_000_000_000,
+    baseCost: P.of(2_800_000_000_000_000),
+    growth: 1.19,
+    afterFold: true,
+    // The one thing at the top of the ladder that feeds back into the land
+    // half, which otherwise caps at four buildings and stops mattering.
+    calmPerUnit: 0.004,
+  },
+  {
+    id: "mantle",
+    name: "Mantle Tap",
+    blurb: "A shaft into the deep flesh. It goes further than you'd like.",
+    baseRate: 350_000_000_000,
+    baseCost: P.of(40_000_000_000_000_000),
+    growth: 1.19,
+    afterFold: true,
+    soilScaled: true,
+  },
+  {
+    id: "chorus",
+    name: "Chorus",
+    blurb: "The other yous, still working. You can hear them.",
+    baseRate: 2_800_000_000_000,
+    baseCost: P.of(560_000_000_000_000_000),
+    growth: 1.19,
+    afterFold: true,
+    generationScaled: true,
+  },
+  {
+    id: "second",
+    name: "Second Potato",
+    blurb: "Hangs where the sun was. Nobody has asked what's inside it.",
+    baseRate: 22_000_000_000_000,
+    baseCost: P.of(8_000_000_000_000_000_000),
+    growth: 1.19,
+    afterFold: true,
+  },
 ];
 
 export const SOLO_PRODUCER_BY_ID: Record<SoloProducerId, SoloProducer> = Object.fromEntries(
@@ -217,6 +295,10 @@ function tierUpgrades(): SoloUpgrade[] {
     reactor: ["Magnetic Confinement", "Tritium Blanket"],
     orbital: ["Solar Sails", "Second Ring"],
     singularity: ["Closed Timelike Furrow", "Retroactive Yield"],
+    furrow: ["Reversed Gravity", "Ceiling Yield"],
+    mantle: ["Deep Core Sampling", "Geothermal Assist"],
+    chorus: ["Perfect Unison", "Every Generation"],
+    second: ["Seed Stock", "It's Started"],
   };
   const out: SoloUpgrade[] = [];
   for (const prod of SOLO_PRODUCERS) {
@@ -355,13 +437,55 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
     effect: { kind: "global_mult", factor: 2 },
     requires: { producer: "orbital", count: 25 },
   },
+  /**
+   * The Convergence, on a button the player chose to press.
+   *
+   * Gated at ten Tuber Singularities rather than twenty-five, which is what
+   * pulls the endgame from five days of play to three and puts the fold inside
+   * a single dedicated first run — the constraint the whole endgame design is
+   * binding on. It still costs about a thousand seconds of production at the
+   * moment it's bought, which is the same league as the other late globals and
+   * well clear of the sixty-second floor `solo.test.ts` guards.
+   */
   {
     id: "ur_potato",
     name: "The Ur-Potato",
     blurb: "The first potato. Everything produces x2.",
-    cost: fleetCost("singularity", 25),
+    cost: fleetCost("singularity", 10),
     effect: { kind: "global_mult", factor: 2 },
-    requires: { producer: "singularity", count: 25 },
+    requires: { producer: "singularity", count: 10 },
+  },
+  {
+    id: "ceiling_rights",
+    name: "Ceiling Tenancy",
+    blurb: "The roof is yours to work too. Everything produces x2.",
+    cost: fleetCost("furrow", 25),
+    effect: { kind: "global_mult", factor: 2 },
+    requires: { producer: "furrow", count: 25 },
+  },
+  {
+    id: "mineral_rights",
+    name: "Mineral Rights",
+    blurb: "Whatever's down there was always yours. Everything produces x2.",
+    cost: fleetCost("mantle", 25),
+    effect: { kind: "global_mult", factor: 2 },
+    requires: { producer: "mantle", count: 25 },
+  },
+  {
+    id: "unbroken_line",
+    name: "Unbroken Line",
+    blurb: "Nobody has stopped farming. Everything produces x2.",
+    cost: fleetCost("chorus", 25),
+    effect: { kind: "global_mult", factor: 2 },
+    requires: { producer: "chorus", count: 25 },
+  },
+  {
+    id: "third_potato",
+    name: "The Third Potato",
+    blurb: "Everything produces x2. Try not to work out where it is.",
+    cost: fleetCost("second", 25),
+    effect: { kind: "global_mult", factor: 2 },
+    requires: { producer: "second", count: 25 },
   },
 ];
 
@@ -384,7 +508,13 @@ export const SOLO_UPGRADE_BY_ID: Record<string, SoloUpgrade> = Object.fromEntrie
 // would protect nothing. These are levelled buildings that just keep working.
 // ---------------------------------------------------------------------------
 
-export type LandId = "windbreak" | "drainage" | "pest_control" | "insurance";
+export type LandId =
+  | "windbreak"
+  | "drainage"
+  | "pest_control"
+  | "insurance"
+  | "callus_beds"
+  | "dormancy_rig";
 
 export type LandRole =
   /** Cuts how many units a disaster knocks offline. */
@@ -409,6 +539,8 @@ export interface Land {
   perLevel: number;
   baseCost: Potatoes;
   growth: number;
+  /** Only buildable inside the potato, against what the tuber sends instead. */
+  afterFold?: boolean;
 }
 
 export const LANDS: readonly Land[] = [
@@ -447,6 +579,30 @@ export const LANDS: readonly Land[] = [
     perLevel: 0.12,
     baseCost: P.of(40_000),
     growth: 1.9,
+  },
+  // Inside the potato there is no sky, so the four above stop being about
+  // weather and the two below are what the second axis gets instead. Same
+  // roles, priced at the scale of the farm that can see them: the first level
+  // of either is a few minutes of production at the moment the world folds.
+  {
+    id: "callus_beds",
+    name: "Callus Beds",
+    blurb: "Let the flesh scar where it wants to. It closes around less of the kit.",
+    role: "breakage",
+    perLevel: 0.13,
+    baseCost: P.of(500_000_000_000_000),
+    growth: 1.9,
+    afterFold: true,
+  },
+  {
+    id: "dormancy_rig",
+    name: "Dormancy Rig",
+    blurb: "Convinces the tuber it is winter. It stirs less often.",
+    role: "frequency",
+    perLevel: 0.09,
+    baseCost: P.of(1_500_000_000_000_000),
+    growth: 2.1,
+    afterFold: true,
   },
 ];
 

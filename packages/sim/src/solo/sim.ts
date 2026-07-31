@@ -8,16 +8,19 @@
  * does without a spreadsheet.
  */
 
-import { P, ms, type Millis, type Potatoes, type Rate } from "../numbers.js";
+import { P, ms, seconds, type Millis, type Potatoes, type Rate } from "../numbers.js";
 import { LANDS, SOLO_PRODUCERS, SOLO_UPGRADES, type SoloProducerId } from "./content.js";
 import {
   brokenCount,
   currentRate,
+  isLandAvailable,
+  isProducerAvailable,
   isUnlocked,
   landCost,
   landLevel,
   producerCost,
   producerMultiplier,
+  producerRateEach,
   repairCost,
   soilRestoreCost,
 } from "./economy.js";
@@ -74,10 +77,14 @@ export const FARMER_STYLES: Record<string, FarmerStyle> = {
   },
 };
 
-/** Production per potato spent — the only ranking that matters when buying. */
+/**
+ * Production per potato spent — the only ranking that matters when buying.
+ * Measured as what the unit would actually add to the farm's rate as it stands,
+ * not its clean rate, so the Mantle Tap gets discounted for tired soil the way
+ * a buyer looking at the shop would discount it.
+ */
 function valueOf(f: FarmState, id: SoloProducerId): number {
-  const prod = SOLO_PRODUCERS.find((p) => p.id === id)!;
-  return (prod.baseRate * producerMultiplier(f, id)) / producerCost(f, id, 1);
+  return producerRateEach(f, id) / producerCost(f, id, 1);
 }
 
 /** What the farmer would do right now, in priority order. */
@@ -112,6 +119,7 @@ export function farmerTurn(f: FarmState, style: FarmerStyle): FarmCommand[] {
 
   if (style.landBudget > 0) {
     for (const land of LANDS) {
+      if (!isLandAvailable(f, land.id)) continue;
       const cost = landCost(f, land.id);
       // Keeps the buildings roughly in step rather than pouring everything into
       // whichever one happens to be cheapest.
@@ -122,6 +130,7 @@ export function farmerTurn(f: FarmState, style: FarmerStyle): FarmCommand[] {
 
   let pick: { id: SoloProducerId; value: number } | null = null;
   for (const prod of SOLO_PRODUCERS) {
+    if (!isProducerAvailable(f, prod.id)) continue;
     if (!P.gte(pile, producerCost(f, prod.id, 1))) continue;
     const value = valueOf(f, prod.id);
     if (!pick || value > pick.value) pick = { id: prod.id, value };
@@ -222,4 +231,120 @@ export function simulateFarm(opts: {
   }
 
   return { farm, samples, weatherEvents, brokeTotal, soilLost };
+}
+
+// ---------------------------------------------------------------------------
+// Playing the way people play
+// ---------------------------------------------------------------------------
+
+/**
+ * `simulateFarm` never closes the tab. That's the right control group for the
+ * economy but the wrong model of a person, and the difference matters here
+ * specifically: nobody repairs anything in the gaps. A farm that gets checked on
+ * three times a day spends most of the week accumulating damage nobody is there
+ * to undo, which is the only thing separating a real playthrough from the
+ * always-on bot.
+ *
+ * So: play a session, jump the clock to the next one, play again. Only the
+ * sessions are stepped — the gaps are single `advance` calls, which is both
+ * exact (solo has no timed effects) and cheap enough that a fortnight of this
+ * runs in a test.
+ */
+export interface CheckInCadence {
+  /** Sessions a day, spread evenly through it. */
+  sessionsPerDay: number;
+  /** How long one lasts. */
+  sessionMs: number;
+}
+
+/** The three cadences the endgame's pacing is quoted against. */
+export const CHECK_INS: Record<"heavy" | "normal" | "light", CheckInCadence> = {
+  heavy: { sessionsPerDay: 4, sessionMs: seconds(1_800) },
+  normal: { sessionsPerDay: 3, sessionMs: seconds(900) },
+  light: { sessionsPerDay: 2, sessionMs: seconds(600) },
+};
+
+export interface CadenceResult {
+  farm: FarmState;
+  /** Elapsed ms at which each producer was first owned. */
+  firstOwned: Partial<Record<SoloProducerId, number>>;
+  /** Elapsed ms at which the horizon closed, or null if it never did. */
+  convergedAt: number | null;
+  /** What the farm was making the moment it folded. Prices the Ur-Potato. */
+  convergedRate: Rate | null;
+  /** Wall clock covered, including everything spent away. */
+  elapsedMs: number;
+  /** How much of that was actually spent playing. */
+  playedMs: number;
+}
+
+const DAY_MS = seconds(86_400);
+
+export function simulateCadence(opts: {
+  seed: string;
+  days: number;
+  cadence: keyof typeof CHECK_INS | CheckInCadence;
+  style?: keyof typeof FARMER_STYLES | FarmerStyle;
+  stepMs?: number;
+}): CadenceResult {
+  const step = opts.stepMs ?? 1_000;
+  const cadence = typeof opts.cadence === "string" ? CHECK_INS[opts.cadence] : opts.cadence;
+  const style =
+    typeof opts.style === "string"
+      ? (FARMER_STYLES[opts.style] ?? FARMER_STYLES.keen!)
+      : (opts.style ?? FARMER_STYLES.keen!);
+
+  let farm = createFarm({ seed: opts.seed, startedAt: ms(0) });
+  const firstOwned: Partial<Record<SoloProducerId, number>> = {};
+  let convergedAt: number | null = null;
+  let convergedRate: Rate | null = null;
+  let playedMs = 0;
+
+  const note = (at: number) => {
+    for (const prod of SOLO_PRODUCERS) {
+      if (firstOwned[prod.id] === undefined && (farm.producers[prod.id] ?? 0) > 0) {
+        firstOwned[prod.id] = at;
+      }
+    }
+    if (convergedAt === null && farm.converged) {
+      convergedAt = at;
+      convergedRate = currentRate(farm);
+    }
+  };
+
+  const apply = (cmd: FarmCommand, t: Millis) => {
+    const res = applyFarmCommand(farm, cmd, t);
+    if (res.ok) farm = res.farm;
+  };
+
+  const gap = DAY_MS / cadence.sessionsPerDay;
+  for (let d = 0; d < opts.days; d++) {
+    for (let s = 0; s < cadence.sessionsPerDay; s++) {
+      const start = Math.round(d * DAY_MS + s * gap);
+      // Everything between check-ins happens to a farm with nobody in it.
+      farm = advance(farm, ms(start), true).farm;
+      let digCarry = 0;
+      let nextDecision = start;
+      for (let t = start; t < start + cadence.sessionMs; t += step) {
+        digCarry += (style.digsPerSecond * step) / 1000;
+        const digs = Math.floor(digCarry);
+        if (digs > 0) {
+          digCarry -= digs;
+          apply({ type: "dig", count: digs }, ms(t));
+        }
+        if (t >= nextDecision) {
+          nextDecision = t + style.decisionMs;
+          for (const cmd of farmerTurn(farm, style)) apply(cmd, ms(t));
+        }
+        farm = advance(farm, ms(t + step)).farm;
+        note(t + step);
+      }
+      playedMs += cadence.sessionMs;
+    }
+  }
+
+  const end = Math.round(opts.days * DAY_MS);
+  farm = advance(farm, ms(end), true).farm;
+  note(end);
+  return { farm, firstOwned, convergedAt, convergedRate, elapsedMs: end, playedMs };
 }

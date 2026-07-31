@@ -44,16 +44,38 @@ export function globalMultiplier(f: FarmState): number {
   }
   m *= 1 + MULT_PER_UNSPENT_SEED * f.seeds;
   m *= 1 + 0.15 * perkLevel(f, "green_thumb");
+  m *= 1 + 0.4 * perkLevel(f, "flesh_tithe");
   return m;
 }
 
 /** Multiplier on one producer type, before soil. */
 export function producerMultiplier(f: FarmState, id: SoloProducerId): number {
+  const prod = SOLO_PRODUCER_BY_ID[id];
   let m = globalMultiplier(f);
   for (const u of ownedUpgrades(f)) {
     if (u.effect.kind === "producer_mult" && u.effect.producer === id) m *= u.effect.factor;
   }
+  // The Chorus is every farm you ever handed down, still working. Nothing else
+  // in the game makes the meta-layer visible in the picture.
+  if (prod.generationScaled) m *= f.generation;
+  if (prod.afterFold) m *= 1 + perkLevel(f, "ur_yield");
   return m;
+}
+
+/**
+ * The extra factor of soil the Mantle Tap gets, and that nothing else does.
+ *
+ * Kept out of `producerMultiplier` on purpose: that function is what
+ * `cleanRate` and `repairCost` are quoted against, and both of them mean "with
+ * the soil at full health". This is the live-condition half.
+ */
+function soilScale(f: FarmState, id: SoloProducerId): number {
+  return SOLO_PRODUCER_BY_ID[id].soilScaled ? f.soil : 1;
+}
+
+/** What one more of `id` would add to the farm's rate, as it stands right now. */
+export function producerRateEach(f: FarmState, id: SoloProducerId): number {
+  return SOLO_PRODUCER_BY_ID[id].baseRate * producerMultiplier(f, id) * soilScale(f, id) * f.soil;
 }
 
 export function workingCount(f: FarmState, id: SoloProducerId): number {
@@ -65,7 +87,12 @@ export function brokenCount(f: FarmState, id: SoloProducerId): number {
 }
 
 export function producerRate(f: FarmState, id: SoloProducerId): Rate {
-  return asRate(workingCount(f, id) * SOLO_PRODUCER_BY_ID[id].baseRate * producerMultiplier(f, id));
+  return asRate(
+    workingCount(f, id) *
+      SOLO_PRODUCER_BY_ID[id].baseRate *
+      producerMultiplier(f, id) *
+      soilScale(f, id),
+  );
 }
 
 /**
@@ -93,7 +120,8 @@ export function cleanRate(f: FarmState): Rate {
 export function brokenRate(f: FarmState): Rate {
   let total = 0;
   for (const prod of SOLO_PRODUCERS) {
-    total += brokenCount(f, prod.id) * prod.baseRate * producerMultiplier(f, prod.id);
+    total += brokenCount(f, prod.id) * prod.baseRate * producerMultiplier(f, prod.id) *
+      soilScale(f, prod.id);
   }
   return asRate(total * f.soil);
 }
@@ -136,7 +164,37 @@ export function mitigation(f: FarmState, role: LandRole): number {
   if (role === "soil" || role === "breakage") {
     through *= Math.pow(1 - 0.08, perkLevel(f, "deep_roots"));
   }
+  if (role === "frequency") {
+    // Inversion Furrows, on the same diminishing shape as a building and under
+    // the same clamp — two hundred of them must not zero the weather.
+    for (const prod of SOLO_PRODUCERS) {
+      if (!prod.calmPerUnit) continue;
+      through *= Math.pow(1 - prod.calmPerUnit, f.producers[prod.id] ?? 0);
+    }
+    through *= Math.pow(1 - 0.1, perkLevel(f, "dormancy"));
+  }
   return Math.min(MAX_MITIGATION, 1 - through);
+}
+
+// ---------------------------------------------------------------------------
+// What a farm is allowed to own
+// ---------------------------------------------------------------------------
+//
+// The tiers, buildings and perks above the fold don't exist until the world has
+// folded. That's enforced here rather than only in the shop, because the sim is
+// the authority on what a farm can be — a hand-edited save shouldn't be able to
+// buy a Mantle Tap into a farm with a sky.
+
+export function isProducerAvailable(f: FarmState, id: SoloProducerId): boolean {
+  return f.converged || !SOLO_PRODUCER_BY_ID[id].afterFold;
+}
+
+export function isLandAvailable(f: FarmState, id: LandId): boolean {
+  return f.converged || !LAND_BY_ID[id].afterFold;
+}
+
+export function isPerkAvailable(f: FarmState, id: keyof typeof PERK_BY_ID): boolean {
+  return f.converged || !PERK_BY_ID[id].afterFold;
 }
 
 // ---------------------------------------------------------------------------

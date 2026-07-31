@@ -2,25 +2,30 @@ import { describe, expect, it } from "vitest";
 
 import { format, ms, seconds } from "../numbers.js";
 import {
+  MAX_MITIGATION,
   MIN_SOIL,
   REPAIR_SECONDS,
   SOLO_PRODUCERS,
   SOLO_REPAIR_COST_FRACTION,
   SOLO_UPGRADES,
+  SOLO_UPGRADE_BY_ID,
 } from "./content.js";
 import {
   currentRate,
+  mitigation,
   producerCost,
   producerMultiplier,
+  producerRateEach,
   soilLossRate,
   soilRestoreCost,
   totalRepairCost,
 } from "./economy.js";
 import { advance, applyFarmCommand, createFarm, pendingSeeds } from "./farm.js";
 import { parseFarm, resumeFarm, serializeFarm } from "./persist.js";
-import { MULT_PER_UNSPENT_SEED, seedsFor } from "./prestige.js";
-import { FARMER_STYLES, farmerTurn, simulateFarm } from "./sim.js";
+import { MULT_PER_UNSPENT_SEED, PERKS, seedsFor } from "./prestige.js";
+import { FARMER_STYLES, farmerTurn, simulateCadence, simulateFarm } from "./sim.js";
 import type { FarmState } from "./state.js";
+import { WEATHER_IDS } from "./weather.js";
 
 const HOUR = seconds(3_600);
 const DAY = HOUR * 24;
@@ -42,8 +47,46 @@ describe("the ladder", () => {
     // in a single sitting.
     expect(paybacks[0]!).toBeLessThan(30);
     expect(paybacks.at(-1)!).toBeGreaterThan(3_000);
-    // And never so expensive that the top of the tree is purely decorative.
-    expect(paybacks.at(-1)!).toBeLessThan(40_000);
+    // There used to be an upper bound here too — the top rung's *base* payback
+    // capped at 40,000s, so the top of the tree couldn't be purely decorative.
+    // At sixteen rungs the Second Potato's base payback is a hundred hours and
+    // it trips, but the proxy is what's broken rather than the ladder: base
+    // payback stops predicting affordability once accumulated multipliers reach
+    // several hundred. The test below measures the thing that assertion meant.
+  });
+
+  /**
+   * What the base-payback cap was really asking: can a run that goes the
+   * distance actually get to the top of the tree, and is the top of the tree
+   * worth having when it does?
+   *
+   * Measured rather than derived, because the answer depends on every global
+   * multiplier bought along the way — by the end of this run the Second Potato
+   * is the best value on the board by a wide margin despite a base payback of a
+   * hundred hours.
+   */
+  it("puts the top rung within reach of a long run, and makes it the best buy there", () => {
+    const { farm, convergedAt } = simulateCadence({
+      seed: "probe",
+      days: 8,
+      cadence: "heavy",
+      style: "keen",
+    });
+    const top = SOLO_PRODUCERS.at(-1)!;
+    const value = (id: (typeof SOLO_PRODUCERS)[number]["id"]) =>
+      producerRateEach(farm, id) / producerCost(farm, id, 1);
+
+    console.log(
+      `8d heavy: converged=${convergedAt === null ? "never" : (convergedAt / HOUR).toFixed(1) + "h"} ` +
+        `owned=${SOLO_PRODUCERS.map((p) => farm.producers[p.id] ?? 0).join("/")} ` +
+        `top value=${value(top.id).toExponential(2)}`,
+    );
+
+    expect(farm.producers[top.id] ?? 0).toBeGreaterThan(0);
+    for (const prod of SOLO_PRODUCERS) {
+      if (prod.id === top.id) continue;
+      expect(value(top.id)).toBeGreaterThan(value(prod.id));
+    }
   });
 
   it("climbs into the upper tiers over a long session", () => {
@@ -300,6 +343,133 @@ describe("prestige", () => {
     const fresh = simulateFarm({ seed: "tiny", durationMs: seconds(30), style: "keen" }).farm;
     const res = applyFarmCommand(fresh, { type: "prestige" }, fresh.checkpointAt);
     expect(res.ok).toBe(false);
+  });
+});
+
+describe("the Convergence", () => {
+  /**
+   * The binding constraint on the whole endgame: **the fold has to be reachable
+   * in a single dedicated run**, on a first save, with no prestige and no seeds.
+   * Not something you find out about three generations deep.
+   *
+   * Measured at a modest check-in cadence with the clock jumped between
+   * sessions, so the farm runs unattended and nobody repairs anything in the
+   * gaps — which is the only thing separating this from the always-on bot. A
+   * week is the outer bound; the design target is day four.
+   *
+   * Without this guard the next retune quietly breaks the thing the endgame is
+   * most specific about, and it would break silently: every other test in this
+   * file still passes with the fold three days further away.
+   */
+  it("is reachable in one playthrough at a modest check-in cadence", () => {
+    for (const seed of ["one", "two"]) {
+      const run = simulateCadence({ seed, days: 7, cadence: "normal", style: "keen" });
+      // What the Ur-Potato actually costs at the moment it's affordable, in the
+      // only unit an early upgrade and a late one are comparable in. The other
+      // late globals are in the hundreds-to-thousands range; this has to stay
+      // there or moving its gate to ten turned it into a giveaway.
+      const price = SOLO_UPGRADE_BY_ID.ur_potato!.cost / (run.convergedRate ?? Infinity);
+      console.log(
+        `${seed}: 3x15min/day converged at ` +
+          `${run.convergedAt === null ? "never" : `day ${(run.convergedAt / DAY).toFixed(1)}`} ` +
+          `for ${price.toFixed(0)}s of production`,
+      );
+      expect(run.convergedAt).not.toBeNull();
+      expect(run.convergedAt!).toBeLessThan(7 * DAY);
+      expect(price).toBeGreaterThan(60);
+      // And on a first save: no prestige, no seeds, nothing handed down.
+      expect(run.farm.generation).toBe(1);
+      expect(run.farm.seeds).toBe(0);
+    }
+  });
+
+  it("keeps the tiers above the fold out of an unfolded world", () => {
+    const farm = developedFarm("gate");
+    expect(farm.converged).toBe(false);
+    for (const prod of SOLO_PRODUCERS.filter((p) => p.afterFold)) {
+      const rich: FarmState = { ...farm, potatoes: 1e30 as never };
+      expect(applyFarmCommand(rich, { type: "buy_producer", producer: prod.id, qty: 1 }, rich.checkpointAt).ok)
+        .toBe(false);
+      expect(applyFarmCommand(
+        { ...rich, converged: true },
+        { type: "buy_producer", producer: prod.id, qty: 1 },
+        rich.checkpointAt,
+      ).ok).toBe(true);
+    }
+  });
+
+  it("happens to you once, and outlives the farm it happened to", () => {
+    const base = developedFarm("fold", 24 * HOUR);
+    const folded: FarmState = { ...base, converged: true };
+    const res = applyFarmCommand(folded, { type: "prestige" }, folded.checkpointAt);
+    expect(res.ok).toBe(true);
+    const next = (res as { farm: FarmState }).farm;
+    // The run is gone; the world it happened in isn't.
+    expect(next.producers).toEqual({});
+    expect(next.converged).toBe(true);
+  });
+
+  it("swaps the weather for the tuber's immune response", () => {
+    const base = developedFarm("immune", 2 * HOUR);
+    const seen = (f: FarmState) =>
+      new Set(advance(f, ms(f.checkpointAt + 6 * HOUR)).events.map((e) => e.id));
+
+    const sky = seen(base);
+    const flesh = seen({ ...base, converged: true });
+    console.log(`sky=${[...sky].join(",")} flesh=${[...flesh].join(",")}`);
+
+    expect(sky.size).toBeGreaterThan(0);
+    expect(flesh.size).toBeGreaterThan(0);
+    for (const id of sky) expect(WEATHER_IDS.sky).toContain(id);
+    // No hail and no frost inside a potato. There's no sky for them to come
+    // out of, which is the point of the swap.
+    for (const id of flesh) expect(WEATHER_IDS.flesh).toContain(id);
+  });
+
+  /**
+   * The Inversion Furrow is the only thing at the top of the ladder that feeds
+   * back into the land half, and the reason that half currently stops mattering
+   * at four buildings. It has to stack the way a building does — diminishing,
+   * under the clamp — or two hundred of them turn the weather off.
+   */
+  it("lets the ceiling calm the weather without ever stopping it", () => {
+    const base: FarmState = { ...developedFarm("calm"), converged: true };
+    const few: FarmState = { ...base, producers: { ...base.producers, furrow: 10 } };
+    const many: FarmState = { ...base, producers: { ...base.producers, furrow: 400 } };
+    expect(mitigation(few, "frequency")).toBeGreaterThan(mitigation(base, "frequency"));
+    expect(mitigation(many, "frequency")).toBeGreaterThan(mitigation(few, "frequency"));
+    expect(mitigation(many, "frequency")).toBeLessThanOrEqual(MAX_MITIGATION);
+  });
+
+  /**
+   * The Mantle Tap's wrinkle: its rate scales *with* soil as well as being
+   * multiplied by it, so letting the dirt go costs it twice and restoring the
+   * dirt is a live decision at the top instead of a rounding error.
+   */
+  it("makes the Mantle Tap care about the soil twice over", () => {
+    const base: FarmState = {
+      ...developedFarm("mantle"),
+      converged: true,
+      producers: { mantle: 10 },
+      broken: {},
+    };
+    const half: FarmState = { ...base, soil: 0.5 };
+    // A quarter, not a half: once for the farm-wide soil factor and once for
+    // the tap's own.
+    expect(currentRate(half) / currentRate({ ...base, soil: 1 })).toBeCloseTo(0.25, 6);
+  });
+
+  it("holds the perks that only make sense inside the potato until it happens", () => {
+    const base = developedFarm("perks");
+    const rich: FarmState = { ...base, seeds: 1_000_000 };
+    for (const perk of PERKS.filter((p) => p.afterFold)) {
+      expect(applyFarmCommand(rich, { type: "buy_perk", perk: perk.id }, rich.checkpointAt).ok).toBe(false);
+      expect(applyFarmCommand(
+        { ...rich, converged: true },
+        { type: "buy_perk", perk: perk.id },
+        rich.checkpointAt,
+      ).ok).toBe(true);
+    }
   });
 });
 

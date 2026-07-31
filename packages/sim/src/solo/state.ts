@@ -40,6 +40,13 @@ export interface FarmState {
   nextWeatherAt: Millis;
 
   // --- Persists across prestige resets -------------------------------------
+  /**
+   * The horizon has closed. Set once, when the Ur-Potato is bought, and never
+   * unset — you find out you have always been inside the potato exactly once,
+   * and re-running that every generation would make the spectacle routine.
+   * Later generations start in the folded world and re-climb to the new tiers.
+   */
+  converged: boolean;
   /** Heirloom Seed on hand, spendable on perks. */
   seeds: number;
   perks: Partial<Record<PerkId, number>>;

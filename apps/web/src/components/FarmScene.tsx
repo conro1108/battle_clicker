@@ -85,9 +85,8 @@ export const FarmScene = forwardRef<FarmSceneHandle, {
       soil: farm.soil,
       hoard,
       seed: farm.seed,
-      // Prototype trigger. The Ur-Potato is what folds the world, so owning it
-      // is the condition until the sim carries a `converged` flag of its own.
-      converged: farm.upgrades.includes("ur_potato"),
+      converged: farm.converged,
+      generation: farm.generation,
     };
   }, [farm, hoard]);
 
