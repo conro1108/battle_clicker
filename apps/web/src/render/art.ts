@@ -285,6 +285,25 @@ export function withered(art: Art): Art {
   return dried;
 }
 
+const FLIPPED = new Map<Art, Art>();
+
+/**
+ * The same thing, upside down.
+ *
+ * Done as a row reversal on the char grid rather than a flipped blit, because
+ * the scene's rendering rule forbids transforms on sprites — `ctx.scale(1, -1)`
+ * puts the art half a pixel off the buffer's grid and 1px outlines double or
+ * vanish. Reversing the rows produces a genuinely inverted sprite that still
+ * paints on integer coordinates.
+ */
+export function flipped(art: Art): Art {
+  const hit = FLIPPED.get(art);
+  if (hit) return hit;
+  const upside: Art = { rows: [...art.rows].reverse(), palette: art.palette };
+  FLIPPED.set(art, upside);
+  return upside;
+}
+
 const CROP_STAGES = new Map<Art, Art[]>();
 
 /**

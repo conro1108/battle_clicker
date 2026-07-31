@@ -190,8 +190,7 @@ bignum swap. The brand is already there if that changes.
 
 ## Order of work
 
-1. **Prototype the fold in `farmScene.ts`.** Everything else is worthless if the
-   inverted sky doesn't look good. Nothing downstream needs to exist to try it.
+1. ~~**Prototype the fold in `farmScene.ts`.**~~ Done — see below. It reads.
 2. Replace the `solo.test.ts:46` payback assertion with a reach-the-top-rung
    check. Do this before adding tiers so the suite stays green throughout.
 3. Add the four producers, their tier upgrades and their globals; move and
@@ -205,3 +204,40 @@ bignum swap. The brand is already there if that changes.
 6. Art and placement for the four new producers.
 7. Fix the seed economy — post-Convergence perk row. Last because it's the only
    item here that a first playthrough never sees.
+
+## The fold, prototyped
+
+Built and shot. It reads — the band overhead is recognisably your own field,
+and the screen feels enclosed rather than lidded. Three things were worth
+learning by doing it rather than by arguing about it:
+
+**Don't mirror the field. Draw the far side of a curve.** The instinct is a
+flipped copy of the field band, and it's wrong twice over: it reads as a
+reflection rather than a place, and it puts the most detail exactly where the
+geometry says there should be least. Inside a sphere, looking level means looking
+across the full width of the thing, so the surface compresses to a line at the
+horizon and the haze between you and it is at its thickest; looking straight up,
+it's only a diameter away. So the furrows *widen* toward the top of the band and
+the haze is heaviest at the *bottom* — the inverse of a sky. Fading toward the
+top instead reads as fog, and the screen just looks broken.
+
+**Sprites flip by reversing the char grid, not by flipping the blit.** The
+scene's no-transform rule is load-bearing: `ctx.scale(1, -1)` puts art half a
+pixel off the buffer grid and 1px outlines double or vanish. `flipped()` in
+`art.ts` reverses the rows and is memoised, same shape as `withered()`. Sprites
+can't be *scaled* at all, so distance in the ceiling is carried entirely by row
+spacing and alpha, and the last stretch before the fold is left to the furrows —
+which is where a real field stops resolving anyway.
+
+**One bug worth recording, because it will happen again.** `mix()` took hex and
+returned `rgb(...)`, so nesting it — `mix(mix(a, b, k), c, j)` — parsed as NaN,
+which canvas treats as an invalid fillStyle by silently keeping the previous one.
+The ceiling rendered as flat grey smog and the furrows never appeared at all,
+with no error anywhere. It now returns hex so it composes. Worth knowing that
+this whole class of failure is invisible to `tsc` and to every test in the repo,
+and that the screenshot was the only thing that caught it.
+
+Still open: the refineries' steam plumes rise into the ceiling and smear the far
+field. Arguably correct — steam rises and hits something now — but it wants a
+look. The fold has no animation of any kind yet, and the moment it fires almost
+certainly wants one.

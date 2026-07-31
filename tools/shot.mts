@@ -39,6 +39,13 @@ farm.lifetimeHarvested = farm.potatoes;
 if (args.soil) farm.soil = Number(args.soil);
 // The scene reads owned upgrades to pick which mark of each tier it draws.
 if (args.marks === "all") farm.upgrades = solo.SOLO_UPGRADES.map((u) => u.id);
+// ...and whether the horizon has closed. Settable on its own so the fold can be
+// shot against a farm that hasn't bought every other upgrade in the game.
+if (args.converged === "1" && !farm.upgrades.includes("ur_potato")) {
+  farm.upgrades.push("ur_potato");
+} else if (args.converged === "0") {
+  farm.upgrades = farm.upgrades.filter((u) => u !== "ur_potato");
+}
 
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const page = await browser.newPage({ viewport: { width: 400, height: 800 }, deviceScaleFactor: 2 });

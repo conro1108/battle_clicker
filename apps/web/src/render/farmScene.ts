@@ -27,6 +27,7 @@ import {
   FENCE,
   cropStages,
   FLOWERS,
+  flipped,
   POTATO_SPRITE,
   PRODUCER_MARKS,
   SACK,
@@ -70,6 +71,11 @@ export interface FarmView {
   hoard: number;
   /** Stable across reloads, so the farm's layout is *your* farm's layout. */
   seed: string;
+  /**
+   * The horizon has closed. Set once the Ur-Potato is bought, and never unset —
+   * the sky band stops being sky and becomes the inside of the tuber.
+   */
+  converged: boolean;
 }
 
 export const EMPTY_VIEW: FarmView = {
@@ -79,6 +85,7 @@ export const EMPTY_VIEW: FarmView = {
   soil: 1,
   hoard: 0,
   seed: "0",
+  converged: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -120,6 +127,21 @@ function clamp(v: number, lo: number, hi: number): number {
 /** The fractional part, always positive. Used for cheap per-index hashing. */
 function fract(x: number): number {
   return ((x % 1) + 1) % 1;
+}
+
+/**
+ * Blend two `#rrggbb` colours, and return `#rrggbb` so the result can be fed
+ * straight back in. It used to return `rgb(...)`, which parses as NaN on the way
+ * back through and silently leaves the canvas on its previous fillStyle — the
+ * ceiling spent an afternoon looking like smog because of it.
+ */
+function mix(a: string, b: string, k: number): string {
+  const hex = (s: string, i: number) => parseInt(s.slice(1 + i * 2, 3 + i * 2), 16);
+  const out = [0, 1, 2].map((i) => {
+    const c = Math.round(hex(a, i) + (hex(b, i) - hex(a, i)) * k);
+    return clamp(c, 0, 255).toString(16).padStart(2, "0");
+  });
+  return `#${out.join("")}`;
 }
 
 function mulberry32(seed: number): () => number {
@@ -1118,8 +1140,12 @@ export class FarmScene {
     this.stepHoard(dt, now);
     this.pipeEnd = 0;
 
-    this.drawSky(phase, t, horizon);
-    this.drawHills(phase, horizon);
+    if (this.view.converged) {
+      this.drawCeiling(horizon);
+    } else {
+      this.drawSky(phase, t, horizon);
+      this.drawHills(phase, horizon);
+    }
     this.drawGround(horizon, yardY);
     this.drawBack(t, now, horizon);
     this.drawField(t, now, horizon, yardY);
@@ -1197,6 +1223,128 @@ export class FarmScene {
     }
   }
 
+  /**
+   * The fold — what the sky becomes once the Ur-Potato is bought.
+   *
+   * Read it as geometry, not as a reflection. Standing inside the tuber and
+   * looking level, you're seeing the far side across the whole width of the
+   * thing, so it compresses almost to a line at the horizon and the haze between
+   * you and it is at its thickest. Looking straight up, the surface is only a
+   * diameter away, so it opens out and picks up detail. That's why the furrows
+   * widen toward the top of this band and the haze is heaviest at the bottom of
+   * it — exactly inverted from a sky, which is the whole point. If it faded out
+   * toward the top it would read as fog, and the screen would just look wrong
+   * rather than enclosed.
+   *
+   * Night is not special-cased: `draw` already lays its dimming pass over
+   * everything above the yard, and the ceiling wants that same treatment.
+   */
+  private drawCeiling(horizon: number): void {
+    const ctx = this.ctx;
+    const dry = 1 - clamp(this.view.soil, 0, 1);
+    // The same land, seen from underneath, so it takes the same soil colour —
+    // let the farm go and the whole world goes with it, not just the floor.
+    // Only lightly darkened: this has to stay recognisably *grass*, because the
+    // entire idea is that the thing overhead is your own field. Blended much
+    // further than this it turns brown and reads as smog.
+    const far = mix(mix(GRASS, "#a89b46", dry), "#3a3050", 0.22);
+    ctx.fillStyle = far;
+    ctx.fillRect(0, 0, SCENE_W, horizon);
+
+    // Furrows on the underside of the far field, and the main thing carrying
+    // the recession: they bunch up toward the fold, where the surface is
+    // running away from you, and open out toward the top, where it's overhead.
+    ctx.fillStyle = mix(mix(GRASS_DARK, "#8d8a3a", dry), "#3a3050", 0.22);
+    for (let y = horizon - 3; y > 0; ) {
+      const near = 1 - y / horizon;
+      ctx.fillRect(0, y, SCENE_W, near > 0.5 ? 2 : 1);
+      y -= Math.max(2, Math.round(2 + 9 * near));
+    }
+
+    this.drawCeilingCrop(horizon);
+    this.drawCeilingSkyline(horizon);
+
+    // The haze between here and the far side. Thickest at the fold, where the
+    // sightline is longest. Kept off the top third entirely — haze up there
+    // would flatten the one part of the band that's meant to feel close.
+    const haze = ctx.createLinearGradient(0, 0, 0, horizon);
+    haze.addColorStop(0, "rgba(198, 154, 104, 0)");
+    haze.addColorStop(0.35, "rgba(198, 154, 104, 0.12)");
+    haze.addColorStop(0.72, "rgba(196, 150, 100, 0.4)");
+    haze.addColorStop(1, "rgba(208, 164, 112, 0.72)");
+    ctx.fillStyle = haze;
+    ctx.fillRect(0, 0, SCENE_W, horizon);
+
+    // The seam. Where the two curves meet there's a bright line of the stuff
+    // you're inside of, and it's the one hard edge in the picture.
+    ctx.fillStyle = "rgba(226, 176, 119, 0.55)";
+    ctx.fillRect(0, horizon - 2, SCENE_W, 2);
+    ctx.fillStyle = "#e2b077";
+    ctx.fillRect(0, horizon - 1, SCENE_W, 1);
+  }
+
+  /** A row of the far side's crop, hanging down off the surface overhead. */
+  private drawCeilingCrop(horizon: number): void {
+    const ctx = this.ctx;
+    const plants = this.view.working.plot ?? 0;
+    if (plants <= 0) return;
+
+    const plant = artCanvas(flipped(this.mark("plot")));
+    const step = plant.w + 1;
+    const perRow = Math.max(3, Math.floor((SCENE_W - 24) / step));
+    const left = Math.round((SCENE_W - (perRow * step - 1)) / 2);
+    const rng = mulberry32(this.rngSeed ^ 0xf01d);
+
+    // Rows march down the band from the top, the gaps between them closing as
+    // the surface runs away toward the fold. Sprites can't be scaled — the
+    // buffer's whole rule is unscaled blits — so distance is carried by the
+    // spacing and by fading out, and the last stretch before the fold is left
+    // to the furrows alone, which is where a real field stops resolving anyway.
+    let y = 3;
+    let gap = plant.h + 7;
+    for (let r = 0; r < 5 && y + plant.h < horizon * 0.66; r++) {
+      ctx.globalAlpha = 0.78 - 0.13 * r;
+      const n = Math.min(perRow, Math.max(2, Math.round(plants / 4 / (r + 1))));
+      // Rows further off are patchier — the far side isn't a tidy copy of this
+      // one, it's a field seen from a long way up.
+      for (let i = 0; i < n; i++) {
+        if (r > 1 && rng() < 0.22) continue;
+        ctx.drawImage(plant.canvas, left + i * step, y);
+      }
+      y += gap;
+      gap = Math.max(4, Math.round(gap * 0.72));
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /** The far side's skyline, standing on the ceiling and pointing down at you. */
+  private drawCeilingSkyline(horizon: number): void {
+    const ctx = this.ctx;
+    const queue: Art[] = [];
+    for (const id of ORDER) {
+      if (PLACEMENT[id].band !== "back") continue;
+      const n = Math.min(2, shownCount(this.view.working[id] ?? 0, PLACEMENT[id].cap, PLACEMENT[id].spread));
+      for (let i = 0; i < n; i++) queue.push(flipped(this.mark(id)));
+    }
+    if (queue.length === 0) return;
+
+    // Newest first, same as the near skyline: what you just bought is what you
+    // want to see, on both surfaces.
+    queue.reverse();
+    const tree = artCanvas(flipped(TREE));
+    ctx.globalAlpha = 0.62;
+    ctx.drawImage(tree.canvas, 6, 0);
+
+    let x = tree.w + 10;
+    for (const art of queue) {
+      const sprite = artCanvas(art);
+      if (x + sprite.w > SCENE_W - 4) break;
+      if (sprite.h < horizon - 10) ctx.drawImage(sprite.canvas, x, 0);
+      x += sprite.w + 3;
+    }
+    ctx.globalAlpha = 1;
+  }
+
   private drawHills(phase: Phase, horizon: number): void {
     const ctx = this.ctx;
     const sky = SKY[phase];
@@ -1220,11 +1368,6 @@ export class FarmScene {
     // Tired soil isn't a number on this screen — the field goes the colour of a
     // field that needs help.
     const dry = 1 - Math.max(0, Math.min(1, soil));
-    const mix = (a: string, b: string, k: number) => {
-      const pa = [parseInt(a.slice(1, 3), 16), parseInt(a.slice(3, 5), 16), parseInt(a.slice(5, 7), 16)];
-      const pb = [parseInt(b.slice(1, 3), 16), parseInt(b.slice(3, 5), 16), parseInt(b.slice(5, 7), 16)];
-      return `rgb(${pa.map((c, i) => Math.round(c + ((pb[i] ?? c) - c) * k)).join(",")})`;
-    };
     ctx.fillStyle = mix(GRASS, "#a89b46", dry);
     ctx.fillRect(0, horizon, SCENE_W, yardY - horizon);
 
