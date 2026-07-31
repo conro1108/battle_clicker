@@ -27,7 +27,6 @@ import {
   FENCE,
   cropStages,
   FLOWERS,
-  flipped,
   POTATO_SPRITE,
   PRODUCER_MARKS,
   SACK,
@@ -1226,123 +1225,124 @@ export class FarmScene {
   /**
    * The fold — what the sky becomes once the Ur-Potato is bought.
    *
-   * Read it as geometry, not as a reflection. Standing inside the tuber and
-   * looking level, you're seeing the far side across the whole width of the
-   * thing, so it compresses almost to a line at the horizon and the haze between
-   * you and it is at its thickest. Looking straight up, the surface is only a
-   * diameter away, so it opens out and picks up detail. That's why the furrows
-   * widen toward the top of this band and the haze is heaviest at the bottom of
-   * it — exactly inverted from a sky, which is the whole point. If it faded out
-   * toward the top it would read as fog, and the screen would just look wrong
-   * rather than enclosed.
+   * Not a second farm overhead. The first pass drew the far side of the field
+   * up there, mirrored, and it was the wrong idea twice: two farms competed for
+   * the screen and the one you actually play lost, and "there is another farm
+   * above me" is a much smaller thought than the one the moment is for. This is
+   * the inside of the tuber — cut flesh, a vascular ring, and eyes sprouting
+   * down at you out of the dark.
+   *
+   * The gradient runs bright at the top to deep shadow at the fold, which is the
+   * inverse of a sky and the whole reason it reads as a lid rather than an
+   * opening: what's directly overhead is close enough to catch light, and the
+   * far side across the width of the thing is not.
    *
    * Night is not special-cased: `draw` already lays its dimming pass over
    * everything above the yard, and the ceiling wants that same treatment.
    */
   private drawCeiling(horizon: number): void {
     const ctx = this.ctx;
+    // Tired soil drags the flesh too. The land going grey is supposed to be the
+    // whole world going grey, not just the floor of it.
     const dry = 1 - clamp(this.view.soil, 0, 1);
-    // The same land, seen from underneath, so it takes the same soil colour —
-    // let the farm go and the whole world goes with it, not just the floor.
-    // Only lightly darkened: this has to stay recognisably *grass*, because the
-    // entire idea is that the thing overhead is your own field. Blended much
-    // further than this it turns brown and reads as smog.
-    const far = mix(mix(GRASS, "#a89b46", dry), "#3a3050", 0.22);
-    ctx.fillStyle = far;
+    const lit = mix("#ecd9a6", "#a09c78", dry * 0.6);
+    const deep = mix("#7d5330", "#544f3c", dry * 0.6);
+
+    const grad = ctx.createLinearGradient(0, 0, 0, horizon);
+    grad.addColorStop(0, lit);
+    grad.addColorStop(0.5, mix(lit, deep, 0.4));
+    grad.addColorStop(1, deep);
+    ctx.fillStyle = grad;
     ctx.fillRect(0, 0, SCENE_W, horizon);
 
-    // Furrows on the underside of the far field, and the main thing carrying
-    // the recession: they bunch up toward the fold, where the surface is
-    // running away from you, and open out toward the top, where it's overhead.
-    ctx.fillStyle = mix(mix(GRASS_DARK, "#8d8a3a", dry), "#3a3050", 0.22);
-    for (let y = horizon - 3; y > 0; ) {
-      const near = 1 - y / horizon;
-      ctx.fillRect(0, y, SCENE_W, near > 0.5 ? 2 : 1);
-      y -= Math.max(2, Math.round(2 + 9 * near));
-    }
+    this.drawFlesh(horizon, lit, deep);
+    this.drawEyes(horizon);
 
-    this.drawCeilingCrop(horizon);
-    this.drawCeilingSkyline(horizon);
-
-    // The haze between here and the far side. Thickest at the fold, where the
-    // sightline is longest. Kept off the top third entirely — haze up there
-    // would flatten the one part of the band that's meant to feel close.
-    const haze = ctx.createLinearGradient(0, 0, 0, horizon);
-    haze.addColorStop(0, "rgba(198, 154, 104, 0)");
-    haze.addColorStop(0.35, "rgba(198, 154, 104, 0.12)");
-    haze.addColorStop(0.72, "rgba(196, 150, 100, 0.4)");
-    haze.addColorStop(1, "rgba(208, 164, 112, 0.72)");
-    ctx.fillStyle = haze;
-    ctx.fillRect(0, 0, SCENE_W, horizon);
-
-    // The seam. Where the two curves meet there's a bright line of the stuff
-    // you're inside of, and it's the one hard edge in the picture.
-    ctx.fillStyle = "rgba(226, 176, 119, 0.55)";
-    ctx.fillRect(0, horizon - 2, SCENE_W, 2);
-    ctx.fillStyle = "#e2b077";
+    // The seam. Where the flesh comes down to meet the field there's a bright
+    // edge of it, and it's the one hard line in the picture.
+    ctx.fillStyle = "rgba(232, 196, 140, 0.5)";
+    ctx.fillRect(0, horizon - 3, SCENE_W, 3);
+    ctx.fillStyle = mix(lit, deep, 0.25);
     ctx.fillRect(0, horizon - 1, SCENE_W, 1);
   }
 
-  /** A row of the far side's crop, hanging down off the surface overhead. */
-  private drawCeilingCrop(horizon: number): void {
+  /** Starch marbling and the vascular ring — the texture of a cut potato. */
+  private drawFlesh(horizon: number, lit: string, deep: string): void {
     const ctx = this.ctx;
-    const plants = this.view.working.plot ?? 0;
-    if (plants <= 0) return;
+    const rng = mulberry32(this.rngSeed ^ 0xf1e5);
 
-    const plant = artCanvas(flipped(this.mark("plot")));
-    const step = plant.w + 1;
-    const perRow = Math.max(3, Math.floor((SCENE_W - 24) / step));
-    const left = Math.round((SCENE_W - (perRow * step - 1)) / 2);
-    const rng = mulberry32(this.rngSeed ^ 0xf01d);
-
-    // Rows march down the band from the top, the gaps between them closing as
-    // the surface runs away toward the fold. Sprites can't be scaled — the
-    // buffer's whole rule is unscaled blits — so distance is carried by the
-    // spacing and by fading out, and the last stretch before the fold is left
-    // to the furrows alone, which is where a real field stops resolving anyway.
-    let y = 3;
-    let gap = plant.h + 7;
-    for (let r = 0; r < 5 && y + plant.h < horizon * 0.66; r++) {
-      ctx.globalAlpha = 0.78 - 0.13 * r;
-      const n = Math.min(perRow, Math.max(2, Math.round(plants / 4 / (r + 1))));
-      // Rows further off are patchier — the far side isn't a tidy copy of this
-      // one, it's a field seen from a long way up.
-      for (let i = 0; i < n; i++) {
-        if (r > 1 && rng() < 0.22) continue;
-        ctx.drawImage(plant.canvas, left + i * step, y);
+    // Blotches, low contrast on purpose: this is the quiet half of the screen
+    // and anything with an edge on it starts competing with the farm again.
+    for (let i = 0; i < 90; i++) {
+      const y = Math.floor(rng() * horizon);
+      const x = Math.floor(rng() * SCENE_W);
+      // Lighter high up where the flesh catches light, darker down in the fold.
+      const near = 1 - y / horizon;
+      ctx.globalAlpha = 0.06 + 0.07 * rng();
+      ctx.fillStyle = rng() < 0.35 + 0.4 * near ? lit : deep;
+      const w = 3 + Math.floor(rng() * 9);
+      for (let k = 0, yy = y; k < 2 + Math.floor(rng() * 2); k++, yy++) {
+        ctx.fillRect(x + Math.floor(rng() * 3), yy, w - Math.floor(rng() * 2), 1);
       }
-      y += gap;
-      gap = Math.max(4, Math.round(gap * 0.72));
     }
     ctx.globalAlpha = 1;
+
+    // The vascular ring. Two of them, wavy, running the full width — the one
+    // piece of structure in here, and what stops the flesh reading as fog.
+    for (const [depth, alpha] of [[0.42, 0.22], [0.62, 0.14]] as const) {
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = deep;
+      const base = Math.round(horizon * depth);
+      for (let x = 0; x < SCENE_W; x++) {
+        const y = base + Math.round(2.5 * Math.sin(x / 23) + 1.5 * Math.sin(x / 7 + 2));
+        ctx.fillRect(x, y, 1, 1);
+      }
+      ctx.globalAlpha = 1;
+    }
   }
 
-  /** The far side's skyline, standing on the ceiling and pointing down at you. */
-  private drawCeilingSkyline(horizon: number): void {
+  /**
+   * Eyes, sprouting downward.
+   *
+   * The detail that does the most work for the least ink: a potato you are
+   * inside of is still a potato, and it is still trying to grow. Placement is
+   * seeded, so they're in the same spots every time you open the farm.
+   */
+  private drawEyes(horizon: number): void {
     const ctx = this.ctx;
-    const queue: Art[] = [];
-    for (const id of ORDER) {
-      if (PLACEMENT[id].band !== "back") continue;
-      const n = Math.min(2, shownCount(this.view.working[id] ?? 0, PLACEMENT[id].cap, PLACEMENT[id].spread));
-      for (let i = 0; i < n; i++) queue.push(flipped(this.mark(id)));
-    }
-    if (queue.length === 0) return;
+    const rng = mulberry32(this.rngSeed ^ 0x3ee5);
 
-    // Newest first, same as the near skyline: what you just bought is what you
-    // want to see, on both surfaces.
-    queue.reverse();
-    const tree = artCanvas(flipped(TREE));
-    ctx.globalAlpha = 0.62;
-    ctx.drawImage(tree.canvas, 6, 0);
+    for (let i = 0; i < 4; i++) {
+      const x = 10 + Math.floor(rng() * (SCENE_W - 24));
+      // Upper half only: down at the fold there isn't the light to see one, and
+      // a sprout near the seam looks like it's growing out of your own field.
+      const y = 5 + Math.floor(rng() * horizon * 0.42);
+      const fade = 0.95 - 0.35 * (y / horizon);
 
-    let x = tree.w + 10;
-    for (const art of queue) {
-      const sprite = artCanvas(art);
-      if (x + sprite.w > SCENE_W - 4) break;
-      if (sprite.h < horizon - 10) ctx.drawImage(sprite.canvas, x, 0);
-      x += sprite.w + 3;
+      ctx.globalAlpha = fade;
+      // The dimple, with a lit lip above it so it reads as a pit rather than a
+      // smudge. Six across rather than four: the band is only sixty-odd pixels
+      // deep, and at four this was a speck nobody could find.
+      ctx.fillStyle = "rgba(246, 224, 182, 0.7)";
+      ctx.fillRect(x, y - 1, 6, 1);
+      ctx.fillStyle = "#3d2917";
+      ctx.fillRect(x, y, 6, 3);
+      ctx.fillStyle = "#2b1c0f";
+      ctx.fillRect(x + 1, y + 1, 4, 1);
+
+      // The sprout, drawn by hand rather than by flipping the grass tuft — at
+      // four pixels a tuft upside down is a spider, which is not the note. Pale
+      // rather than green on purpose: a potato sprouting in the dark etiolates,
+      // and it also keeps the one growing thing up here from reading as crop.
+      const len = 5 + Math.floor(rng() * 4);
+      ctx.fillStyle = "#cbb8dc";
+      ctx.fillRect(x + 2, y + 3, 1, len);
+      ctx.fillStyle = "#e6dcef";
+      ctx.fillRect(x + 1, y + 3 + Math.floor(len * 0.45), 1, 1);
+      ctx.fillRect(x + 3, y + 3 + len - 2, 1, 1);
+      ctx.fillRect(x + 2, y + 3 + len, 1, 1);
+      ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = 1;
   }
 
   private drawHills(phase: Phase, horizon: number): void {

@@ -59,14 +59,15 @@ this is what pulls the endgame from five days of play to three, and the upgrade
 stays expensive enough to feel like a decision.
 
 **What happens:** the horizon closes. The sky band stops being sky and becomes
-the far inner surface of the tuber — your own field hanging mirrored and dimmed
-overhead, with a fold of haze where the two curves meet.
+the inside of the tuber — cut flesh, a vascular ring, and eyes sprouting down at
+you out of the dark, brightest directly overhead and falling away into shadow at
+the fold.
 
 This is the cheapest dramatic scene change available in `farmScene.ts`. The sky
-is already a band with its own palette, hills, clouds and flying producers;
-replacing it with an inverted, darkened blit of the field band reuses machinery
-that exists. It is still the largest single piece of work here, and the thing to
-prototype first — if the fold doesn't read, there's no payoff to build toward.
+is already a band with its own palette, hills, clouds and flying producers, so
+replacing what fills it is a contained change. It is still the largest single
+piece of work here, and the thing to prototype first — if the fold doesn't read,
+there's no payoff to build toward.
 
 **Permanent, not per-run.** A `converged` flag on `FarmState` that survives
 prestige, alongside `perks` and `seeds`. Re-triggering every generation makes the
@@ -89,10 +90,17 @@ than competing for field space.
 
 | # | Name | Rate/s | Cost | Draws |
 |---|---|---|---|---|
-| 13 | **Inversion Furrow** | 4.4e10 | 2.8e15 | inverted band, ploughing the ceiling |
+| 13 | **Inversion Furrow** | 4.4e10 | 2.8e15 | ceiling band, ploughing the flesh |
 | 14 | **Mantle Tap** | 3.5e11 | 4.0e16 | yard, shaft running off the bottom |
-| 15 | **Chorus** | 2.8e12 | 5.6e17 | inverted band, mirrored farmhands |
+| 15 | **Chorus** | 2.8e12 | 5.6e17 | *see below* |
 | 16 | **Second Potato** | 2.2e13 | 8.0e18 | hanging where the sun was |
+
+**The Chorus needs rehoming.** It was written as the other yous harvesting on the
+far surface, which assumed the ceiling would be a mirrored field — and it isn't
+any more, so there's nowhere for those figures to stand. Its mechanic (rate
+scales with `generation`) is the good part and worth keeping. Either put the
+figures in the field band alongside the farmhands, or give the flesh silhouettes
+walking on it. Not decided.
 
 Same x8 rate and x14 cost per rung as everything below, and one x2 global per
 rung. That pairing is what has kept real payback flat at a few minutes across the
@@ -207,37 +215,42 @@ bignum swap. The brand is already there if that changes.
 
 ## The fold, prototyped
 
-Built and shot. It reads — the band overhead is recognisably your own field,
-and the screen feels enclosed rather than lidded. Three things were worth
-learning by doing it rather than by arguing about it:
+Built, shot, thrown away once, and rebuilt. It reads: the farm is clearly the
+subject of the screen and the band above it is a warm, quiet lid of potato.
 
-**Don't mirror the field. Draw the far side of a curve.** The instinct is a
-flipped copy of the field band, and it's wrong twice over: it reads as a
-reflection rather than a place, and it puts the most detail exactly where the
-geometry says there should be least. Inside a sphere, looking level means looking
-across the full width of the thing, so the surface compresses to a line at the
-horizon and the haze between you and it is at its thickest; looking straight up,
-it's only a diameter away. So the furrows *widen* toward the top of the band and
-the haze is heaviest at the *bottom* — the inverse of a sky. Fading toward the
-top instead reads as fog, and the screen just looks broken.
+**The mirrored field was the wrong idea, and looking at it was the only way to
+know.** The first pass drew the far side of your own farm overhead — furrows,
+crop rows, your skyline inverted and pointing down at you, hazing out toward the
+seam. It was defensible on paper and it was too busy in practice: two farms
+competed for the screen and the one you actually play lost. "There is another
+farm above me" also turns out to be a much smaller thought than the moment is
+for. The flesh says *you are inside a potato* without asking anyone to work it
+out.
 
-**Sprites flip by reversing the char grid, not by flipping the blit.** The
-scene's no-transform rule is load-bearing: `ctx.scale(1, -1)` puts art half a
-pixel off the buffer grid and 1px outlines double or vanish. `flipped()` in
-`art.ts` reverses the rows and is memoised, same shape as `withered()`. Sprites
-can't be *scaled* at all, so distance in the ceiling is carried entirely by row
-spacing and alpha, and the last stretch before the fold is left to the furrows —
-which is where a real field stops resolving anyway.
+**What carries the read now.** A vertical gradient bright at the top and deep in
+shadow at the fold — the inverse of a sky, and the reason it sits as a lid rather
+than an opening: what's directly overhead is close enough to catch light, the far
+side across the width of the thing is not. Over that, low-contrast starch
+marbling, two wavy vascular rings, and four eyes sprouting downward. Everything
+is deliberately soft-edged; anything with a hard edge on it starts competing with
+the farm again. The one hard line in the picture is the seam.
+
+**Details at this size are a specific size or they are nothing.** The eyes were
+first drawn 4px across and were simply invisible on a 63px-deep band — not
+subtle, absent. At 6px with a lit lip above the dimple they land. Their sprouts
+started as the ambient grass tuft flipped upside down, which at four pixels is
+unmistakably a spider; hand-drawn pale stems fixed it. Pale rather than green is
+also the accurate choice — a potato sprouting in the dark etiolates — and it
+keeps the one growing thing up there from reading as crop.
 
 **One bug worth recording, because it will happen again.** `mix()` took hex and
 returned `rgb(...)`, so nesting it — `mix(mix(a, b, k), c, j)` — parsed as NaN,
 which canvas treats as an invalid fillStyle by silently keeping the previous one.
-The ceiling rendered as flat grey smog and the furrows never appeared at all,
-with no error anywhere. It now returns hex so it composes. Worth knowing that
-this whole class of failure is invisible to `tsc` and to every test in the repo,
-and that the screenshot was the only thing that caught it.
+The ceiling rendered as flat grey smog with no error anywhere. It returns hex now
+so it composes. This whole class of failure is invisible to `tsc` and to every
+test in the repo; the screenshot was the only thing that caught it.
 
-Still open: the refineries' steam plumes rise into the ceiling and smear the far
-field. Arguably correct — steam rises and hits something now — but it wants a
-look. The fold has no animation of any kind yet, and the moment it fires almost
-certainly wants one.
+Still open: the refineries' steam plumes rise into the ceiling and pool against
+it. Arguably correct now that there's something up there to hit, but it wants a
+look. And the fold has no animation of any kind — the moment it fires is the
+payoff of the whole game and it currently just cuts.
