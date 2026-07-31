@@ -47,7 +47,7 @@ export function AwayReport({
           )}
           {report.brokeTotal > 0 && (
             <li>
-              <span>Broken</span>
+              <span>Knocked out</span>
               <strong className="hurt">{report.brokeTotal} units</strong>
             </li>
           )}

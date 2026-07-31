@@ -28,7 +28,7 @@ export function FarmStatus({
   const repairBill = solo.totalRepairCost(farm);
   const soilBill = solo.soilRestoreCost(farm);
   // Each loss is measured against its own cause rather than a common total,
-  // because that's what each one is exactly worth: broken kit is the share of
+  // because that's what each one is exactly worth: damage is the share of
   // units offline, tired soil is the multiplier itself.
   const breakPct = Math.round((lostToBreak / Math.max(1e-9, lostToBreak + rate)) * 100);
   const soilPct = Math.round((1 - farm.soil) * 100);
@@ -79,7 +79,7 @@ export function FarmStatus({
           <div className="damage-body">
             {lostToBreak > 0 && (
               <div>
-                <span className="hurt">−{breakPct}% production</span> broken kit ·{" "}
+                <span className="hurt">−{breakPct}% production</span> damage ·{" "}
                 <span className="muted">{format(repairBill)} to fix</span>
               </div>
             )}

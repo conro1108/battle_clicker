@@ -266,11 +266,11 @@ export function applyFarmCommand(f0: FarmState, cmd: FarmCommand, now: Millis): 
       const producer = SOLO_PRODUCER_BY_ID[cmd.producer];
       if (!producer) return fail("No such producer.");
       const broken = brokenCount(farm, producer.id);
-      if (broken <= 0) return fail("Nothing broken there.");
+      if (broken <= 0) return fail("Nothing to put right there.");
       const cost = repairCost(farm, producer.id);
       if (!spend(cost)) return fail("Not enough potatoes.");
       farm = { ...farm, broken: { ...farm.broken, [producer.id]: 0 } };
-      note(`repaired ${broken}x ${producer.name}.`, "good");
+      note(`put ${broken}x ${producer.name} back to work.`, "good");
       break;
     }
 

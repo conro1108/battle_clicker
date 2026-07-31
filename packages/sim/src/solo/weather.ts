@@ -19,7 +19,6 @@ import {
   MIN_SOIL,
   SOLO_MAX_BROKEN_SHARE,
   SOLO_PRODUCERS,
-  SOLO_PRODUCER_BY_ID,
   type SoloProducerId,
 } from "./content.js";
 import {
@@ -190,9 +189,13 @@ function targetsFor(f: FarmState, scope: BreakScope): SoloProducerId[] {
   return [best.id];
 }
 
+/**
+ * Each producer says what being hurt looks like for it, so a storm reads as
+ * "3x Tractor broken, 2x Farmhand maimed" rather than one verb over both.
+ */
 function describeBreak(broke: Partial<Record<SoloProducerId, number>>): string {
   return SOLO_PRODUCERS.filter((prod) => (broke[prod.id] ?? 0) > 0)
-    .map((prod) => `${broke[prod.id]}x ${SOLO_PRODUCER_BY_ID[prod.id].name}`)
+    .map((prod) => `${broke[prod.id]}x ${prod.name} ${prod.hurt}`)
     .join(", ");
 }
 
@@ -285,7 +288,7 @@ export function fireWeather(f: FarmState, at: Millis): { farm: FarmState; event:
   // the player has any feel for. "Took 8.0 soil" is a number from the engine;
   // "−8% production" is the same fact in the terms you'd act on.
   const parts: string[] = [];
-  if (brokeTotal > 0) parts.push(`wrecked ${describeBreak(broke)}`);
+  if (brokeTotal > 0) parts.push(describeBreak(broke));
   if (soilLost > 1e-9) parts.push("tired the soil");
   if (kind.effect.kind === "boon") parts.push(`a good year, +${format(gained)}`);
   const cost =

@@ -93,7 +93,7 @@ export function Shop({
         <button className={tab === "defend" ? "on" : ""} onClick={() => setTab("defend")}>
           Defend
           {brokenRate(me) > 0 && (
-            <span className="tab-alert" title="You have broken kit" aria-label="damaged" />
+            <span className="tab-alert" title="Something on your farm is down" aria-label="damaged" />
           )}
         </button>
       </header>
@@ -128,7 +128,7 @@ export function Shop({
               return (
                 <Row
                   key={prod.id}
-                  name={`${prod.name}${owned ? ` ×${owned}` : ""}${broken ? ` (${broken} broken)` : ""}`}
+                  name={`${prod.name}${owned ? ` ×${owned}` : ""}${broken ? ` (${broken} ${prod.hurt})` : ""}`}
                   blurb={`${prod.blurb} +${format(each * n)}/s`}
                   cost={cost}
                   meta={qty === "max" ? `buy ${n}` : undefined}
@@ -209,7 +209,7 @@ export function Shop({
           {PRODUCERS.some((prod) => (me.broken[prod.id] ?? 0) > 0) && (
             <>
               <p className="hint">
-                Broken kit stays broken. Repairs cost less than rebuilding, but they're still
+                Nothing mends on its own. Putting it right costs less than rebuilding, but it's still
                 potatoes you didn't grow with — that's the price of getting hit.
               </p>
               <div className="rows">
@@ -222,8 +222,8 @@ export function Shop({
                     <Row
                       key={`repair-${prod.id}`}
                       accent="row-repair"
-                      name={`Repair ${prod.name}`}
-                      blurb={`${broken} broken · restores +${format(back)}/s`}
+                      name={`${prod.mend} ${prod.name}`}
+                      blurb={`${broken} ${prod.hurt} · restores +${format(back)}/s`}
                       cost={cost}
                       affordable={P.gte(budget, cost)}
                       onBuy={() => dispatch({ type: "repair", player: me.id, producer: prod.id })}

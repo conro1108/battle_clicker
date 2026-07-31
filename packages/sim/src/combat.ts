@@ -1,7 +1,6 @@
 import {
   MAX_BROKEN_SHARE,
   PRODUCERS,
-  PRODUCER_BY_ID,
   type Attack,
   type Defense,
   type ProducerId,
@@ -134,7 +133,9 @@ export function resolveAttack(args: {
 /** Human-readable summary of what an attack knocked out. */
 export function describeBreak(broke: Partial<Record<ProducerId, number>>): string {
   const parts = PRODUCERS.filter((prod) => (broke[prod.id] ?? 0) > 0).map(
-    (prod) => `${broke[prod.id]}x ${PRODUCER_BY_ID[prod.id].name}`,
+    // Each producer says what being hurt looks like for it — a tractor breaks,
+    // a farmhand is maimed — so one verb doesn't have to cover both.
+    (prod) => `${broke[prod.id]}x ${prod.name} ${prod.hurt}`,
   );
   return parts.join(", ");
 }

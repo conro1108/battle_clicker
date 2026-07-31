@@ -241,7 +241,7 @@ export function applyCommand(state: MatchState, cmd: Command, now: Millis): Comm
       } else if (outcome.brokeTotal > 0) {
         // Phrased so the target is an object, not a possessive — the local
         // player is literally named "You", and "You's Potato Plot" is grim.
-        text = `hit ${defender.name} with ${attack.name} — wrecked ${describeBreak(outcome.broke)}.`;
+        text = `hit ${defender.name} with ${attack.name} — ${describeBreak(outcome.broke)}.`;
       } else {
         text = `hit ${defender.name} with ${attack.name}.`;
       }
@@ -256,12 +256,12 @@ export function applyCommand(state: MatchState, cmd: Command, now: Millis): Comm
       const producer = PRODUCER_BY_ID[cmd.producer as ProducerId];
       if (!producer) return fail("No such producer.");
       const broken = Math.min(actor.broken[producer.id] ?? 0, actor.producers[producer.id] ?? 0);
-      if (broken <= 0) return fail("Nothing broken there.");
+      if (broken <= 0) return fail("Nothing to put right there.");
       const cost = repairCost(actor, producer.id);
       if (!spend(cost)) return fail("Not enough potatoes.");
       actor = { ...actor, broken: { ...actor.broken, [producer.id]: 0 } };
       entries.push(
-        entry(state, t, actor.id, `repaired ${broken}x ${producer.name}.`, "good"),
+        entry(state, t, actor.id, `put ${broken}x ${producer.name} back to work.`, "good"),
       );
       break;
     }

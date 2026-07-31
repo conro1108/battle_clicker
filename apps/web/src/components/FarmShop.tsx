@@ -100,7 +100,7 @@ export function GrowPanel({
           return (
             <Row
               key={prod.id}
-              name={`${prod.name}${owned ? ` ×${owned}` : ""}${broken ? ` (${broken} broken)` : ""}`}
+              name={`${prod.name}${owned ? ` ×${owned}` : ""}${broken ? ` (${broken} ${prod.hurt})` : ""}`}
               blurb={`${prod.blurb} +${format(each * n)}/s`}
               cost={format(cost)}
               meta={qty === "max" ? `buy ${n}` : undefined}
@@ -149,8 +149,8 @@ export function LandPanel({
       {(damaged.length > 0 || soilBill > 0) && (
         <>
           <p className="hint">
-            Nothing here heals on its own. Broken kit stays broken and tired soil stays tired
-            until you spend on it — that's what {farm.converged ? "the tuber" : "the weather"}{" "}
+            Nothing here mends on its own. What the weather hurt stays hurt and tired soil
+            stays tired until you spend on it — that's what {farm.converged ? "the tuber" : "the weather"}{" "}
             actually costs.
           </p>
           <div className="rows">
@@ -178,8 +178,8 @@ export function LandPanel({
                 <Row
                   key={`repair-${prod.id}`}
                   accent="row-repair"
-                  name={`Repair ${prod.name}`}
-                  blurb={`${broken} broken · restores +${format(back)}/s`}
+                  name={`${prod.mend} ${prod.name}`}
+                  blurb={`${broken} ${prod.hurt} · restores +${format(back)}/s`}
                   cost={format(cost)}
                   affordable={P.gte(budget, cost)}
                   onBuy={() => dispatch({ type: "repair", producer: prod.id })}

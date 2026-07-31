@@ -102,9 +102,9 @@ export function Farm({
 
       {lost > 0 && (
         <div className="damage">
-          <div className="damage-head">Broken kit</div>
+          <div className="damage-head">Damage</div>
           <div className="damage-body">
-            <span className="hurt">−{format(lost)}/s</span> until repaired ·{" "}
+            <span className="hurt">−{format(lost)}/s</span> until you put it right ·{" "}
             <span className="muted">{format(bill)} to fix</span>
           </div>
         </div>

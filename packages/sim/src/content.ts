@@ -12,6 +12,13 @@ export interface Producer {
   id: ProducerId;
   name: string;
   blurb: string;
+  /**
+   * What a damaged one of these is, and what putting it right is called. Kept
+   * per-producer because a tractor breaks and a farmhand doesn't. Reads as
+   * "2 maimed" and "Patch up Farmhand".
+   */
+  hurt: string;
+  mend: string;
   /** Potatoes per second, per unit owned, before multipliers. */
   baseRate: number;
   baseCost: Potatoes;
@@ -31,6 +38,8 @@ export const PRODUCERS: readonly Producer[] = [
     id: "plot",
     name: "Potato Plot",
     blurb: "A patch of dirt. It does what dirt does.",
+    hurt: "trampled",
+    mend: "Turn over",
     baseRate: 1.25,
     baseCost: P.of(15),
     growth: 1.12,
@@ -39,6 +48,8 @@ export const PRODUCERS: readonly Producer[] = [
     id: "hand",
     name: "Farmhand",
     blurb: "Pays for themselves. Eventually.",
+    hurt: "maimed",
+    mend: "Patch up",
     baseRate: 9,
     baseCost: P.of(110),
     growth: 1.12,
@@ -47,6 +58,8 @@ export const PRODUCERS: readonly Producer[] = [
     id: "irrigation",
     name: "Irrigation Rig",
     blurb: "Water, on purpose, at the right time.",
+    hurt: "burst",
+    mend: "Repair",
     baseRate: 65,
     baseCost: P.of(800),
     growth: 1.12,
@@ -55,6 +68,8 @@ export const PRODUCERS: readonly Producer[] = [
     id: "tractor",
     name: "Tractor",
     blurb: "Diesel-powered crop math.",
+    hurt: "broken",
+    mend: "Repair",
     baseRate: 480,
     baseCost: P.of(6_000),
     growth: 1.12,
@@ -63,6 +78,8 @@ export const PRODUCERS: readonly Producer[] = [
     id: "harvester",
     name: "Combine Harvester",
     blurb: "Eats a field for breakfast.",
+    hurt: "jammed",
+    mend: "Unjam",
     baseRate: 3_500,
     baseCost: P.of(45_000),
     growth: 1.12,
@@ -71,6 +88,8 @@ export const PRODUCERS: readonly Producer[] = [
     id: "lab",
     name: "Tuber Lab",
     blurb: "The potatoes are asking questions now.",
+    hurt: "contaminated",
+    mend: "Decontaminate",
     baseRate: 26_000,
     baseCost: P.of(340_000),
     growth: 1.12,
