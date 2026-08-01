@@ -58,7 +58,7 @@ export function producerMultiplier(f: FarmState, id: SoloProducerId): number {
   // The Chorus is every farm you ever handed down, still working. Nothing else
   // in the game makes the meta-layer visible in the picture.
   if (prod.generationScaled) m *= f.generation;
-  if (prod.afterFold) m *= 1 + perkLevel(f, "ur_yield");
+  if (prod.world === "inside") m *= 1 + perkLevel(f, "ur_yield");
   return m;
 }
 
@@ -198,11 +198,11 @@ export function mitigation(f: FarmState, role: LandRole): number {
 // buy a Mantle Tap into a farm with a sky.
 
 export function isProducerAvailable(f: FarmState, id: SoloProducerId): boolean {
-  return f.converged || !SOLO_PRODUCER_BY_ID[id].afterFold;
+  return f.converged || SOLO_PRODUCER_BY_ID[id].world === "outside";
 }
 
 export function isLandAvailable(f: FarmState, id: LandId): boolean {
-  return f.converged || !LAND_BY_ID[id].afterFold;
+  return f.converged || LAND_BY_ID[id].world === "outside";
 }
 
 export function isPerkAvailable(f: FarmState, id: keyof typeof PERK_BY_ID): boolean {

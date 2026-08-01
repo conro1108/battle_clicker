@@ -877,6 +877,97 @@ export const CHORUS_FIGURE: Art = {
   },
 };
 
+/**
+ * An eye, opened. The one thing on the inside farm that is unambiguously alive
+ * and unambiguously the potato's rather than yours — every other rung down here
+ * is kit you brought with you.
+ */
+export const EYE: Art = {
+  rows: [
+    "...ss.s...",
+    "..sksks...",
+    "...ksk....",
+    ".kkkkkkkk.",
+    "khhhhhhhhk",
+    "khhwwwwhhk",
+    "khwwiiwwhk",
+    "khwwinwwhk",
+    "khhwwwwhhk",
+    "khhhhhhhhk",
+    ".kkkkkkkk.",
+    "..k....k..",
+  ],
+  palette: { k: K, h: "#a8703c", w: "#e8d3a0", i: "#6f4a8f", n: "#241830", s: "#7fc45a" },
+};
+
+/**
+ * A cut face of starch with the plant working it. Wide and low: it's a quarry,
+ * so it's the one thing down here that reads as ground rather than as a
+ * structure standing on it.
+ */
+export const STARCH_SEAM: Art = {
+  rows: [
+    "......kkkkkk....",
+    "....kkwwwwwwkk..",
+    "..kkwwwwwwwwwwk.",
+    ".kwwwwwwwwwwwwwk",
+    "kwwsswwwwwsswwwk",
+    "kwwwwwwwwwwwwwwk",
+    "kwwwwkkkkwwwwwwk",
+    "kwwwwkddkwwwwwwk",
+    "kkkkkkddkkkkkkkk",
+  ],
+  palette: { k: K, w: "#e6dcc0", s: "#f7f1dc", d: "#2c1d14" },
+};
+
+/**
+ * A tapped vein. The clamp is the machine; everything else in the sprite is the
+ * potato's own plumbing, which is why it's the only rung drawn in a colour that
+ * isn't in any other sprite on the farm.
+ */
+export const PHLOEM_VEIN: Art = {
+  rows: [
+    "..kvvk....",
+    "..kvvk....",
+    ".kkvvkk...",
+    "kmmmmmmk..",
+    "kmsggsmk..",
+    "kmmmmmmk..",
+    ".kkvvkk...",
+    "..kvvkk...",
+    "...kvvk...",
+    "...kvvk...",
+    "..kkvvkk..",
+    "..kvvvvk..",
+    "...kkkk...",
+  ],
+  palette: { k: K, v: "#8f5e8a", m: "#8d959d", s: "#5f6870", g: "#e0a8dc" },
+};
+
+/**
+ * A door cut in the inside of the skin, propped open. What you can see through
+ * it is more flesh, which is the joke and the reason the opening is drawn in the
+ * ceiling's own ochre rather than as darkness.
+ */
+export const PERIDERM_GATE: Art = {
+  rows: [
+    "kkkkkkkkkkkkkk",
+    "kddddddddddddk",
+    "kdkkkkkkkkkkdk",
+    "kdkffffffffkdk",
+    "kdkfffllfffkdk",
+    "kdkfflllfffkdk",
+    "kdkffllffffkdk",
+    "kdkfffffffkkdk",
+    "kdkffffffffkdk",
+    "kdkffffffffkdk",
+    "kdkkkkkkkkkkdk",
+    "kddddddddddddk",
+    "kkkkkkkkkkkkkk",
+  ],
+  palette: { k: K, d: "#6b4630", f: "#c9a05c", l: "#ecd9a6" },
+};
+
 /** The last rung, hanging where the sun was. It has eyes. */
 export const SECOND_POTATO: Art = {
   rows: [
@@ -1503,6 +1594,84 @@ const CHORUS_FIGURE_4: Art = {
   },
 };
 
+/** It Sees the Whole Field: the eye has grown a second pupil, and a sprout. */
+const EYE_4: Art = {
+  rows: [
+    "..s.ss.s.s",
+    ".sksksks.s",
+    "..sksks...",
+    ".kkkkkkkk.",
+    "khhhhhhhhk",
+    "khwwwwwwhk",
+    "kwwinniwwk",
+    "kwwinniwwk",
+    "khwwwwwwhk",
+    "khhhhhhhhk",
+    ".kkkkkkkk.",
+    "..k....k..",
+  ],
+  palette: { k: K, h: "#c08a3c", w: "#fff0c8", i: "#e0c04a", n: "#2a1c10", s: "#a8f07a" },
+};
+
+/** The Seam Goes Down: the cut face has become a shaft with a headframe. */
+const STARCH_SEAM_4: Art = {
+  rows: [
+    "......kmmk......",
+    ".....kmmmmk.....",
+    "....km.mm.mk....",
+    "...km..mm..mk...",
+    "..kkkkkmmkkkkk..",
+    ".kwwwwkmmkwwwwk.",
+    "kwwsswwmmwwsswwk",
+    "kwwwwwwmmwwwwwwk",
+    "kwwwwkkmmkkwwwwk",
+    "kwwwwkdmmdkwwwwk",
+    "kkkkkkdmmdkkkkkk",
+  ],
+  palette: { k: K, w: "#f4ecd0", s: "#ffffff", d: "#2c1d14", m: "#e2e8ee" },
+};
+
+/** The Whole Circulation: three clamps on a vein that has split to feed them. */
+const PHLOEM_VEIN_4: Art = {
+  rows: [
+    "..kvvk....",
+    ".kkvvkk...",
+    "kmmmmmmk..",
+    "kmsggsmk..",
+    "kmmmmmmk..",
+    ".kvvvvk...",
+    "kkvvkkvvk.",
+    "kmmk..kmmk",
+    "kmgk..kgmk",
+    "kmmk..kmmk",
+    ".kvk..kvk.",
+    ".kvvkkvvk.",
+    "..kvvvvk..",
+    "...kkkk...",
+  ],
+  palette: { k: K, v: "#c48ac0", m: "#e2e8ee", s: "#8d959d", g: "#ffd166" },
+};
+
+/** The Skin Stops Closing: the door is gone and the hole is lit from outside. */
+const PERIDERM_GATE_4: Art = {
+  rows: [
+    "kkkkkkkkkkkkkk",
+    "kmmmmmmmmmmmmk",
+    "kmkkkkkkkkkkmk",
+    "kmklllllllllmk",
+    "kmklloooollkmk",
+    "kmkloooooolkmk",
+    "kmkloooooolkmk",
+    "kmkloooooolkmk",
+    "kmklloooollkmk",
+    "kmklllllllllmk",
+    "kmkkkkkkkkkkmk",
+    "kmmmmmmmmmmmmk",
+    "kkkkkkkkkkkkkk",
+  ],
+  palette: { k: K, m: "#e2e8ee", l: "#ecd9a6", o: "#fff4c0" },
+};
+
 /** It's Awake: the eyes opened, and it has started to sprout. */
 const SECOND_POTATO_4: Art = {
   rows: [
@@ -1594,6 +1763,30 @@ export const PRODUCER_MARKS = {
     repaint(CHORUS_FIGURE, { b: "#7f9fc0", t: "#a8c0d8", a: "#dceaf4" }),
     repaint(CHORUS_FIGURE, { b: "#c0a86a", t: "#d8c894", a: "#f4ecd0" }),
     CHORUS_FIGURE_4,
+  ],
+  eyes: [
+    EYE,
+    repaint(EYE, { i: "#3f8f86", w: "#f2e3c8" }),
+    repaint(EYE, { i: "#c94a2c", h: "#c08a3c", w: "#fff0c8" }),
+    EYE_4,
+  ],
+  starch: [
+    STARCH_SEAM,
+    repaint(STARCH_SEAM, { s: "#ffffff", w: "#efe6cc" }),
+    repaint(STARCH_SEAM, { s: "#d8f0f8", w: "#f4ecd0", m: "#cfd6dc" }),
+    STARCH_SEAM_4,
+  ],
+  vein: [
+    PHLOEM_VEIN,
+    repaint(PHLOEM_VEIN, { v: "#a86ea2", g: "#f0c6ec" }),
+    repaint(PHLOEM_VEIN, { v: "#c48ac0", g: "#ffd166", m: "#cfd6dc" }),
+    PHLOEM_VEIN_4,
+  ],
+  skin: [
+    PERIDERM_GATE,
+    repaint(PERIDERM_GATE, { f: "#d8b070", l: "#f7e8c0" }),
+    repaint(PERIDERM_GATE, { d: "#8d959d", f: "#e2b077", l: "#fff4c0" }),
+    PERIDERM_GATE_4,
   ],
   second: [
     SECOND_POTATO,

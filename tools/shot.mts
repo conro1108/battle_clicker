@@ -63,6 +63,10 @@ if (args.marks === "all") farm.upgrades = solo.SOLO_UPGRADES.map((u) => u.id);
 // the transition: seed the farm one purchase short of it and make that purchase
 // through the shop.
 farm.converged = args.converged !== "0" && (args.converged === "1" || farm.upgrades.includes("ur_potato"));
+// Which of the two farms to stand on. A converged save lands inside by default,
+// because that's where the fold leaves you; `world=outside` is how the old farm
+// gets photographed with its ceiling on.
+farm.world = farm.converged && args.world !== "outside" ? "inside" : "outside";
 if (args.generation) farm.generation = Number(args.generation);
 
 const browser = await chromium.launch({ channel: "chrome", headless: true });

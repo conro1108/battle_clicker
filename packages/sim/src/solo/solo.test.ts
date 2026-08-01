@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { format, ms, seconds } from "../numbers.js";
 import {
+  LANDS,
   MAX_MITIGATION,
   MIN_SOIL,
   REPAIR_SECONDS,
@@ -100,7 +101,7 @@ describe("the ladder", () => {
     const { farm, samples } = simulateFarm({ seed: "climb", durationMs: 8 * HOUR, style: "keen" });
     const reached = SOLO_PRODUCERS.filter((p) => (farm.producers[p.id] ?? 0) > 0).length;
     console.log(
-      `8h keen: tiers=${reached}/12 rate=${format(currentRate(farm))}/s ` +
+      `8h keen: tiers=${reached}/${SOLO_PRODUCERS.length} rate=${format(currentRate(farm))}/s ` +
         `harvested=${format(farm.harvested)} soil=${farm.soil.toFixed(2)} ` +
         `seeds worth=${pendingSeeds(farm)}`,
     );
@@ -456,7 +457,7 @@ describe("the Convergence", () => {
   it("keeps the tiers above the fold out of an unfolded world", () => {
     const farm = developedFarm("gate");
     expect(farm.converged).toBe(false);
-    for (const prod of SOLO_PRODUCERS.filter((p) => p.afterFold)) {
+    for (const prod of SOLO_PRODUCERS.filter((p) => p.world === "inside")) {
       const rich: FarmState = { ...farm, potatoes: 1e30 as never };
       expect(applyFarmCommand(rich, { type: "buy_producer", producer: prod.id, qty: 1 }, rich.checkpointAt).ok)
         .toBe(false);
@@ -512,7 +513,7 @@ describe("the Convergence", () => {
     // And the world above the fold goes with it: the tiers that farm the inside
     // of the potato are unbuyable again, whatever you can afford.
     const rich: FarmState = { ...next, potatoes: 1e30 as never };
-    for (const prod of SOLO_PRODUCERS.filter((p) => p.afterFold)) {
+    for (const prod of SOLO_PRODUCERS.filter((p) => p.world === "inside")) {
       expect(
         applyFarmCommand(rich, { type: "buy_producer", producer: prod.id, qty: 1 }, rich.checkpointAt).ok,
       ).toBe(false);
@@ -595,6 +596,121 @@ describe("the Convergence", () => {
         rich.checkpointAt,
       ).ok).toBe(true);
     }
+  });
+});
+
+/**
+ * The two farms.
+ *
+ * The fold used to bolt four rungs onto the end of one ladder; it hands you a
+ * second place now. The invariant that makes that worth having is that the old
+ * farm doesn't stop — you inherit it as an income and go build somewhere else
+ * with the money — so most of what's here is about `world` staying a camera and
+ * never becoming a switch on the economy.
+ */
+describe("the two worlds", () => {
+  const folded = (f: FarmState): FarmState => ({ ...f, converged: true, world: "inside" });
+
+  it("keeps the outside farm earning while you're inside", () => {
+    const base = developedFarm("both", 2 * HOUR);
+    const outside = currentRate(base);
+    const inside = currentRate(folded(base));
+    // Nothing new was bought, so standing somewhere else changed nothing.
+    expect(inside).toBe(outside);
+
+    // And a farm with rungs in both worlds is making what both of them make.
+    const withBoth: FarmState = {
+      ...folded(base),
+      producers: { ...base.producers, eyes: 3 },
+    };
+    expect(currentRate(withBoth)).toBeGreaterThan(outside);
+    expect(currentRate({ ...withBoth, world: "outside" })).toBe(currentRate(withBoth));
+  });
+
+  it("splits the ladder cleanly, and keeps payback climbing across the seam", () => {
+    const outside = SOLO_PRODUCERS.filter((p) => p.world === "outside");
+    const inside = SOLO_PRODUCERS.filter((p) => p.world === "inside");
+    expect(outside.length + inside.length).toBe(SOLO_PRODUCERS.length);
+    // The inside is a climb rather than a coda. Four rungs was a shop you
+    // cleared in an afternoon.
+    expect(inside.length).toBeGreaterThanOrEqual(8);
+    // The two ladders are contiguous: the whole table is outside, then inside,
+    // which is what lets the shop show one slice of it per world without any
+    // rung going missing.
+    const firstInside = SOLO_PRODUCERS.findIndex((p) => p.world === "inside");
+    expect(SOLO_PRODUCERS.slice(firstInside).every((p) => p.world === "inside")).toBe(true);
+    // And the bottom of the inside shop is buyable more or less on arrival: the
+    // Ur-Potato costs more than the first rung of the world it opens.
+    expect(inside[0]!.baseCost).toBeLessThan(SOLO_UPGRADE_BY_ID.ur_potato!.cost);
+  });
+
+  it("gives the inside its own land, one role for one", () => {
+    const roles = (world: "outside" | "inside") =>
+      new Set(LANDS.filter((l) => l.world === world).map((l) => l.role));
+    expect(roles("inside")).toEqual(roles("outside"));
+  });
+
+  it("puts you inside the moment the world folds", () => {
+    const base = developedFarm("arrive", 24 * HOUR);
+    const ready: FarmState = {
+      ...base,
+      producers: { ...base.producers, singularity: 10 },
+      potatoes: 1e30 as never,
+    };
+    expect(ready.world).toBe("outside");
+    const res = applyFarmCommand(ready, { type: "buy_upgrade", upgrade: CONVERGENCE_UPGRADE }, ready.checkpointAt);
+    expect(res.ok).toBe(true);
+    const next = (res as { farm: FarmState }).farm;
+    expect(next.converged).toBe(true);
+    expect(next.world).toBe("inside");
+  });
+
+  it("lets a folded farm step between the two, and refuses one that never folded", () => {
+    const base = developedFarm("warp");
+    expect(applyFarmCommand(base, { type: "warp", to: "inside" }, base.checkpointAt).ok).toBe(false);
+
+    const inside = folded(base);
+    const out = applyFarmCommand(inside, { type: "warp", to: "outside" }, inside.checkpointAt);
+    expect(out.ok).toBe(true);
+    const there = (out as { farm: FarmState }).farm;
+    expect(there.world).toBe("outside");
+    // Standing outside doesn't put the inside shop out of reach — the rungs are
+    // gated on the fold, not on where your feet are.
+    const rich: FarmState = { ...there, potatoes: 1e30 as never };
+    expect(
+      applyFarmCommand(rich, { type: "buy_producer", producer: "eyes", qty: 1 }, rich.checkpointAt).ok,
+    ).toBe(true);
+    // And going nowhere is refused rather than silently costing a command.
+    expect(applyFarmCommand(there, { type: "warp", to: "outside" }, there.checkpointAt).ok).toBe(false);
+  });
+
+  it("keeps you where you stood across a hand-down, unless you asked for the sky", () => {
+    const base = folded(developedFarm("handdown", 24 * HOUR));
+    const stay = applyFarmCommand(base, { type: "prestige" }, base.checkpointAt);
+    expect((stay as { farm: FarmState }).farm.world).toBe("inside");
+
+    const leave = applyFarmCommand(base, { type: "prestige", outside: true }, base.checkpointAt);
+    const next = (leave as { farm: FarmState }).farm;
+    expect(next.converged).toBe(false);
+    expect(next.world).toBe("outside");
+  });
+
+  it("reopens an old save in the world it was standing in", () => {
+    const base = developedFarm("save2");
+    const roundTrip = (f: FarmState) => parseFarm(serializeFarm(f, f.checkpointAt))!;
+
+    expect(roundTrip(base).world).toBe("outside");
+    expect(roundTrip(folded(base)).world).toBe("inside");
+    expect(roundTrip({ ...folded(base), world: "outside" }).world).toBe("outside");
+
+    // A save written before `world` existed: a folded one reopens inside, which
+    // is where the fold left it, and an unfolded one has nowhere else to be.
+    const legacy = (f: FarmState) => {
+      const { world: _drop, ...rest } = f;
+      return parseFarm(JSON.stringify({ version: 1, savedAt: 0, farm: rest }))!;
+    };
+    expect(legacy(folded(base)).world).toBe("inside");
+    expect(legacy(base).world).toBe("outside");
   });
 });
 

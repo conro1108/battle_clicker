@@ -151,6 +151,20 @@ export function GrowPanel({
     return <Convergence farm={farm} budget={budget} dispatch={dispatch} />;
   }
 
+  // One shop per world. The outside farm keeps its ladder and keeps earning
+  // while you're inside, but you can't buy a Mantle Tap for a wheat field or a
+  // Combine Harvester for a room made of flesh — so the shop is the shop of the
+  // place you're standing in, and warping is how you change it.
+  const ladder = solo.producersIn(farm.world);
+  const upgrades = solo.SOLO_UPGRADES.filter((u) => {
+    if (farm.upgrades.includes(u.id) || !solo.isUnlocked(farm, u)) return false;
+    // Tier upgrades belong to their rung's world. Everything else — the digging
+    // tools and the globals — lifts both farms at once and so is sold in both.
+    const effect = u.effect;
+    if (effect.kind !== "producer_mult") return true;
+    return solo.SOLO_PRODUCER_BY_ID[effect.producer].world === farm.world;
+  });
+
   return (
     <>
       <div className="qty-toggle">
@@ -163,7 +177,7 @@ export function GrowPanel({
       </div>
 
       <div className="rows">
-        {solo.SOLO_PRODUCERS.map((prod, i) => {
+        {ladder.map((prod, i) => {
           const owned = farm.producers[prod.id] ?? 0;
           const n = qty === "max" ? Math.max(1, solo.affordableCount(farm, prod.id, budget)) : qty;
           const cost = solo.producerCost(farm, prod.id, n);
@@ -174,11 +188,12 @@ export function GrowPanel({
           const broken = solo.brokenCount(farm, prod.id);
 
           // The ladder reveals itself a rung at a time, but the first rung is
-          // always there or an empty shop greets you at zero potatoes. The four
-          // rungs above the fold are a harder gate than that: they farm parts of
-          // a potato you haven't discovered you're inside yet, so they aren't in
-          // the shop at all until the horizon closes.
-          const prev = solo.SOLO_PRODUCERS[i - 1];
+          // always there or an empty shop greets you at zero potatoes. Both
+          // ladders read the same way, which is why the bottom of the inside
+          // shop is priced to be affordable more or less on arrival: walking
+          // into the new world and finding one thing you can buy is the same
+          // welcome the first Potato Plot gives you.
+          const prev = ladder[i - 1];
           const visible =
             solo.isProducerAvailable(farm, prod.id) &&
             (i === 0 ||
@@ -203,9 +218,7 @@ export function GrowPanel({
       </div>
 
       <div className="rows">
-        {solo.SOLO_UPGRADES.filter(
-          (u) => !farm.upgrades.includes(u.id) && solo.isUnlocked(farm, u),
-        ).map((u) => (
+        {upgrades.map((u) => (
           <Row
             key={u.id}
             accent="row-upgrade"
@@ -232,7 +245,15 @@ export function LandPanel({
   dispatch: (cmd: solo.FarmCommand) => void;
 }) {
   const soilBill = solo.soilRestoreCost(farm);
-  const damaged = solo.SOLO_PRODUCERS.filter((p) => solo.brokenCount(farm, p.id) > 0);
+  // Damage on the farm you're standing on. What broke on the other one is
+  // waiting for you when you go back, which is the cost of keeping two places:
+  // nothing down here can be fixed from up there.
+  const damaged = solo
+    .producersIn(farm.world)
+    .filter((p) => solo.brokenCount(farm, p.id) > 0);
+  const elsewhere = solo
+    .producersIn(farm.world === "inside" ? "outside" : "inside")
+    .reduce((n, p) => n + solo.brokenCount(farm, p.id), 0);
 
   return (
     <>
@@ -280,13 +301,21 @@ export function LandPanel({
         </>
       )}
 
+      {elsewhere > 0 && (
+        <p className="hint">
+          {elsewhere} more {elsewhere === 1 ? "thing is" : "things are"} broken{" "}
+          {farm.world === "inside" ? "out under the sky" : "down inside the potato"}. You'll have to
+          be standing there to put {elsewhere === 1 ? "it" : "them"} right.
+        </p>
+      )}
+
       <p className="hint">
         Buildings work whether you're here or not, which is the only kind of defence worth having
         against {farm.converged ? "something that stirs" : "weather that lands"} while the tab is
         closed. They never stop it outright.
       </p>
       <div className="rows">
-        {solo.LANDS.filter((land) => solo.isLandAvailable(farm, land.id)).map((land) => {
+        {solo.landsIn(farm.world).filter((land) => solo.isLandAvailable(farm, land.id)).map((land) => {
           const level = solo.landLevel(farm, land.id);
           const cost = solo.landCost(farm, land.id);
           const now = solo.mitigation(farm, land.role);

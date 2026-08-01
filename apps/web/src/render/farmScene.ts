@@ -265,7 +265,7 @@ function ridgeAt(ridge: Ridge, x: number, scale: number, flesh = 0): number {
 // Deterministic jitter — a farm's layout shouldn't reshuffle on every render.
 // ---------------------------------------------------------------------------
 
-function hashSeed(s: string): number {
+export function hashSeed(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
@@ -274,12 +274,12 @@ function hashSeed(s: string): number {
   return h >>> 0;
 }
 
-function clamp(v: number, lo: number, hi: number): number {
+export function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
 /** The fractional part, always positive. Used for cheap per-index hashing. */
-function fract(x: number): number {
+export function fract(x: number): number {
   return ((x % 1) + 1) % 1;
 }
 
@@ -289,7 +289,7 @@ function fract(x: number): number {
  * back through and silently leaves the canvas on its previous fillStyle — the
  * ceiling spent an afternoon looking like smog because of it.
  */
-function mix(a: string, b: string, k: number): string {
+export function mix(a: string, b: string, k: number): string {
   const hex = (s: string, i: number) => parseInt(s.slice(1 + i * 2, 3 + i * 2), 16);
   const out = [0, 1, 2].map((i) => {
     const c = Math.round(hex(a, i) + (hex(b, i) - hex(a, i)) * k);
@@ -299,12 +299,12 @@ function mix(a: string, b: string, k: number): string {
 }
 
 /** `#rrggbb` at an alpha, for the one place that needs a translucent stop. */
-function rgba(hex: string, alpha: number): string {
+export function rgba(hex: string, alpha: number): string {
   const c = [0, 1, 2].map((i) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16));
   return `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${alpha})`;
 }
 
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let a = seed;
   return () => {
     a = (a + 0x6d2b79f5) | 0;
@@ -573,14 +573,30 @@ const PORTER_TIP = 300;
 // ---------------------------------------------------------------------------
 
 /**
- * A producer flying, driving or standing somewhere specific.
+ * The tiers this scene draws, which is the outside farm and only that.
  *
- * `ceiling` and `yard` only exist above the fold, and between them they're the
- * reason the four new rungs didn't need any of the field's space: the fold
- * created two regions with nothing in them, and the tiers that arrive with it
- * are the things that go there.
+ * Everything inside the potato has its own picture — see `insideScene.ts`. The
+ * fold still happens here, because the ceiling coming down is something that
+ * happens to the *sky*; what it drops you into is somewhere else entirely.
  */
-type Band = "sky" | "back" | "field" | "walk" | "ceiling" | "yard";
+type OutsideId = Extract<
+  solo.SoloProducerId,
+  | "plot"
+  | "hand"
+  | "irrigation"
+  | "tractor"
+  | "harvester"
+  | "lab"
+  | "refinery"
+  | "tower"
+  | "seeder"
+  | "reactor"
+  | "orbital"
+  | "singularity"
+>;
+
+/** A producer flying, driving or standing somewhere specific. */
+type Band = "sky" | "back" | "field" | "walk";
 
 interface Placement {
   band: Band;
@@ -597,7 +613,7 @@ interface Placement {
   spread?: number;
 }
 
-const PLACEMENT: Record<solo.SoloProducerId, Placement> = {
+const PLACEMENT: Record<OutsideId, Placement> = {
   // The crop doesn't use the log curve — the field draws a bed per plot until
   // the land is full — so its cap is only the ceiling on broken ones.
   plot: { band: "field", cap: 108 },
@@ -614,11 +630,6 @@ const PLACEMENT: Record<solo.SoloProducerId, Placement> = {
   reactor: { band: "back", cap: 4 },
   orbital: { band: "sky", cap: 4, spread: 1.4, speed: 7 },
   singularity: { band: "sky", cap: 3, spread: 1.2 },
-  // Slower than a tractor. It's ploughing a roof.
-  furrow: { band: "ceiling", cap: 5, spread: 1.3, speed: 4 },
-  mantle: { band: "yard", cap: 4, spread: 1.1 },
-  chorus: { band: "field", cap: 9, spread: 1.8 },
-  second: { band: "ceiling", cap: 3, spread: 1 },
 };
 
 /**
@@ -635,7 +646,7 @@ const PLACEMENT: Record<solo.SoloProducerId, Placement> = {
  * the reactor and the towers run cold, the singularity's is the gold its fourth
  * mark's jet is drawn in.
  */
-const PRIME_GLOW: Record<solo.SoloProducerId, string> = {
+const PRIME_GLOW: Record<OutsideId, string> = {
   plot: "#a8f07a",
   hand: "#ffd782",
   irrigation: "#8ec9e6",
@@ -648,13 +659,9 @@ const PRIME_GLOW: Record<solo.SoloProducerId, string> = {
   reactor: "#fff0b8",
   orbital: "#a4e884",
   singularity: "#ffe08a",
-  furrow: "#ffd166",
-  mantle: "#ff9a3c",
-  chorus: "#fff4c0",
-  second: "#f7e08a",
 };
 
-const ORDER: solo.SoloProducerId[] = [
+const ORDER: OutsideId[] = [
   "plot",
   "hand",
   "irrigation",
@@ -667,10 +674,6 @@ const ORDER: solo.SoloProducerId[] = [
   "reactor",
   "orbital",
   "singularity",
-  "furrow",
-  "mantle",
-  "chorus",
-  "second",
 ];
 
 // ---------------------------------------------------------------------------
@@ -749,7 +752,7 @@ const BACK_TIERS = ORDER.filter((id) => PLACEMENT[id].band === "back");
 
 /** A tier's lot, as laid out this frame. */
 interface Lot {
-  id: solo.SoloProducerId;
+  id: OutsideId;
   /** Whichever mark of it you're running. */
   art: Art;
   /** Left edge and width, in buffer pixels. */
@@ -1943,12 +1946,9 @@ export class FarmScene {
     this.drawField(t, now, horizon, yardY);
     this.drawSacks(now);
     this.drawPuffs(now, dt);
-    // Among the crop, behind the fence — they're in the field, not the yard.
-    this.drawChorus(t, yardY);
     this.drawFence(yardY);
     this.drawLamp(yardY, phase);
     this.drawHoard(now);
-    this.drawTaps(t);
     // The spout hangs over the yard on its way to the mound at the front of it,
     // so it's drawn after the yard rather than with the trough it comes off:
     // behind the silos it was pouring the crop out somewhere you couldn't see.
@@ -2064,12 +2064,6 @@ export class FarmScene {
     };
 
     for (const lot of lots) arrive(lot.id, lot.depth);
-    // The Mantle Taps stand in the yard rather than on a lot, and a wellhead is
-    // every bit as much a thing you have to build as a shed is.
-    arrive(
-      "mantle",
-      shownCount(this.view.working.mantle ?? 0, PLACEMENT.mantle.cap, PLACEMENT.mantle.spread),
-    );
 
     this.sawLots = true;
     for (const [key, born] of this.raising) {
@@ -2284,9 +2278,6 @@ export class FarmScene {
 
     this.drawFlesh(horizon, lit, deep);
     this.drawEyes(horizon, clamp((fold - 0.62) / 0.33, 0, 1));
-    // Inside the same clip, so the kit you own up there is revealed by the same
-    // sweep rather than snapping in once the flesh has landed.
-    this.drawCeilingTiers(horizon, t);
     ctx.restore();
 
     // The leading edge, and the resting seam it becomes. Bright while it's
@@ -2403,165 +2394,6 @@ export class FarmScene {
         ctx.fillRect(x + 3, y + 3 + len - 2, 1, 1);
         ctx.fillRect(x + 2, y + 3 + len, 1, 1);
       }
-      ctx.globalAlpha = 1;
-    }
-  }
-
-  /**
-   * What you own on the ceiling: furrows working across it, and the Second
-   * Potato hanging where the sun used to be.
-   *
-   * Both of them sit in the upper half of the band on purpose. Down at the fold
-   * there isn't the light to read a silhouette, and anything close to the seam
-   * starts competing with the farm — which was the whole lesson of the mirrored
-   * field that got thrown away.
-   */
-  private drawCeilingTiers(horizon: number, t: number): void {
-    const ctx = this.ctx;
-
-    // The furrows, ploughing. They work the flesh the way the tractors work the
-    // rows — same trick, same reason: hashed pace and phase, because evenly
-    // dealt starts at one speed draw a formation instead of a farm.
-    const place = PLACEMENT.furrow;
-    const n = shownCount(this.view.working.furrow ?? 0, place.cap, place.spread);
-    if (n > 0) {
-      const sprite = artCanvas(this.mark("furrow"));
-      const span = SCENE_W + sprite.w;
-      for (let i = 0; i < n; i++) {
-        const h = fract(Math.sin((i + 1) * 33.7) * 4375.85);
-        const pace = place.speed! * (0.75 + 0.5 * fract(h * 7.13));
-        // Alternating directions, because a roof gets worked in both.
-        const dir = i % 2 === 0 ? 1 : -1;
-        const raw = (t * pace + h * span) % span;
-        const along = dir > 0 ? raw : span - raw;
-        const x = Math.floor(((along % span) + span) % span) - sprite.w;
-        // Its coulters ride in the flesh, so the top of the sprite is pinned a
-        // pixel or two under the ceiling rather than floating in the band.
-        const y = 1 + Math.round(h * Math.max(1, horizon * 0.3));
-        this.primeGlow("furrow", x, y, sprite.w, sprite.h, t, i);
-        ctx.drawImage(sprite.canvas, x, y);
-        // Turned flesh behind it, on the same fading-furrow trick the tractor
-        // uses down on the ground.
-        if (this.tills.length < 90 && this.chance(9)) {
-          this.tills.push({ x: x + sprite.w - 2, y: y + 1, born: performance.now() });
-        }
-      }
-    }
-
-    // The Second Potato. It doesn't travel — it hangs, exactly where the sun
-    // was, which is the entire joke and the reason it gets that spot.
-    const seconds = shownCount(this.view.working.second ?? 0, PLACEMENT.second.cap, PLACEMENT.second.spread);
-    if (seconds > 0) {
-      const sprite = artCanvas(this.mark("second"));
-      for (let i = 0; i < seconds; i++) {
-        const h = fract(Math.sin((i + 1) * 71.9) * 4375.85);
-        const x = SCENE_W - 36 - i * 34 + Math.round(Math.sin(t * 0.21 + h * 6) * 2);
-        const y = 14 + Math.round(h * 10) + Math.round(Math.sin(t * 0.29 + h * 9) * 2);
-        // A soft bloom under it, so it reads as hanging in the dark rather than
-        // pasted onto the flesh.
-        ctx.globalAlpha = 0.12 + 0.05 * Math.sin(t * 0.8 + i);
-        ctx.fillStyle = "#f0c68c";
-        ctx.fillRect(x - 2, y - 2, sprite.w + 4, sprite.h + 4);
-        ctx.globalAlpha = 1;
-        this.primeGlow("second", x, y, sprite.w, sprite.h, t, i);
-        ctx.drawImage(sprite.canvas, x, y);
-      }
-    }
-  }
-
-  /**
-   * The Mantle Taps, in the yard with their shafts running off the bottom of
-   * the world. Drawn after the hoard so they stand in front of the stores — a
-   * wellhead behind a silo is a wellhead nobody sees — and the shaft simply runs
-   * out of the buffer, which is the cheapest way to say it goes further than
-   * you'd like.
-   */
-  private drawTaps(t: number): void {
-    const ctx = this.ctx;
-    const place = PLACEMENT.mantle;
-    const n = shownCount(this.view.working.mantle ?? 0, place.cap, place.spread);
-    if (n === 0) return;
-    const sprite = artCanvas(this.mark("mantle"));
-    const foot = this.station(0) + 2;
-    for (let i = 0; i < n; i++) {
-      // Clear of the mound, spread across what's left of the yard's front edge.
-      const x = HEAP_W + 4 + i * 28;
-      if (x + sprite.w > SCENE_W - 2) break;
-      const top = foot - sprite.h;
-      this.primeGlow("mantle", x, top, sprite.w, sprite.h, t, i);
-
-      // Still being sunk: the derrick goes up before there's a hole under it.
-      const raise = this.raiseOf(`mantle:${i}`, t);
-      if (raise !== null && raise < 1) {
-        const shown = this.drawRaise(raise, x, foot, sprite.w, sprite.h);
-        ctx.drawImage(
-          sprite.canvas,
-          0,
-          sprite.h - shown,
-          sprite.w,
-          shown,
-          x,
-          foot - shown,
-          sprite.w,
-          shown,
-        );
-        continue;
-      }
-
-      ctx.drawImage(sprite.canvas, x, top);
-      // The shaft carries on past the bottom of the screen.
-      ctx.fillStyle = INK;
-      ctx.fillRect(x + 3, foot, 1, this.sh - foot);
-      ctx.fillRect(x + 6, foot, 1, this.sh - foot);
-      ctx.fillStyle = "#5b3f2c";
-      ctx.fillRect(x + 4, foot, 2, this.sh - foot);
-      // The pump beat, and a breath of warm dust off the head each stroke.
-      const beat = (t * 0.9 + i * 0.37) % 1;
-      if (beat < 0.08) {
-        ctx.fillStyle = "#ffb454";
-        ctx.fillRect(x + 4, top + 2, 2, 1);
-        if (this.chance(6)) this.puff(x + 5, top, "dust", (Math.random() - 0.5) * 10);
-      }
-    }
-  }
-
-  /**
-   * The Chorus: the other yous, working a field they can't quite be standing in.
-   *
-   * They were written as figures on the far surface, which assumed the ceiling
-   * would be a mirrored field — and it isn't, so there's nowhere up there for
-   * them to stand. They're down here with the crew instead, which is a better
-   * read anyway: you notice them because they're the same silhouette as your
-   * farmhands in the wrong colour, walking rows nobody assigned them.
-   *
-   * How many stand there leans on `generation` as well as on how many you own,
-   * because that's the mechanic — every farm you handed down is still working —
-   * and nothing else on this canvas has ever made the meta-layer visible.
-   */
-  private drawChorus(t: number, yardY: number): void {
-    const ctx = this.ctx;
-    const place = PLACEMENT.chorus;
-    const owned = this.view.working.chorus ?? 0;
-    if (owned <= 0) return;
-    const n = Math.min(
-      place.cap,
-      shownCount(owned, place.cap, place.spread) + Math.min(3, this.view.generation - 1),
-    );
-    const sprite = artCanvas(this.mark("chorus"));
-    const top = this.fieldTop() + 16;
-    for (let i = 0; i < n; i++) {
-      const h = fract(Math.sin((i + 1) * 57.1) * 4375.85);
-      const h2 = fract(h * 137.7);
-      // They drift along their row rather than crossing the field: near enough
-      // to still, far enough that you catch it out of the corner of your eye.
-      const x = Math.round(6 + h * (SCENE_W - 20) + Math.sin(t * 0.19 + h2 * 6) * 9);
-      const ground = Math.round(top + h2 * Math.max(4, yardY - top - 6));
-      // The same stoop the hands use while they're pulling a bed, on a long
-      // slow cycle — they're working, just not at anybody's pace.
-      const stoop = Math.sin(t * 0.7 + h * 5) > 0.7 ? 2 : 0;
-      this.primeGlow("chorus", x, ground - sprite.h + stoop, sprite.w, sprite.h, t, i);
-      ctx.globalAlpha = 0.72;
-      ctx.drawImage(sprite.canvas, x, ground - sprite.h + stoop);
       ctx.globalAlpha = 1;
     }
   }
@@ -2925,7 +2757,7 @@ export class FarmScene {
    * lot of separate machines that happen to all be expensive now.
    */
   private primeGlow(
-    id: solo.SoloProducerId,
+    id: OutsideId,
     x: number,
     y: number,
     w: number,
@@ -3588,9 +3420,7 @@ export class FarmScene {
 
     // Everything broken is parked in one row along the fence, greyed out. One
     // strip of dead machinery is a thing you notice from across the room; the
-    // same units scattered among the working ones is not. That includes what
-    // came off the ceiling — a dead Inversion Furrow gets taken down and left
-    // with the rest of it, which is what a farm does with broken kit.
+    // same units scattered among the working ones is not.
     let deadX = 6;
     for (const id of ORDER) {
       const place = PLACEMENT[id];

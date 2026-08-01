@@ -1,5 +1,5 @@
 import type { Millis, Potatoes } from "../numbers.js";
-import type { LandId, SoloProducerId } from "./content.js";
+import type { LandId, SoloProducerId, World } from "./content.js";
 import type { PerkId } from "./prestige.js";
 
 /**
@@ -53,6 +53,19 @@ export interface FarmState {
    * again, on a save you keep for weeks.
    */
   converged: boolean;
+  /**
+   * Which farm you're standing on, and nothing more.
+   *
+   * Both farms run at once — the outside fields keep turning over potatoes
+   * while you're down in the flesh, and that's the whole pitch of the fold: you
+   * don't trade the old farm in, you inherit it as an income and go build
+   * something else with the money. So this touches no rate and no price. It
+   * picks which shop, which land, and which picture.
+   *
+   * Always `outside` on a farm that hasn't converged, because there is nowhere
+   * else to be.
+   */
+  world: World;
   /** Heirloom Seed on hand, spendable on perks. */
   seeds: number;
   perks: Partial<Record<PerkId, number>>;
@@ -87,6 +100,12 @@ export type FarmCommand =
    * folded, which has nowhere to come out of.
    */
   | { type: "prestige"; outside?: boolean }
+  /**
+   * Step between the two farms. Free, instant, and reversible — it's a camera
+   * move, not a decision. Refused on a farm that never folded, which has only
+   * the one world.
+   */
+  | { type: "warp"; to: World }
   /**
    * A cheat, and named like one. `dig` is deliberately capped so a batched
    * flush can't be forged, which also makes it useless for filling a yard up to

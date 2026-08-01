@@ -11,35 +11,58 @@ import { solo, type Potatoes } from "@battle/sim";
 
 import { producerMark } from "../marks.js";
 import { EMPTY_VIEW, FarmScene as Scene, type FarmView } from "../render/farmScene.js";
+import { InsideScene } from "../render/insideScene.js";
 
 export interface FarmSceneHandle {
   /** Turn a potato up out of the ground. Somewhere in the field if unplaced. */
   dig(at?: { x: number; y: number }): void;
 }
 
+/**
+ * Both renderers, to the extent React cares about either. They're separate
+ * classes with separate pictures — see `insideScene.ts` — but they take the same
+ * view and answer the same two verbs, which is all this needs to know.
+ */
+interface SceneLike {
+  update(view: FarmView): void;
+  start(): void;
+  stop(): void;
+  dig(at?: { x: number; y: number }): void;
+}
+
 /** The canvas and its rAF loop. React only ever hands it a view. */
 const SceneCanvas = forwardRef<FarmSceneHandle, {
   view: FarmView;
+  /**
+   * Which world's picture to run. Changing it tears the canvas down and builds
+   * the other one, which is exactly right: warping is meant to be a different
+   * place, not a repaint.
+   */
+  world?: solo.World;
   onPointerDown?: PointerEventHandler<HTMLCanvasElement>;
-}>(function SceneCanvas({ view, onPointerDown }, ref) {
+}>(function SceneCanvas({ view, world = "outside", onPointerDown }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const sceneRef = useRef<Scene | null>(null);
+  const sceneRef = useRef<SceneLike | null>(null);
+  // Held in a ref so the mount effect can seed the new scene without taking a
+  // dependency on a view that changes every tick.
+  const latest = useRef(view);
+  latest.current = view;
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const scene = new Scene(canvas);
+    const scene: SceneLike = world === "inside" ? new InsideScene(canvas) : new Scene(canvas);
     sceneRef.current = scene;
-    scene.update(view);
+    scene.update(latest.current);
     scene.start();
     return () => {
       scene.stop();
       sceneRef.current = null;
     };
-    // Mount-only on purpose: the view is pushed by the effect below, and
+    // Only on a change of world: the view is pushed by the effect below, and
     // re-creating the scene on every tick would restart its clock and reset
     // every animation on it.
-  }, []);
+  }, [world]);
 
   useEffect(() => {
     sceneRef.current?.update(view);
@@ -69,7 +92,11 @@ export const FarmScene = forwardRef<FarmSceneHandle, {
     const working: FarmView["working"] = {};
     const broken: FarmView["broken"] = {};
     const marks: FarmView["marks"] = {};
-    for (const prod of solo.SOLO_PRODUCERS) {
+    // Only the world you're standing in. The other farm is still producing —
+    // that's the whole arrangement after the fold — but it's producing somewhere
+    // you can't see from here, and drawing an Inversion Furrow over a wheat
+    // field would say the opposite.
+    for (const prod of solo.producersIn(farm.world)) {
       const owned = farm.producers[prod.id] ?? 0;
       const dead = solo.brokenCount(farm, prod.id);
       if (owned - dead > 0) working[prod.id] = owned - dead;
@@ -96,6 +123,7 @@ export const FarmScene = forwardRef<FarmSceneHandle, {
       <SceneCanvas
         ref={ref}
         view={view}
+        world={farm.world}
         onPointerDown={(e) => {
           e.preventDefault();
           // Into buffer pixels, so the potato comes up under your finger

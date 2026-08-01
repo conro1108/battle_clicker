@@ -68,6 +68,7 @@ export function createFarm(opts: { seed: string; startedAt: Millis }): FarmState
     weatherIndex: 0,
     nextWeatherAt: opts.startedAt,
     converged: false,
+    world: "outside",
     seeds: 0,
     perks: {},
     lifetimeHarvested: P.zero,
@@ -243,8 +244,11 @@ export function applyFarmCommand(f0: FarmState, cmd: FarmCommand, now: Millis): 
       // The Convergence. You acquire the first potato and discover you have
       // always been inside it — on a button you chose to press, rather than on
       // a threshold crossing while you were looking somewhere else.
+      // The Convergence puts you *in* the potato, not merely under a new
+      // ceiling: the fold ends with you standing on the inside farm, with a
+      // shop you have never seen. Coming back out is a thing you go and ask for.
       if (upgrade.id === CONVERGENCE_UPGRADE && !farm.converged) {
-        farm = { ...farm, converged: true };
+        farm = { ...farm, converged: true, world: "inside" };
         note("the horizon closed.", "good");
       }
       break;
@@ -302,6 +306,13 @@ export function applyFarmCommand(f0: FarmState, cmd: FarmCommand, now: Millis): 
       break;
     }
 
+    case "warp": {
+      if (!farm.converged) return fail("There's only the one world out here.");
+      if (farm.world === cmd.to) return fail("You're already there.");
+      farm = { ...farm, world: cmd.to };
+      break;
+    }
+
     case "prestige": {
       const earned = seedsFor(farm.harvested);
       if (earned <= 0) return fail("Nothing worth handing down yet.");
@@ -336,6 +347,7 @@ function resetForNextGeneration(
   outside = false,
 ): FarmState {
   const seeds = f.seeds + earned;
+  const converged = f.converged && !outside;
   const next: FarmState = {
     ...f,
     potatoes: P.zero,
@@ -347,7 +359,10 @@ function resetForNextGeneration(
     land: {},
     soil: MAX_SOIL,
     weatherIndex: f.weatherIndex,
-    converged: f.converged && !outside,
+    converged,
+    // A generation that kept the fold picks up where it stood; one that asked
+    // for the sky has nowhere inside to stand any more.
+    world: converged ? f.world : "outside",
     seeds,
     generation: f.generation + 1,
     runStartedAt: at,

@@ -203,16 +203,52 @@ function omenNudge(farm: solo.FarmState): string {
  * One door, clearly labelled, out of the way of the loop.
  */
 function BackRoom({
+  farm,
   onVersus,
   onTitle,
   dispatch,
 }: {
+  farm: solo.FarmState;
   onVersus: () => void;
   onTitle: () => void;
   dispatch: (cmd: solo.FarmCommand) => void;
 }) {
   return (
     <div className="backroom">
+      {/* Stepping between the two farms.
+
+          It lives back here on purpose and only for now. Warping is a real part
+          of the game — the outside farm is an income you go and manage, not a
+          number that ticks — and a door that important eventually wants to be
+          somewhere you can see it. But what it should look like out front is a
+          question about the whole post-fold layout, and shipping a guess at that
+          is how a bottom bar ends up with five tabs and no argument for any of
+          them. So: a labelled lever in the back room until the shape of the
+          folded game is worth committing to. */}
+      {farm.converged && (
+        <section>
+          <h3>The other farm</h3>
+          <p className="muted small">
+            Both places are yours and both are producing. This is only which one you're standing in —
+            which shop you can buy from, which land you can build, and what you're looking at.
+          </p>
+          <div className="choices halves">
+            <button
+              className={farm.world === "outside" ? "on" : ""}
+              onClick={() => dispatch({ type: "warp", to: "outside" })}
+            >
+              Out under the sky
+            </button>
+            <button
+              className={farm.world === "inside" ? "on" : ""}
+              onClick={() => dispatch({ type: "warp", to: "inside" })}
+            >
+              Inside the potato
+            </button>
+          </div>
+        </section>
+      )}
+
       <section>
         <h3>Versus a bot</h3>
         <p className="muted small">
@@ -467,7 +503,9 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
           sub={
             lastPurchase
               ? "What's below was never stock."
-              : "More kit on the land, and the upgrades that make it worth more."
+              : farm.world === "inside"
+                ? "What there is to work down here, and what makes it work harder."
+                : "More kit on the land, and the upgrades that make it worth more."
           }
           onClose={() => setSheet(null)}
           foot={
@@ -487,7 +525,7 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
           and paying for it in another. */}
       {sheet === "weather" && (
         <Sheet
-          title="Weather"
+          title={farm.world === "inside" ? "The tuber" : "Weather"}
           sub="What it broke, what it costs, and what stops it next time."
           onClose={() => setSheet(null)}
           foot={
@@ -532,6 +570,7 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
               the ledger now, which is about what they're worth. */}
           <h3 className="sheet-section">Side doors</h3>
           <BackRoom
+            farm={farm}
             onVersus={() => onGo({ kind: "versus-lobby" })}
             onTitle={() => onGo({ kind: "home" })}
             dispatch={dispatch}

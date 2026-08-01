@@ -9,6 +9,20 @@
 
 import { P, type Potatoes } from "../numbers.js";
 
+/**
+ * The two places a farm exists in.
+ *
+ * `outside` is the homestead you started with — fields, sky, weather. `inside`
+ * is what the Convergence opens: the flesh of the potato you turn out to have
+ * always been standing in. After the fold you own both at once. The outside
+ * farm keeps producing whether you're looking at it or not, and the inside is a
+ * fresh ladder with its own shop, its own land, and its own picture.
+ *
+ * `FarmState.world` is only ever "which one am I looking at". It has no effect
+ * on production — see `currentRate`, which sums the lot.
+ */
+export type World = "outside" | "inside";
+
 export type SoloProducerId =
   | "plot"
   | "hand"
@@ -23,8 +37,12 @@ export type SoloProducerId =
   | "orbital"
   | "singularity"
   | "furrow"
+  | "eyes"
+  | "starch"
   | "mantle"
+  | "vein"
   | "chorus"
+  | "skin"
   | "second";
 
 export interface SoloProducer {
@@ -44,11 +62,12 @@ export interface SoloProducer {
   /** Cost of the Nth unit is baseCost * growth^N. */
   growth: number;
   /**
-   * Only exists inside the potato. Hidden and unbuyable until the Convergence,
-   * which is enforced in `applyFarmCommand` rather than only in the shop — the
-   * sim is the authority on what a farm is allowed to own.
+   * Which of the two farms it stands on. Everything `inside` is hidden and
+   * unbuyable until the Convergence, which is enforced in `applyFarmCommand`
+   * rather than only in the shop — the sim is the authority on what a farm is
+   * allowed to own.
    */
-  afterFold?: boolean;
+  world: World;
   /**
    * Rate scales with soil health *as well as* being multiplied by it, so
    * restoring the dirt is a live decision at the top of the ladder instead of a
@@ -88,6 +107,7 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     baseRate: 1,
     baseCost: P.of(20),
     growth: 1.19,
+    world: "outside",
   },
   {
     id: "hand",
@@ -98,6 +118,7 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     baseRate: 8,
     baseCost: P.of(280),
     growth: 1.19,
+    world: "outside",
   },
   {
     id: "irrigation",
@@ -108,6 +129,7 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     baseRate: 60,
     baseCost: P.of(3_600),
     growth: 1.19,
+    world: "outside",
   },
   {
     id: "tractor",
@@ -118,6 +140,7 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     baseRate: 450,
     baseCost: P.of(52_000),
     growth: 1.19,
+    world: "outside",
   },
   {
     id: "harvester",
@@ -128,6 +151,7 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     baseRate: 3_400,
     baseCost: P.of(800_000),
     growth: 1.19,
+    world: "outside",
   },
   {
     id: "lab",
@@ -138,6 +162,7 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     baseRate: 26_000,
     baseCost: P.of(12_000_000),
     growth: 1.19,
+    world: "outside",
   },
   {
     id: "refinery",
@@ -148,6 +173,7 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     baseRate: 200_000,
     baseCost: P.of(200_000_000),
     growth: 1.19,
+    world: "outside",
   },
   {
     id: "tower",
@@ -158,6 +184,7 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     baseRate: 1_500_000,
     baseCost: P.of(3_200_000_000),
     growth: 1.19,
+    world: "outside",
   },
   {
     id: "seeder",
@@ -168,6 +195,7 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     baseRate: 12_000_000,
     baseCost: P.of(50_000_000_000),
     growth: 1.19,
+    world: "outside",
   },
   {
     id: "reactor",
@@ -178,6 +206,7 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     baseRate: 90_000_000,
     baseCost: P.of(800_000_000_000),
     growth: 1.19,
+    world: "outside",
   },
   {
     id: "orbital",
@@ -188,6 +217,7 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     baseRate: 700_000_000,
     baseCost: P.of(13_000_000_000_000),
     growth: 1.19,
+    world: "outside",
   },
   {
     id: "singularity",
@@ -198,31 +228,61 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     baseRate: 5_500_000_000,
     baseCost: P.of(200_000_000_000_000),
     growth: 1.19,
+    world: "outside",
   },
 
-  // --- Above the fold ------------------------------------------------------
+  // --- Inside the potato ---------------------------------------------------
   //
-  // Four more rungs, each farming a different part of the potato you're now
-  // standing inside — which also solves placement, since they occupy the screen
-  // regions the fold just created rather than competing for field space. Same
-  // x8 rate and x14 cost per rung as everything below, and one x2 global each,
-  // which is the pairing that has kept real payback flat at a few minutes for
-  // the whole ladder. There is deliberately no one-off Convergence multiplier:
-  // the pacing doesn't need it, and the x2/x3/x5 global chain is what once
-  // evaporated a week-long run.
+  // The second farm, and the reason the Convergence is worth reaching: a ladder
+  // of its own, standing in flesh rather than dirt, bought with the potatoes
+  // the old farm is still turning out while you're down here.
+  //
+  // It used to be four rungs bolted onto the end of the outside ladder, which
+  // made the whole endgame "four more rows in the same shop". Eight now, over
+  // the same span from the Tuber Singularity to the Second Potato — so no rung
+  // moved at either end and the run is the length it always was, but the inside
+  // is a climb you can spend time on rather than four purchases. Cost steps by
+  // ~3.8x and output by ~2.8x per rung, which keeps payback rising the whole way
+  // up exactly as the outside ladder's 14x/8x does.
+  //
+  // The first one is deliberately affordable more or less on arrival. Walking
+  // into a new world and being able to buy the bottom of its shop is the point:
+  // it's a place you start over in, not a wing of the old farm.
   {
     id: "furrow",
     name: "Inversion Furrow",
-    blurb: "Ploughs the ceiling. The weather falls up now, which helps.",
+    blurb: "Ploughs the ceiling. Whatever falls, falls up now, which helps.",
     hurt: "caved",
     mend: "Re-plough",
-    baseRate: 44_000_000_000,
-    baseCost: P.of(2_800_000_000_000_000),
+    baseRate: 15_000_000_000,
+    baseCost: P.of(750_000_000_000_000),
     growth: 1.19,
-    afterFold: true,
+    world: "inside",
     // The one thing at the top of the ladder that feeds back into the land
     // half, which otherwise caps at four buildings and stops mattering.
     calmPerUnit: 0.004,
+  },
+  {
+    id: "eyes",
+    name: "Sprouting Eye",
+    blurb: "It was always going to grow. Nobody said out of what.",
+    hurt: "blinded",
+    mend: "Coax open",
+    baseRate: 42_000_000_000,
+    baseCost: P.of(2_800_000_000_000_000),
+    growth: 1.19,
+    world: "inside",
+  },
+  {
+    id: "starch",
+    name: "Starch Seam",
+    blurb: "A pale reef of the stuff, quarried by the tonne.",
+    hurt: "collapsed",
+    mend: "Shore up",
+    baseRate: 120_000_000_000,
+    baseCost: P.of(10_600_000_000_000_000),
+    growth: 1.19,
+    world: "inside",
   },
   {
     id: "mantle",
@@ -230,11 +290,22 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     blurb: "A shaft into the deep flesh. It goes further than you'd like.",
     hurt: "clotted",
     mend: "Re-bore",
-    baseRate: 350_000_000_000,
+    baseRate: 340_000_000_000,
     baseCost: P.of(40_000_000_000_000_000),
     growth: 1.19,
-    afterFold: true,
+    world: "inside",
     soilScaled: true,
+  },
+  {
+    id: "vein",
+    name: "Phloem Vein",
+    blurb: "Tap the plumbing and it feeds you instead. It doesn't seem to mind.",
+    hurt: "clamped",
+    mend: "Unclamp",
+    baseRate: 960_000_000_000,
+    baseCost: P.of(150_000_000_000_000_000),
+    growth: 1.19,
+    world: "inside",
   },
   {
     id: "chorus",
@@ -242,11 +313,22 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     blurb: "The other yous, still working. You can hear them.",
     hurt: "silenced",
     mend: "Call back",
-    baseRate: 2_800_000_000_000,
+    baseRate: 2_700_000_000_000,
     baseCost: P.of(560_000_000_000_000_000),
     growth: 1.19,
-    afterFold: true,
+    world: "inside",
     generationScaled: true,
+  },
+  {
+    id: "skin",
+    name: "Periderm Gate",
+    blurb: "A door cut in the inside of the skin. It looks out on more flesh.",
+    hurt: "scarred over",
+    mend: "Cut open",
+    baseRate: 7_700_000_000_000,
+    baseCost: P.of(2_100_000_000_000_000_000),
+    growth: 1.19,
+    world: "inside",
   },
   {
     id: "second",
@@ -257,9 +339,14 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     baseRate: 22_000_000_000_000,
     baseCost: P.of(8_000_000_000_000_000_000),
     growth: 1.19,
-    afterFold: true,
+    world: "inside",
   },
 ];
+
+/** The rungs that stand in one world or the other, in ladder order. */
+export function producersIn(world: World): readonly SoloProducer[] {
+  return SOLO_PRODUCERS.filter((p) => p.world === world);
+}
 
 export const SOLO_PRODUCER_BY_ID: Record<SoloProducerId, SoloProducer> = Object.fromEntries(
   SOLO_PRODUCERS.map((p) => [p.id, p]),
@@ -342,8 +429,12 @@ function tierUpgrades(): SoloUpgrade[] {
     orbital: ["Solar Sails", "Second Ring", "Lagrange Station"],
     singularity: ["Closed Timelike Furrow", "Retroactive Yield", "Event Horizon Lease"],
     furrow: ["Reversed Gravity", "Ceiling Yield", "Second Pass"],
+    eyes: ["Wider Aperture", "Lidless", "It Sees the Whole Field"],
+    starch: ["Longwall Cut", "Deep Adit", "The Seam Goes Down"],
     mantle: ["Deep Core Sampling", "Geothermal Assist", "Core Breach"],
+    vein: ["Wider Bore", "Reverse Flow", "The Whole Circulation"],
     chorus: ["Perfect Unison", "Every Generation", "All At Once"],
+    skin: ["Held Open", "Second Door", "The Skin Stops Closing"],
     second: ["Seed Stock", "It's Started", "It's Awake"],
   };
   const out: SoloUpgrade[] = [];
@@ -588,7 +679,9 @@ export type LandId =
   | "pest_control"
   | "insurance"
   | "callus_beds"
-  | "dormancy_rig";
+  | "dormancy_rig"
+  | "scar_tissue"
+  | "sap_reclaim";
 
 export type LandRole =
   /** Cuts how many units a disaster knocks offline. */
@@ -613,8 +706,12 @@ export interface Land {
   perLevel: number;
   baseCost: Potatoes;
   growth: number;
-  /** Only buildable inside the potato, against what the tuber sends instead. */
-  afterFold?: boolean;
+  /**
+   * Which farm it defends. The `inside` set is only buildable once the world has
+   * folded, and it's what the inside's Weather panel sells instead of the four
+   * that are about a sky.
+   */
+  world: World;
 }
 
 export const LANDS: readonly Land[] = [
@@ -626,6 +723,7 @@ export const LANDS: readonly Land[] = [
     perLevel: 0.14,
     baseCost: P.of(600),
     growth: 1.9,
+    world: "outside",
   },
   {
     id: "drainage",
@@ -635,6 +733,7 @@ export const LANDS: readonly Land[] = [
     perLevel: 0.14,
     baseCost: P.of(2_500),
     growth: 1.9,
+    world: "outside",
   },
   {
     id: "pest_control",
@@ -644,6 +743,7 @@ export const LANDS: readonly Land[] = [
     perLevel: 0.1,
     baseCost: P.of(9_000),
     growth: 2.1,
+    world: "outside",
   },
   {
     id: "insurance",
@@ -653,11 +753,13 @@ export const LANDS: readonly Land[] = [
     perLevel: 0.12,
     baseCost: P.of(40_000),
     growth: 1.9,
+    world: "outside",
   },
   // Inside the potato there is no sky, so the four above stop being about
-  // weather and the two below are what the second axis gets instead. Same
-  // roles, priced at the scale of the farm that can see them: the first level
-  // of either is a few minutes of production at the moment the world folds.
+  // weather and the four below are what the second axis gets instead. Same
+  // roles, one for one, priced at the scale of the farm that can see them: the
+  // first level of any of them is a few minutes of production at the moment the
+  // world folds.
   {
     id: "callus_beds",
     name: "Callus Beds",
@@ -666,7 +768,17 @@ export const LANDS: readonly Land[] = [
     perLevel: 0.13,
     baseCost: P.of(500_000_000_000_000),
     growth: 1.9,
-    afterFold: true,
+    world: "inside",
+  },
+  {
+    id: "scar_tissue",
+    name: "Scar Tissue",
+    blurb: "Grow the wound over on purpose. What's underneath keeps its goodness.",
+    role: "soil",
+    perLevel: 0.13,
+    baseCost: P.of(800_000_000_000_000),
+    growth: 1.9,
+    world: "inside",
   },
   {
     id: "dormancy_rig",
@@ -676,9 +788,24 @@ export const LANDS: readonly Land[] = [
     perLevel: 0.09,
     baseCost: P.of(1_500_000_000_000_000),
     growth: 2.1,
-    afterFold: true,
+    world: "inside",
+  },
+  {
+    id: "sap_reclaim",
+    name: "Sap Reclamation",
+    blurb: "Whatever it weeps when it's hurt, you catch and sell.",
+    role: "payout",
+    perLevel: 0.12,
+    baseCost: P.of(3_000_000_000_000_000),
+    growth: 1.9,
+    world: "inside",
   },
 ];
+
+/** The buildings that defend one farm or the other. */
+export function landsIn(world: World): readonly Land[] {
+  return LANDS.filter((l) => l.world === world);
+}
 
 export const LAND_BY_ID: Record<LandId, Land> = Object.fromEntries(
   LANDS.map((l) => [l.id, l]),
