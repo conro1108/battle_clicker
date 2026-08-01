@@ -52,7 +52,11 @@ npm test
   game is about are the picture rather than two figures in a panel. The yard
   counts the hoard out like money — three denominations side by side, each worth
   ten of the one to its right — and bundles ten of one into one of the next as
-  you cross it, in either direction.
+  you cross it, in either direction. After the Convergence you're standing in a
+  second scene (`insideScene.ts`) with its own bands and its own idiom for the
+  same two promises: each tier works a surface of the tuber and takes over more
+  of it as you buy more, and instead of a pipeline the flesh grows you a vessel
+  per tier that carries the crop to the same mound.
 
 Commands go through `applyCommand(state, cmd, now)`, which is the single
 authority for mutations. The local runtime calls it directly; swapping that for

@@ -30,6 +30,11 @@ From a keen bot run, so these are the farms people actually have:
 Regenerate with a throwaway test calling `simulateFarm({ style: "keen" })` if
 the economy moves.
 
+Inside the potato is a different scene and needs `converged=1` plus the inside
+ids (`furrow eyes starch mantle vein chorus skin second`). Its logistics take a
+while to fill, so shoot at `settle=16000` or later — under about eight seconds
+the vessels are still empty and the plain has nothing crossing it.
+
 ## Gotchas
 
 - **Settle time matters.** At `settle=2500` the field is still full of freshly
