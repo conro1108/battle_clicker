@@ -232,19 +232,21 @@ function BackRoom({
             Both places are yours and both are producing. This is only which one you're standing in —
             which shop you can buy from, which land you can build, and what you're looking at.
           </p>
+          {/* Disabled where you already are, rather than dispatching a warp the
+              sim will refuse — a refusal is an error banner, and one that says
+              "You're already there." over a button drawn as already-there is
+              the game telling you off for agreeing with it. */}
           <div className="choices halves">
-            <button
-              className={farm.world === "outside" ? "on" : ""}
-              onClick={() => dispatch({ type: "warp", to: "outside" })}
-            >
-              Out under the sky
-            </button>
-            <button
-              className={farm.world === "inside" ? "on" : ""}
-              onClick={() => dispatch({ type: "warp", to: "inside" })}
-            >
-              Inside the potato
-            </button>
+            {(["outside", "inside"] as const).map((to) => (
+              <button
+                key={to}
+                className={farm.world === to ? "on" : ""}
+                disabled={farm.world === to}
+                onClick={() => dispatch({ type: "warp", to })}
+              >
+                {to === "outside" ? "Out under the sky" : "Inside the potato"}
+              </button>
+            ))}
           </div>
         </section>
       )}
@@ -522,10 +524,15 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
       )}
       {/* Damage, defence and the log of what caused it are one subject, and
           splitting them across two tabs meant reading the report in one place
-          and paying for it in another. */}
+          and paying for it in another.
+
+          Titled off `converged` rather than `world`, because that's what the
+          weather schedule is keyed on: once the horizon has closed nothing
+          sends weather at either farm, so the sheet says the same thing on
+          both sides of the door — and so does its own body copy. */}
       {sheet === "weather" && (
         <Sheet
-          title={farm.world === "inside" ? "The tuber" : "Weather"}
+          title={farm.converged ? "The tuber" : "Weather"}
           sub="What it broke, what it costs, and what stops it next time."
           onClose={() => setSheet(null)}
           foot={
@@ -613,9 +620,11 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
           the reveal is a place and you have to be taken to it.
 
           It's over everything, including the shop it was bought from, and it
-          eats every input for its ten seconds. The canvas holds the old sky
-          underneath it the whole time (`FOLD_HOLD_MS`), so what the veil lifts
-          on is the horizon still open — and then closing, in front of you. */}
+          eats every input for its ten seconds. What it lifts on is the inside
+          of the potato: the purchase moves the farm there, so the canvas
+          underneath has already swapped to the other scene by the time the
+          words clear. The cut is the whole journey now — there's no second act
+          waiting on the canvas for it to get out of the way of. */}
       {converging && (
         <div className="converge" role="presentation">
           <div className="converge-skin" />

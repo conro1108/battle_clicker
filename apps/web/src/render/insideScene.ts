@@ -25,7 +25,6 @@ import type { solo } from "@battle/sim";
 import { POTATO_SPRITE, PRODUCER_MARKS } from "./art.js";
 import {
   EMPTY_VIEW,
-  HEAP_CAP,
   SCENE_W,
   clamp,
   fract,
@@ -224,6 +223,14 @@ const HEAP_COURSES = 10;
 const HEAP_X = -14;
 const HEAP_STEP = 5;
 const HEAP_CLIMB = 1.15;
+
+/**
+ * How many potatoes the slot table above can hold — derived here rather than
+ * imported from the outside scene, which has its own copy of these constants.
+ * Importing its cap while keeping our own courses is how the two silently
+ * disagree the first time either mound is retuned.
+ */
+const HEAP_CAP = ((HEAP_BASE + (HEAP_BASE - HEAP_COURSES + 1)) * HEAP_COURSES) / 2;
 
 let heapCache: { x: number; y: number }[] | null = null;
 

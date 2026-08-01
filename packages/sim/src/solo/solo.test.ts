@@ -684,15 +684,30 @@ describe("the two worlds", () => {
     expect(applyFarmCommand(there, { type: "warp", to: "outside" }, there.checkpointAt).ok).toBe(false);
   });
 
-  it("keeps you where you stood across a hand-down, unless you asked for the sky", () => {
+  /**
+   * The one that soft-locked the save. A hand-down clears `producers`, and the
+   * cheapest row inside costs most of a quadrillion — so a generation that
+   * started where it left off started in a shop it could never buy from, with
+   * one dig's worth of income and no way to know the exit was a lever in the
+   * back room.
+   */
+  it("starts every generation outside, with the door still open behind it", () => {
     const base = folded(developedFarm("handdown", 24 * HOUR));
     const stay = applyFarmCommand(base, { type: "prestige" }, base.checkpointAt);
-    expect((stay as { farm: FarmState }).farm.world).toBe("inside");
+    const kept = (stay as { farm: FarmState }).farm;
+    expect(kept.world).toBe("outside");
+    // The fold came with you, so the way back in is one warp rather than a
+    // second climb.
+    expect(kept.converged).toBe(true);
+    expect(applyFarmCommand(kept, { type: "warp", to: "inside" }, kept.checkpointAt).ok).toBe(true);
+    // And whatever it starts you with is spendable on the shop it starts in.
+    expect(SOLO_PRODUCERS[0]!.baseCost).toBeLessThan(SOLO_PRODUCERS.find((p) => p.world === "inside")!.baseCost);
 
     const leave = applyFarmCommand(base, { type: "prestige", outside: true }, base.checkpointAt);
     const next = (leave as { farm: FarmState }).farm;
     expect(next.converged).toBe(false);
     expect(next.world).toBe("outside");
+    expect(applyFarmCommand(next, { type: "warp", to: "inside" }, next.checkpointAt).ok).toBe(false);
   });
 
   it("reopens an old save in the world it was standing in", () => {

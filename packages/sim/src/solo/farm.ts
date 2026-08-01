@@ -360,9 +360,20 @@ function resetForNextGeneration(
     soil: MAX_SOIL,
     weatherIndex: f.weatherIndex,
     converged,
-    // A generation that kept the fold picks up where it stood; one that asked
-    // for the sky has nowhere inside to stand any more.
-    world: converged ? f.world : "outside",
+    /**
+     * Every generation starts outside, folded or not.
+     *
+     * Not where you were standing, which is what this did first and what soft-
+     * locks the save: a hand-down clears `producers`, and the cheapest row in
+     * the inside shop is most of a quadrillion potatoes. Landing there with an
+     * empty farm means one unaffordable row, a dig worth one potato, and no
+     * signal at all that the way out is a lever in the back room.
+     *
+     * Starting in the fields is also the better read. The inside is somewhere
+     * you got to; a farm that hasn't been built yet hasn't got there yet, and
+     * the door is still open the moment you can afford to walk through it.
+     */
+    world: "outside",
     seeds,
     generation: f.generation + 1,
     runStartedAt: at,

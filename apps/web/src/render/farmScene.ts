@@ -48,27 +48,26 @@ const FIELD_SHARE = 0.46; // the working field
 const MIN_SKY = 20;
 
 /**
- * How long the horizon takes to close.
+ * How long the horizon takes to close, and how long it waits before starting.
  *
- * Long for this codebase — nothing else on the farm animates for anywhere near
- * three seconds. It's deliberate: this fires once per save, it's the payoff of
- * the whole climb, and a fast version reads as a glitch rather than an event.
+ * **Neither of these fires any more, and that's on purpose.** They were written
+ * for a Convergence that handed you back the same farm under a new ceiling: the
+ * DOM cutscene held the screen, the canvas held the old sky underneath it, and
+ * the veil lifted on the horizon coming down in front of you.
+ *
+ * The fold hands you a different farm now — `world` flips to "inside" on the
+ * purchase, this scene is torn down for `insideScene`, and what the veil lifts
+ * on is the hollow. So the closing is delivered by the cutscene, and the only
+ * thing this scene ever draws is a ceiling that has already landed: what a
+ * player sees when they warp back out to the old farm.
+ *
+ * The animation is kept rather than ripped out because it is the *only* thing
+ * that knows how to get from a sky to a ceiling, and the shape of the folded
+ * game is still moving. Nothing sets `foldAt`, so `foldProgress` is pinned at 1
+ * and every branch below reads as the landed state. Don't retune these against
+ * `CONVERGE_MS` — that coupling is gone.
  */
 const FOLD_MS = 3400;
-
-/**
- * How long the sky waits before it starts closing.
- *
- * The Convergence cutscene owns the screen for the first part of the purchase —
- * the flight into the tuber, which happens over the top of everything in a DOM
- * layer — and the canvas is behind it the whole time. Playing the fold under
- * there would spend it: the veil lifts on a ceiling that already landed and the
- * player never sees the sky it replaced.
- *
- * So the horizon holds until the cutscene is nearly done, and comes down in
- * front of them as they're handed the farm back. Tracks `CONVERGE_MS` in
- * App.tsx: this wants to be a second or so short of it.
- */
 const FOLD_HOLD_MS = 9000;
 
 /** The shared outline ink, for the bits of the scene drawn as rects not art. */
