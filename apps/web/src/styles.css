@@ -1393,6 +1393,24 @@ input {
   background: #f0f7e6;
 }
 
+/* One bill for the whole farm. It keeps the repair rows' colour, because it is
+   those rows — but it's the answer to all of them rather than another item in
+   the list, so it's the filled one and they're the outlines. Drawn like the
+   sheet's own button rather than like stock. */
+.row-fixall {
+  background: var(--blood);
+  border-color: #8f3320;
+  box-shadow: 0 2px 0 #8f3320;
+  margin-bottom: 4px;
+}
+.row-fixall .row-name,
+.row-fixall .row-cost {
+  color: #fff6ef;
+}
+.row-fixall .row-blurb {
+  color: #f7d3c8;
+}
+
 .qty-toggle {
   display: flex;
   align-items: center;

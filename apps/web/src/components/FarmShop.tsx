@@ -316,7 +316,7 @@ export function LandPanel({
           {jobs > 1 && (
             <div className="rows">
               <Row
-                accent="row-repair"
+                accent="row-repair row-fixall"
                 name="Put everything right"
                 blurb={`${
                   brokenHere > 0 && soilBill > 0
