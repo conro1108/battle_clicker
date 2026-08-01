@@ -16,6 +16,7 @@ import {
   SOLO_PRODUCER_BY_ID,
   SOLO_REPAIR_COST_FRACTION,
   SOLO_UPGRADE_BY_ID,
+  producersIn,
   type LandId,
   type LandRole,
   type SoloProducerId,
@@ -249,6 +250,22 @@ export function repairCost(f: FarmState, id: SoloProducerId): Potatoes {
 export function totalRepairCost(f: FarmState): Potatoes {
   let total = 0;
   for (const prod of SOLO_PRODUCERS) total += repairCost(f, prod.id);
+  return P.of(total);
+}
+
+/**
+ * The whole bill for the farm you're standing on: every repair here, plus the
+ * soil, which belongs to both places at once.
+ *
+ * Scoped to the current world because that's what you can actually pay for from
+ * where you are — what's broken on the other farm waits until you're standing
+ * there. Nothing in here is order-dependent: `repairCost` and `soilRestoreCost`
+ * are both quoted off the clean rate, so fixing one thing never reprices
+ * another, and the sum is what the whole lot costs however you go about it.
+ */
+export function upkeepBill(f: FarmState): Potatoes {
+  let total: number = soilRestoreCost(f);
+  for (const prod of producersIn(f.world)) total += repairCost(f, prod.id);
   return P.of(total);
 }
 

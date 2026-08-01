@@ -15,6 +15,7 @@ import {
   SOLO_PRODUCERS,
   SOLO_PRODUCER_BY_ID,
   SOLO_UPGRADE_BY_ID,
+  producersIn,
   type SoloProducerId,
 } from "./content.js";
 import {
@@ -30,6 +31,7 @@ import {
   producerCost,
   repairCost,
   soilRestoreCost,
+  upkeepBill,
 } from "./economy.js";
 import { PERK_BY_ID, headStartPotatoes, perkCost, seedsFor } from "./prestige.js";
 import type { FarmCommand, FarmLogEntry, FarmResult, FarmState } from "./state.js";
@@ -284,6 +286,27 @@ export function applyFarmCommand(f0: FarmState, cmd: FarmCommand, now: Millis): 
       if (!spend(cost)) return fail("Not enough potatoes.");
       farm = { ...farm, soil: MAX_SOIL };
       note("put the soil right.", "good");
+      break;
+    }
+
+    case "fix_all": {
+      const cost = upkeepBill(farm);
+      if (cost <= 0) return fail("Nothing here needs putting right.");
+      if (!spend(cost)) return fail("Not enough potatoes.");
+      const tiredSoil = farm.soil < MAX_SOIL;
+      let mended = 0;
+      const broken = { ...farm.broken };
+      for (const prod of producersIn(farm.world)) {
+        const n = brokenCount(farm, prod.id);
+        if (n <= 0) continue;
+        mended += n;
+        broken[prod.id] = 0;
+      }
+      farm = { ...farm, broken, soil: MAX_SOIL };
+      const put = [mended > 0 ? `${mended}x broken kit` : "", tiredSoil ? "the soil" : ""].filter(
+        Boolean,
+      );
+      note(`put ${put.join(" and ")} right.`, "good");
       break;
     }
 

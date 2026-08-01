@@ -153,6 +153,27 @@ export const ICONS = {
     palette: { k: K, a: "#e0a03c" },
   },
 
+  // The upkeep tab. A spanner rather than a cloud, because the sheet is about
+  // what you do to the farm, not what the sky did to it — and past the fold
+  // there's no weather to draw anyway.
+  wrench: {
+    rows: [
+      "..kkk.kkk...",
+      "..kmk.kmk...",
+      "..kmk.kmk...",
+      "..kmmmmmk...",
+      "...kmmmk....",
+      "....kmk.....",
+      "....kmk.....",
+      "....kmk.....",
+      "....kmk.....",
+      "...kmmmk....",
+      "...kmmmk....",
+      "...kkkkk....",
+    ],
+    palette: { k: K, m: METAL.m },
+  },
+
   cloud: {
     rows: [
       "............",

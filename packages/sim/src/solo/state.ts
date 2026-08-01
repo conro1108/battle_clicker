@@ -92,6 +92,15 @@ export type FarmCommand =
   | { type: "buy_land"; land: LandId }
   | { type: "repair"; producer: SoloProducerId }
   | { type: "restore_soil" }
+  /**
+   * Every repair on the farm you're standing on, plus the soil, in one payment.
+   *
+   * All or nothing on purpose. Paying down half a bill in whatever order the
+   * shop happened to list it is not a decision anyone was making — the choice
+   * worth keeping is "put one thing right now or the whole lot later", and a
+   * button that half-empties your yard takes that away without saying so.
+   */
+  | { type: "fix_all" }
   | { type: "buy_perk"; perk: PerkId }
   /**
    * `outside` opens the horizon back up on the way down: the next generation

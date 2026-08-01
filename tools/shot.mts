@@ -54,6 +54,15 @@ farm.potatoes = Number(args.potatoes ?? 1e9);
 farm.harvested = farm.potatoes;
 farm.lifetimeHarvested = farm.potatoes;
 if (args.soil) farm.soil = Number(args.soil);
+// `broken=n` knocks n of every owned tier offline, which is what the Upkeep
+// sheet and the damaged-mark art both need to have anything to show.
+if (args.broken) {
+  const n = Number(args.broken);
+  for (const p of solo.SOLO_PRODUCERS) {
+    const owned = farm.producers[p.id] ?? 0;
+    if (owned > 0) farm.broken[p.id] = Math.min(owned, n);
+  }
+}
 // The scene reads owned upgrades to pick which mark of each tier it draws.
 if (args.marks === "all") farm.upgrades = solo.SOLO_UPGRADES.map((u) => u.id);
 // ...and whether the horizon has closed. Settable on its own so the fold can be
@@ -149,7 +158,7 @@ if (args.buy) {
   await page.getByRole("button", { name: "Plough it all under" }).click();
   await page.waitForTimeout(Number(args.after ?? 2500));
 } else if (args.open) {
-  // Any of the nav sheets by name: `open=Shop`, `open=Seeds`, `open=Weather`.
+  // Any of the nav sheets by name: `open=Shop`, `open=Seeds`, `open=Upkeep`.
   await page.getByRole("button", { name: args.open, exact: true }).click();
   // The sheet slides up; shooting on the click catches it still off the bottom.
   await page.waitForTimeout(500);

@@ -101,7 +101,7 @@ function Home({ onGo }: { onGo: (screen: Screen) => void }) {
  * sold you a tractor and which one fixed it. These are the nouns the game
  * already uses on the panels themselves.
  */
-type FarmSheet = "shop" | "weather" | "seeds" | "books";
+type FarmSheet = "shop" | "upkeep" | "seeds" | "books";
 
 /** The one-sentence hint, which is worth showing once, ever. */
 const TAUGHT_KEY = "potatoes-inc:taught-tap";
@@ -206,11 +206,14 @@ function BackRoom({
   farm,
   onVersus,
   onTitle,
+  onWarp,
   dispatch,
 }: {
   farm: solo.FarmState;
   onVersus: () => void;
   onTitle: () => void;
+  /** Warping is going somewhere, so it closes the ledger behind you. */
+  onWarp: (to: solo.FarmState["world"]) => void;
   dispatch: (cmd: solo.FarmCommand) => void;
 }) {
   return (
@@ -242,7 +245,7 @@ function BackRoom({
                 key={to}
                 className={farm.world === to ? "on" : ""}
                 disabled={farm.world === to}
-                onClick={() => dispatch({ type: "warp", to })}
+                onClick={() => onWarp(to)}
               >
                 {to === "outside" ? "Out under the sky" : "Inside the potato"}
               </button>
@@ -402,7 +405,11 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
   const nav: { id: FarmSheet; label: string; icon: Parameters<typeof PxIcon>[0]["name"] }[] = [
     ...(showSeeds ? ([{ id: "seeds", label: "Seeds", icon: "sprout" }] as const) : []),
     { id: "books", label: "Books", icon: "clipboard" },
-    { id: "weather", label: "Weather", icon: "cloud" },
+    // Named for what you do in it rather than for what put you there. "Weather"
+    // was the cause, and it stopped being true the moment the horizon closed —
+    // nothing sends weather at a folded farm, and the tab still said so. Repairs,
+    // the soil and the buildings that blunt the next one are all the same job.
+    { id: "upkeep", label: "Upkeep", icon: "wrench" },
     { id: "shop", label: "Shop", icon: "basket" },
   ];
 
@@ -485,7 +492,7 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
             key={item.id}
             className={
               [
-                item.id === "weather" && needsAttention ? "alert" : "",
+                item.id === "upkeep" && needsAttention ? "alert" : "",
                 item.id === "shop" && lastPurchase ? "waiting" : "",
               ]
                 .filter(Boolean)
@@ -495,7 +502,7 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
           >
             <PxIcon name={item.icon} size={20} />
             <span>{item.label}</span>
-            {item.id === "weather" && needsAttention && <span className="nav-dot" />}
+            {item.id === "upkeep" && needsAttention && <span className="nav-dot" />}
           </button>
         ))}
       </nav>
@@ -533,14 +540,15 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
           splitting them across two tabs meant reading the report in one place
           and paying for it in another.
 
-          Titled off `converged` rather than `world`, because that's what the
-          weather schedule is keyed on: once the horizon has closed nothing
-          sends weather at either farm, so the sheet says the same thing on
-          both sides of the door — and so does its own body copy. */}
-      {sheet === "weather" && (
+          The title is the job; the subtitle names whatever's been doing the
+          damage. That's keyed off `converged` rather than `world`, because so is
+          the weather schedule: once the horizon has closed nothing sends weather
+          at either farm, so the sheet reads the same on both sides of the
+          door. */}
+      {sheet === "upkeep" && (
         <Sheet
-          title={farm.converged ? "The tuber" : "Weather"}
-          sub="What it broke, what it costs, and what stops it next time."
+          title="Upkeep"
+          sub={`What ${farm.converged ? "the tuber" : "the weather"} broke, what it costs, and what stops it next time.`}
           onClose={() => setSheet(null)}
           foot={
             <>
@@ -587,6 +595,13 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
             farm={farm}
             onVersus={() => onGo({ kind: "versus-lobby" })}
             onTitle={() => onGo({ kind: "home" })}
+            // The point of stepping across is to be standing there. Leaving the
+            // ledger open over the top of the other farm makes the door feel
+            // like a setting you toggled rather than a place you went.
+            onWarp={(to) => {
+              dispatch({ type: "warp", to });
+              setSheet(null);
+            }}
             dispatch={dispatch}
           />
         </Sheet>

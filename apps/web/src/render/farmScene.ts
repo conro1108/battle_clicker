@@ -122,10 +122,16 @@ export const EMPTY_VIEW: FarmView = {
 
 type Phase = "day" | "dusk" | "night";
 
+/**
+ * Evening runs late on purpose. Sunset at six and full dark at eight is honest
+ * for a November afternoon and wrong for the hours anyone actually plays in —
+ * open the farm after dinner and the sky had already packed up. The light holds
+ * through the evening now and only goes properly out at ten.
+ */
 function phaseNow(): Phase {
   const h = new Date().getHours();
-  if (h >= 20 || h < 5) return "night";
-  if (h < 7 || h >= 18) return "dusk";
+  if (h >= 22 || h < 5) return "night";
+  if (h < 7 || h >= 20) return "dusk";
   return "day";
 }
 

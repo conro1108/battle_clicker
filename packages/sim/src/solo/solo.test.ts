@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { format, ms, seconds } from "../numbers.js";
+import { P, format, ms, seconds } from "../numbers.js";
 import {
   LANDS,
   MAX_MITIGATION,
+  MAX_SOIL,
   MIN_SOIL,
   REPAIR_SECONDS,
   SOLO_PRODUCERS,
@@ -12,14 +13,17 @@ import {
   SOLO_UPGRADE_BY_ID,
 } from "./content.js";
 import {
+  brokenCount,
   currentRate,
   mitigation,
   producerCost,
   producerMultiplier,
   producerRateEach,
+  repairCost,
   soilLossRate,
   soilRestoreCost,
   totalRepairCost,
+  upkeepBill,
 } from "./economy.js";
 import {
   CONVERGENCE_UPGRADE,
@@ -280,6 +284,70 @@ describe("offline resolution", () => {
     const { farm, report } = resumeFarm(base, ms(base.checkpointAt - HOUR));
     expect(report).toBeNull();
     expect(farm.potatoes).toBe(base.potatoes);
+  });
+});
+
+describe("putting everything right", () => {
+  /** A farm left alone long enough to have both broken kit and tired soil. */
+  function wreckedFarm(seed = "fixall"): FarmState {
+    const base = developedFarm(seed);
+    const { farm } = resumeFarm(base, ms(base.checkpointAt + 2 * DAY));
+    expect(farm.soil).toBeLessThan(MAX_SOIL);
+    expect(totalRepairCost(farm)).toBeGreaterThan(0);
+    return farm;
+  }
+
+  it("charges the same as paying every bill by hand, and leaves the same farm", () => {
+    const wrecked = wreckedFarm();
+    const now = wrecked.checkpointAt;
+
+    const one = applyFarmCommand(wrecked, { type: "fix_all" }, now);
+    expect(one.ok).toBe(true);
+    if (!one.ok) return;
+
+    let byHand = wrecked;
+    for (const cmd of [
+      { type: "restore_soil" } as const,
+      ...SOLO_PRODUCERS.filter((p) => brokenCount(wrecked, p.id) > 0).map(
+        (p) => ({ type: "repair", producer: p.id }) as const,
+      ),
+    ]) {
+      const res = applyFarmCommand(byHand, cmd, now);
+      expect(res.ok).toBe(true);
+      if (res.ok) byHand = res.farm;
+    }
+
+    expect(one.farm.potatoes).toBeCloseTo(byHand.potatoes, 6);
+    expect(one.farm.soil).toBe(MAX_SOIL);
+    for (const prod of SOLO_PRODUCERS) {
+      expect(brokenCount(one.farm, prod.id)).toBe(brokenCount(byHand, prod.id));
+    }
+    expect(wrecked.potatoes - one.farm.potatoes).toBeCloseTo(upkeepBill(wrecked), 6);
+  });
+
+  it("only pays for the farm you're standing on", () => {
+    // Everything the outside ladder has broken is billed here; the inside farm's
+    // damage isn't reachable from the fields and isn't charged for.
+    const wrecked = wreckedFarm("scope");
+    expect(wrecked.world).toBe("outside");
+    const outsideBill = SOLO_PRODUCERS.filter((p) => p.world === "outside").reduce(
+      (sum, p) => sum + repairCost(wrecked, p.id),
+      0,
+    );
+    expect(upkeepBill(wrecked)).toBeCloseTo(outsideBill + soilRestoreCost(wrecked), 6);
+  });
+
+  it("is all or nothing — an unaffordable bill changes nothing", () => {
+    const wrecked = wreckedFarm("broke");
+    const skint = { ...wrecked, potatoes: P.of(upkeepBill(wrecked) - 1) };
+    const res = applyFarmCommand(skint, { type: "fix_all" }, skint.checkpointAt);
+    expect(res.ok).toBe(false);
+  });
+
+  it("refuses when there's nothing wrong", () => {
+    const clean = createFarm({ seed: "clean", startedAt: ms(0) });
+    const res = applyFarmCommand(clean, { type: "fix_all" }, ms(1_000));
+    expect(res.ok).toBe(false);
   });
 });
 

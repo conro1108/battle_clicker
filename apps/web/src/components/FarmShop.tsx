@@ -6,6 +6,35 @@ import { artUrl, type Art } from "../render/pixel.js";
 
 type BuyQty = 1 | 10 | "max";
 
+/**
+ * The buy size outlives the sheet.
+ *
+ * The shop is opened dozens of times a session and it was resetting to x1 on
+ * every one of them, so a player buying in tens spent the whole run re-picking
+ * ten. It's a preference, not a state of the farm — so it lives beside the save
+ * rather than in it, and a farm handed down or abandoned keeps it.
+ */
+const QTY_KEY = "potatoes-inc:buy-qty";
+
+function loadQty(): BuyQty {
+  try {
+    const raw = localStorage.getItem(QTY_KEY);
+    if (raw === "10") return 10;
+    if (raw === "max") return "max";
+  } catch {
+    // A blocked localStorage just means the toggle forgets. Harmless.
+  }
+  return 1;
+}
+
+function saveQty(qty: BuyQty): void {
+  try {
+    localStorage.setItem(QTY_KEY, String(qty));
+  } catch {
+    // See `loadQty`.
+  }
+}
+
 function Row({
   name,
   blurb,
@@ -135,7 +164,11 @@ export function GrowPanel({
   budget: Potatoes;
   dispatch: (cmd: solo.FarmCommand) => void;
 }) {
-  const [qty, setQty] = useState<BuyQty>(1);
+  const [qty, setQtyRaw] = useState<BuyQty>(loadQty);
+  const setQty = (next: BuyQty) => {
+    saveQty(next);
+    setQtyRaw(next);
+  };
 
   // The last stretch. Once the tenth Tuber Singularity is standing, the shop
   // stops being a shop: every other rung and every other upgrade comes off the
@@ -255,6 +288,22 @@ export function LandPanel({
     .producersIn(farm.world === "inside" ? "outside" : "inside")
     .reduce((n, p) => n + solo.brokenCount(farm, p.id), 0);
 
+  // Everything above, as one payment. Only offered when there's more than one
+  // thing to pay for — a "fix all" over a single row is the same button twice,
+  // and the row it duplicates is the one that says what it's actually mending.
+  const bill = solo.upkeepBill(farm);
+  const jobs = damaged.length + (soilBill > 0 ? 1 : 0);
+  const brokenHere = damaged.reduce((n, p) => n + solo.brokenCount(farm, p.id), 0);
+  // Only what this button actually buys back: the kit on this farm, quoted the
+  // same way the individual repair rows quote it, plus the soil if it's tired.
+  // `brokenRate` would be wrong here — it counts the other farm's damage too,
+  // and nothing you press from this world puts that right.
+  const backHere =
+    damaged.reduce(
+      (r, p) => r + solo.brokenCount(farm, p.id) * solo.producerRateEach(farm, p.id),
+      0,
+    ) + (soilBill > 0 ? solo.soilLossRate(farm) : 0);
+
   return (
     <>
       {(damaged.length > 0 || soilBill > 0) && (
@@ -264,6 +313,24 @@ export function LandPanel({
             stays tired until you spend on it — that's what {farm.converged ? "the tuber" : "the weather"}{" "}
             actually costs.
           </p>
+          {jobs > 1 && (
+            <div className="rows">
+              <Row
+                accent="row-repair"
+                name="Put everything right"
+                blurb={`${
+                  brokenHere > 0 && soilBill > 0
+                    ? `${brokenHere} broken and the soil`
+                    : brokenHere > 0
+                      ? `${brokenHere} broken`
+                      : "the soil"
+                } · restores +${format(backHere)}/s`}
+                cost={format(bill)}
+                affordable={P.gte(budget, bill)}
+                onBuy={() => dispatch({ type: "fix_all" })}
+              />
+            </div>
+          )}
           <div className="rows">
             {soilBill > 0 && (
               <Row
