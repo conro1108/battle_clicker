@@ -1416,6 +1416,26 @@ input {
 .row-fixall .row-blurb {
   color: #f7d3c8;
 }
+/* ...and when you can't afford it, it stops being the answer and goes back to
+   being an outline like the rows it summarizes.
+
+   `row-locked` alone is `opacity: 0.5`, which is plenty of signal on a pale
+   outline row and almost none on a filled dark-red one — a half-dimmed solid
+   button above a stack of faded outlines still reads as the most pressable
+   thing on the sheet. It was wired the whole time; it just looked live while
+   refusing to do anything, which is the same bug from the player's side. */
+.row-fixall.row-locked {
+  background: #fdeee9;
+  border-color: var(--blood);
+  box-shadow: none;
+}
+.row-fixall.row-locked .row-name,
+.row-fixall.row-locked .row-cost {
+  color: var(--ink);
+}
+.row-fixall.row-locked .row-blurb {
+  color: var(--wood);
+}
 
 .qty-toggle {
   display: flex;
