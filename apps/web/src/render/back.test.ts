@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { LAB, REACTOR, REFINERY, shrunk, TOWER } from "./art.js";
-import { lotDepth } from "./farmScene.js";
+import { catchOrbit, lotDepth } from "./farmScene.js";
 
 /** Sprite width straight off the char grid, since there's no canvas out here. */
 function artWidth(rows: readonly string[]): number {
@@ -74,5 +74,33 @@ describe("a building at distance", () => {
 
   it("is the same art object every time, so the sprite cache holds", () => {
     expect(shrunk(LAB)).toBe(shrunk(LAB));
+  });
+});
+
+/**
+ * What a singularity takes with it. The promise is only that a thing it's got
+ * hold of always ends up inside it, reasonably soon and turning faster the
+ * closer it gets — an orbit that stalls leaves a potato circling forever.
+ */
+describe("a caught potato", () => {
+  it("goes in, from the furthest a hole can reach", () => {
+    let r = 62;
+    let turn = 0;
+    let s = 0;
+    for (; s < 600 && r > 3; s++) {
+      const step = catchOrbit(r, 1 / 60);
+      r = step.r;
+      turn += step.turn;
+    }
+    expect(r).toBeLessThanOrEqual(3);
+    // Inside four seconds, and having gone round at least once on the way.
+    expect(s / 60).toBeLessThan(5);
+    expect(turn).toBeGreaterThan(Math.PI * 2);
+  });
+
+  it("whips as it closes", () => {
+    const wide = catchOrbit(40, 1 / 60).turn;
+    const tight = catchOrbit(8, 1 / 60).turn;
+    expect(tight).toBeGreaterThan(wide * 2);
   });
 });

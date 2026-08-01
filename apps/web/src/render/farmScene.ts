@@ -1041,6 +1041,9 @@ const FLY_HOLD = 3.6;
  * The drag is a displacement rather than a force. Nothing up here has to know it
  * happened — they fly the routes they were flying and get drawn somewhere else —
  * so a machine can't be left stranded in orbit by a badly timed dive.
+ *
+ * The exception is the loose crop, which it doesn't lean on but actually takes:
+ * see `Caught`.
  */
 interface Well {
   /** Top-left of the sprite, and the middle of it, which is what pulls. */
@@ -1053,6 +1056,62 @@ interface Well {
   pull: number;
   /** 0 holding station, 1 at the bottom of a dive. */
   dive: number;
+}
+
+/**
+ * Something loose that a singularity has got hold of.
+ *
+ * The drag on the sky is a displacement and everything caught in it springs
+ * back once the hole has gone by. This is the other half of the thing, and the
+ * half you can point at: a sack waiting at the headland, a potato riding the
+ * pipeline, what's sitting in the trough. It comes off the farm, goes round the
+ * hole on a shrinking orbit, and doesn't come back.
+ *
+ * Held in polar around the well's centre rather than in scene coordinates, so
+ * whatever it's got stays with it — including on the climb back up, if the
+ * thing is still outside the hole by the time the dive is over.
+ */
+interface Caught {
+  /** Which well has it. It lets go if that one stops being drawn. */
+  well: number;
+  art: Art;
+  /** Angle round the hole, and how far out. */
+  a: number;
+  r: number;
+}
+
+/** Pixels a second a caught thing closes on the hole. */
+const CATCH_FALL = 14;
+/**
+ * How fast it goes round, as `CATCH_SWIRL / r` radians a second — angular
+ * momentum, near enough: the tighter the orbit the faster the lap, which is
+ * what makes the last one whip. Capped at the core radius, because past that
+ * it's a couple of pixels wide and any faster is a strobe.
+ */
+const CATCH_SWIRL = 60;
+const CATCH_CORE = 5;
+/**
+ * How flat the orbit lies once it's close in, and how far out it's still round.
+ *
+ * A flat orbit all the way out means a thing grabbed from directly above the
+ * hole has to start half as far above it as it really is, which is a jump. So
+ * the wide end of the spiral is a circle — it can enter it exactly where it was
+ * standing — and it lies down into the drain as it closes.
+ */
+const CATCH_TILT = 0.5;
+const CATCH_FLAT = 30;
+const MAX_CAUGHT = 18;
+/** Things a hole picks up a second, at the bottom of a dive. */
+const GRAB_RATE = 22;
+
+/** One frame of an orbit: where it's got to, and how far round it went. */
+export function catchOrbit(r: number, dt: number): { r: number; turn: number } {
+  return { r: r - CATCH_FALL * dt, turn: (CATCH_SWIRL / Math.max(CATCH_CORE, r)) * dt };
+}
+
+/** How much of its height an orbit keeps, that far out from the hole. */
+function catchTilt(r: number): number {
+  return CATCH_TILT + (1 - CATCH_TILT) * Math.min(1, r / CATCH_FLAT);
 }
 
 /** How often one comes down, and how much of that cycle it spends down there. */
@@ -1138,6 +1197,8 @@ export class FarmScene {
   private flyers: Flyer[] = [];
   /** This frame's singularities. Placed before the sky, so the sky can feel them. */
   private wells: Well[] = [];
+  /** What they've taken off the farm, still going round. */
+  private caught: Caught[] = [];
   /** When each bed was last cleared. Indexed the same as `beds`. */
   private planted: number[] = [];
   private hands: Hand[] = [];
@@ -1230,6 +1291,7 @@ export class FarmScene {
     this.plumes = [];
     this.tills = [];
     this.dug = [];
+    this.caught = [];
     this.troughFill = 0;
     // The pipeline is built once, by the farm that first needed one. The next
     // generation builds its own.
@@ -1666,7 +1728,100 @@ export class FarmScene {
       // is laid out long before the last thing on top of it is painted.
       this.pipeEnd = Math.max(this.pipeEnd, x + Math.floor(sprite.w / 2));
       if (this.chance(1.4)) this.feedPipe(x + Math.floor(sprite.w / 2));
+      // And what it takes on the way down.
+      this.grab(i, t, horizon);
     }
+  }
+
+  /**
+   * What a diving singularity picks up.
+   *
+   * The displacement is the sky *leaning*; this is the hole actually taking
+   * something, which is the part you can watch happen to a thing you recognise.
+   * Same rule as the warp about what's fair game — anything loose, nothing
+   * rooted — so it robs the headland, the pipeline and the trough, and leaves
+   * the crop, the rigs and the sheds alone.
+   *
+   * The nearest thing in reach, one at a time, several a second: a hole that
+   * swallowed everything on the same frame would read as a delete rather than
+   * as a pull.
+   */
+  private grab(i: number, t: number, horizon: number): void {
+    const well = this.wells[i]!;
+    if (well.dive < 0.25 || this.caught.length >= MAX_CAUGHT) return;
+    // Dirt off the ground under it the whole time it's down, whether or not
+    // there's anything to take: it's the wind of the thing, and it's what says
+    // the field is being pulled at rather than just passed over.
+    if (this.chance(6 * well.dive)) {
+      const off = (Math.random() - 0.5) * 40;
+      this.puff(well.cx + off, well.cy + 16, "dust", -off * 0.7);
+    }
+    if (!this.chance(GRAB_RATE * well.dive)) return;
+
+    // Inside the reach the warp already has, less a margin — something it can
+    // barely lean on shouldn't be something it can lift.
+    const reach = well.r * 0.8;
+    let best: { d: number; art: Art; x: number; y: number; take: () => void } | null = null;
+    const offer = (x: number, y: number, art: Art, take: () => void) => {
+      const d = Math.hypot(x - well.cx, y - well.cy);
+      if (d > reach || (best && d >= best.d)) return;
+      best = { d, art, x, y, take };
+    };
+
+    // A sack at the headland: the biggest loose thing on the farm, and the one
+    // whose going is worth the most work.
+    for (const sack of this.sacks) {
+      offer(sack.x + 3, sack.y - 4, SACK, () => {
+        this.sacks = this.sacks.filter((s) => s !== sack);
+      });
+    }
+    // Potatoes on the pipeline's horizontal run, lifted straight out of it.
+    const pipeY = this.pipeY(horizon) + 3;
+    for (const lump of this.lumps) {
+      const px = lump.from - lump.d;
+      if (px < 2) continue;
+      offer(px + 3, pipeY, POTATO_SPRITE, () => {
+        this.lumps = this.lumps.filter((l) => l !== lump);
+      });
+    }
+    // What the crew has just turned up and hasn't carried off yet.
+    for (const dug of this.dug) {
+      offer(dug.x + 3, dug.y - 6, POTATO_SPRITE, () => {
+        this.dug = this.dug.filter((d) => d !== dug);
+      });
+    }
+    // The ripe crop out of the beds under it. The plant stays in the ground —
+    // it's the potato that goes, the same one a hand would have walked out for,
+    // and the bed goes back to part-grown exactly as if one had. This is what
+    // makes a dive over open field worth watching on a farm that hasn't got a
+    // pipeline yet: everything else out here is somebody's load, and there's
+    // never more than one of those in reach.
+    for (let b = 0; b < this.beds.length; b++) {
+      const bed = this.beds[b]!;
+      if (bed.dry || this.ripeness(b, t) < 0.8) continue;
+      offer(bed.x + 3, bed.y - 5, POTATO_SPRITE, () => this.lift(b, t));
+    }
+    // And off the top of the trough, at the point on it nearest the hole.
+    const box = this.troughBox;
+    if (box && this.troughFill > 0) {
+      const tx = clamp(well.cx, box.x + 4, box.x + box.w - 5);
+      offer(tx, box.y - 8, POTATO_SPRITE, () => {
+        this.troughFill = Math.max(0, this.troughFill - 1);
+      });
+    }
+
+    if (!best) return;
+    const got: { d: number; art: Art; x: number; y: number; take: () => void } = best;
+    got.take();
+    // Entered on the orbit that passes through where it was standing, so it
+    // leaves the ground from where you last saw it rather than snapping onto a
+    // ring — which is what the wide end of the spiral being round is for.
+    this.caught.push({
+      well: i,
+      art: got.art,
+      a: Math.atan2(got.y - well.cy, got.x - well.cx),
+      r: Math.max(CATCH_CORE, got.d),
+    });
   }
 
   /**
@@ -3413,11 +3568,52 @@ export class FarmScene {
    */
   private drawWells(t: number): void {
     const hole = artCanvas(this.mark("singularity"));
+    // Before the holes, so what's going round one passes behind it and is gone
+    // rather than sitting on top of the thing eating it.
+    this.stepCaught();
     for (const [i, well] of this.wells.entries()) {
       this.drawPulse(well.cx, well.cy, t + i, 1 + well.dive * 1.6);
       this.primeGlow("singularity", well.x, well.y, hole.w, hole.h, t, i);
       this.ctx.drawImage(hole.canvas, well.x, well.y);
     }
+  }
+
+  /** What the holes are holding, going round and going in. */
+  private stepCaught(): void {
+    const ctx = this.ctx;
+    this.caught = this.caught.filter((c) => {
+      const well = this.wells[c.well];
+      // Whatever had it isn't on the canvas any more, so neither is this.
+      if (!well) return false;
+      const step = catchOrbit(c.r, this.dt);
+      c.r = step.r;
+      c.a += step.turn;
+      const tilt = catchTilt(c.r);
+      const x = well.cx + Math.cos(c.a) * c.r;
+      const y = well.cy + Math.sin(c.a) * c.r * tilt;
+      // The last couple of pixels are the thing going in: one lit pixel where
+      // it went, and then nothing.
+      if (c.r <= 3) {
+        ctx.fillStyle = "#f0e0ff";
+        ctx.fillRect(Math.round(x), Math.round(y), 1, 1);
+        return false;
+      }
+      const sprite = artCanvas(c.art);
+      const fade = Math.min(1, (c.r - 3) / 5);
+      // A pixel of the pull streaming off behind it, back along the orbit it
+      // just came round. Without it a sack on a wide first lap reads as a sack
+      // that happens to be hanging in the air.
+      ctx.fillStyle = rgba("#c9a4f0", 0.45 * fade);
+      for (const back of [0.4, 0.8]) {
+        const bx = well.cx + Math.cos(c.a - back) * (c.r + 2);
+        const by = well.cy + Math.sin(c.a - back) * (c.r + 2) * tilt;
+        ctx.fillRect(Math.round(bx), Math.round(by), 1, 1);
+      }
+      ctx.globalAlpha = fade;
+      ctx.drawImage(sprite.canvas, Math.round(x - sprite.w / 2), Math.round(y - sprite.h / 2));
+      ctx.globalAlpha = 1;
+      return true;
+    });
   }
 
   /** Furrow behind a tractor: fresh dark soil that grasses back over. */
