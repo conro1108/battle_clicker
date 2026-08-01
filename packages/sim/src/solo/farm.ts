@@ -16,6 +16,7 @@ import {
   SOLO_PRODUCER_BY_ID,
   SOLO_UPGRADE_BY_ID,
   producersIn,
+  type LandId,
   type SoloProducerId,
 } from "./content.js";
 import {
@@ -211,6 +212,57 @@ export function applyFarmCommand(f0: FarmState, cmd: FarmCommand, now: Millis): 
         lifetimeHarvested: P.add(farm.lifetimeHarvested, gained),
       };
       note(`dev: granted ${digs} digs' worth.`, "neutral");
+      break;
+    }
+
+    case "dev_weather": {
+      // `advance` has already run to `at`, so moving the appointment to now
+      // doesn't fire it here — the next tick does, through the ordinary path.
+      // That matters: a hand-rolled `fireWeather` would skip the mitigation and
+      // the log entry that the real schedule goes through.
+      farm = { ...farm, nextWeatherAt: at };
+      note("dev: pulled the next event forward.", "neutral");
+      break;
+    }
+
+    case "dev_seeds": {
+      const seeds = Math.max(0, Math.floor(cmd.seeds));
+      if (seeds === 0) return fail("Nothing to grant.");
+      farm = { ...farm, seeds: farm.seeds + seeds };
+      note(`dev: granted ${seeds} Heirloom Seed.`, "neutral");
+      break;
+    }
+
+    case "dev_fold": {
+      if (cmd.converged === farm.converged) return fail("It's already like that.");
+      if (cmd.converged) {
+        farm = { ...farm, converged: true };
+        note("dev: folded the horizon.", "neutral");
+        break;
+      }
+      // Everything that only exists under a ceiling goes with the ceiling. An
+      // upgrade belongs to the world of the producer that gates it, which is
+      // also why `ur_potato` has to be named here rather than derived: it's
+      // gated on the Tuber Singularity, out under the sky.
+      const inside = new Set(producersIn("inside").map((p) => p.id));
+      const keep = <T extends Partial<Record<SoloProducerId, number>>>(rec: T) =>
+        Object.fromEntries(Object.entries(rec).filter(([id]) => !inside.has(id as SoloProducerId)));
+      farm = {
+        ...farm,
+        converged: false,
+        world: "outside",
+        producers: keep(farm.producers),
+        broken: keep(farm.broken),
+        land: Object.fromEntries(
+          Object.entries(farm.land).filter(([id]) => LAND_BY_ID[id as LandId]?.world !== "inside"),
+        ),
+        upgrades: farm.upgrades.filter((id) => {
+          if (id === CONVERGENCE_UPGRADE) return false;
+          const req = SOLO_UPGRADE_BY_ID[id]?.requires?.producer;
+          return !(req && inside.has(req));
+        }),
+      };
+      note("dev: put the sky back.", "neutral");
       break;
     }
 

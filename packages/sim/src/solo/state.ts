@@ -121,7 +121,28 @@ export type FarmCommand =
    * look at it. This pays out the same way a dig does — every multiplier you
    * own applies — and writes itself into the log so a save that used it says so.
    */
-  | { type: "dev_grant"; digs: number };
+  | { type: "dev_grant"; digs: number }
+  /**
+   * Pull the next weather event forward to now. The schedule is a pure function
+   * of the seed and `weatherIndex`, so this changes *when* the next one lands
+   * and nothing about which one it is — you get the event the farm was always
+   * going to get, early. Refused inside the potato only in the sense that the
+   * tuber's table is what fires there, which is correct: the lever is "send the
+   * next hazard", not "send rain".
+   */
+  | { type: "dev_weather" }
+  /** Seeds without a hand-down, for looking at the perk table. */
+  | { type: "dev_seeds"; seeds: number }
+  /**
+   * Fold the horizon, or open it back up.
+   *
+   * Opening it back up is the only lever here that destroys anything: it strips
+   * the kit that only exists inside the potato and takes `ur_potato` back off
+   * the shelf, because the state it has to leave behind is "a farm one purchase
+   * short of the fold" — which is the only state the fold animation can be
+   * watched from. The yard and the run's harvest are left alone.
+   */
+  | { type: "dev_fold"; converged: boolean };
 
 export type FarmResult =
   | { ok: true; farm: FarmState; entries: FarmLogEntry[] }

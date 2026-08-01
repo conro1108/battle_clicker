@@ -291,6 +291,12 @@ input {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* Held for 700ms to reach the back room, which on a phone is otherwise long
+     enough to start a text selection and pop the copy/define callout over the
+     top of it. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .hud-value {
   font-size: 1.25rem;
@@ -1444,17 +1450,29 @@ input {
   color: var(--wood-dark);
   line-height: 1;
 }
+/* Two harvest figures stacked against the seed count, right-aligned so the
+   numbers line up with each other rather than with the labels. */
+.legacy-runs {
+  text-align: right;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The door between the two farms, at the head of the Upkeep sheet. Sits above
+   the buildings rather than among them, because it changes what the rest of the
+   sheet is about. */
+.world-door {
+  margin-bottom: 12px;
+}
 
 /* --- Status list --------------------------------------------------------- */
 
-.stat-list,
 .stats {
   display: flex;
   flex-direction: column;
   gap: 0;
   margin: 0 0 14px;
 }
-.stat-list > div,
 .stats > div {
   display: flex;
   justify-content: space-between;
@@ -1463,12 +1481,10 @@ input {
   border-bottom: 1px dashed rgba(138, 111, 87, 0.4);
   font-size: 0.88rem;
 }
-.stat-list dt,
 .stats dt {
   font-weight: 700;
   color: var(--wood-dark);
 }
-.stat-list dd,
 .stats dd {
   margin: 0;
   font-variant-numeric: tabular-nums;

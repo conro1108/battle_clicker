@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import {
   P,
   clickYield,
@@ -10,12 +10,13 @@ import {
   type ScoringRule,
 } from "@battle/sim";
 
+import { clockSkew, setClockSkew } from "./clock.js";
 import { AwayReport } from "./components/AwayReport.js";
+import { Damage } from "./components/Damage.js";
 import { Farm } from "./components/Farm.js";
 import { FarmFeed } from "./components/FarmFeed.js";
 import { FarmScene, TitleScene, type FarmSceneHandle } from "./components/FarmScene.js";
 import { GrowPanel, LandPanel, LegacyPanel } from "./components/FarmShop.js";
-import { FarmStatus } from "./components/FarmStatus.js";
 import { Feed } from "./components/Feed.js";
 import { Opponents } from "./components/Opponents.js";
 import { PxIcon } from "./components/PxIcon.js";
@@ -53,6 +54,42 @@ function useSpaceToDig(dig: () => void, enabled = true) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [dig, enabled]);
+}
+
+/** How long a press has to be held before it's asking for the back room. */
+const HOLD_MS = 700;
+
+/**
+ * Press-and-hold, as the way into something that isn't advertised.
+ *
+ * Returns props to spread onto whatever you're holding. Deliberately not a
+ * `<button>` — the back room is reached by holding the potato on the HUD, and a
+ * focusable control there would be a thing to tab into and press by accident,
+ * announcing itself to exactly the players it's hidden from.
+ *
+ * Pointer events rather than touch or mouse ones, so this is the same code path
+ * on a phone and a trackpad, and `setPointerCapture` so sliding a thumb off the
+ * icon mid-hold doesn't silently cancel it. The timer is cleared on release,
+ * leave and cancel — the last of which is what fires when the browser decides
+ * the gesture was a scroll.
+ */
+function useHold(onHold: () => void) {
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const stop = useCallback(() => {
+    clearTimeout(timer.current);
+    timer.current = undefined;
+  }, []);
+  useEffect(() => stop, [stop]);
+  return {
+    onPointerDown: (e: PointerEvent) => {
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      stop();
+      timer.current = setTimeout(onHold, HOLD_MS);
+    },
+    onPointerUp: stop,
+    onPointerLeave: stop,
+    onPointerCancel: stop,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -94,14 +131,21 @@ function Home({ onGo }: { onGo: (screen: Screen) => void }) {
 // ---------------------------------------------------------------------------
 
 /**
- * The four things you can open, named after what's inside them.
+ * The things you can open, named after what's inside them.
  *
  * The old set was Grow / Land / Legacy / Report / Farm / House — six tabs, and
  * the first three were interchangeable-sounding words that didn't say which one
  * sold you a tractor and which one fixed it. These are the nouns the game
  * already uses on the panels themselves.
+ *
+ * "Books" used to be a fourth. It held a ledger of eight numbers, six of which
+ * were already on the HUD or the dig bar or the Seeds sheet, plus a door to the
+ * back room — so it was spending a quarter of the bottom bar to repeat itself.
+ * What was actually only in there went to the sheet it belonged to: the damage
+ * to Upkeep, next to the bill for it; the run's harvest to Seeds, next to the
+ * thing it buys. `back` is what's left, and it isn't on the bar at all.
  */
-type FarmSheet = "shop" | "upkeep" | "seeds" | "books";
+type FarmSheet = "shop" | "upkeep" | "seeds" | "back";
 
 /** The one-sentence hint, which is worth showing once, ever. */
 const TAUGHT_KEY = "potatoes-inc:taught-tap";
@@ -197,79 +241,102 @@ function omenNudge(farm: solo.FarmState): string {
   return "Keep going";
 }
 
+const HOUR_MS = 3_600_000;
+
 /**
- * Everything that isn't the farm: the parked head-to-head prototype and the
- * handful of levers that exist for poking at the game rather than playing it.
- * One door, clearly labelled, out of the way of the loop.
+ * The sim's `formatDuration` is m:ss, which is right for a weather countdown and
+ * useless for a skew that's routinely a week. Days and hours, no seconds.
+ */
+function formatSkew(msAhead: number): string {
+  const hours = Math.round(msAhead / HOUR_MS);
+  const d = Math.floor(hours / 24);
+  const h = hours % 24;
+  return [d ? `${d}d` : "", h || !d ? `${h}h` : ""].filter(Boolean).join(" ");
+}
+
+/**
+ * Everything that isn't the farm: the parked head-to-head prototype, and the
+ * levers that exist for looking at the game rather than playing it.
+ *
+ * Reached by holding the potato on the HUD and by nothing else. It used to be
+ * the back half of a tab on the bottom bar, which meant a quarter of the most
+ * valuable strip of the screen was pointing at three cheat buttons.
+ *
+ * What's in here is chosen by one rule: a lever earns its place if it reaches a
+ * state you can't otherwise get to in under a minute. Everything the game shows
+ * you is a function of time, money, damage, seeds, or which side of the fold
+ * you're on — so those are the five knobs, and there isn't a sixth.
  */
 function BackRoom({
   farm,
   onVersus,
   onTitle,
-  onWarp,
+  onAbandon,
   dispatch,
 }: {
   farm: solo.FarmState;
   onVersus: () => void;
   onTitle: () => void;
-  /** Warping is going somewhere, so it closes the ledger behind you. */
-  onWarp: (to: solo.FarmState["world"]) => void;
+  onAbandon: () => void;
   dispatch: (cmd: solo.FarmCommand) => void;
 }) {
+  // Read once per open rather than watched. Nothing else in the app can change
+  // it, and a skew that re-rendered every tick would be a clock, which invites
+  // reading it as one.
+  const [skew, setSkew] = useState(() => clockSkew());
+  const jump = (byMs: number) => {
+    setClockSkew(clockSkew() + byMs);
+    setSkew(clockSkew());
+    // Nothing has to be dispatched: the tick loop calls `nowMs` and `advance`
+    // resolves the whole gap exactly, weather and all, the same way it resolves
+    // a closed tab. That's the entire reason the lever is a clock skew and not
+    // a sim command.
+  };
+
   return (
     <div className="backroom">
-      {/* Stepping between the two farms.
-
-          It lives back here on purpose and only for now. Warping is a real part
-          of the game — the outside farm is an income you go and manage, not a
-          number that ticks — and a door that important eventually wants to be
-          somewhere you can see it. But what it should look like out front is a
-          question about the whole post-fold layout, and shipping a guess at that
-          is how a bottom bar ends up with five tabs and no argument for any of
-          them. So: a labelled lever in the back room until the shape of the
-          folded game is worth committing to. */}
-      {farm.converged && (
-        <section>
-          <h3>The other farm</h3>
-          <p className="muted small">
-            Both places are yours and both are producing. This is only which one you're standing in —
-            which shop you can buy from, which land you can build, and what you're looking at.
-          </p>
-          {/* Disabled where you already are, rather than dispatching a warp the
-              sim will refuse — a refusal is an error banner, and one that says
-              "You're already there." over a button drawn as already-there is
-              the game telling you off for agreeing with it. */}
-          <div className="choices halves">
-            {(["outside", "inside"] as const).map((to) => (
-              <button
-                key={to}
-                className={farm.world === to ? "on" : ""}
-                disabled={farm.world === to}
-                onClick={() => onWarp(to)}
-              >
-                {to === "outside" ? "Out under the sky" : "Inside the potato"}
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-
       <section>
-        <h3>Versus a bot</h3>
+        <h3>Push the clock</h3>
         <p className="muted small">
-          The older head-to-head prototype: two farms, one clock, and upgrades that reach across the
-          table. Parked, but it still runs.
+          Moves the farm's idea of now, and resolves the gap the way a closed tab does. Sticks across
+          a reload.
         </p>
-        <button className="ghost" onClick={onVersus}>
-          Open the lobby
-        </button>
+        <div className="choices">
+          {([
+            ["+1 hour", HOUR_MS],
+            ["+8 hours", 8 * HOUR_MS],
+            ["+1 day", 24 * HOUR_MS],
+            ["+1 week", 7 * 24 * HOUR_MS],
+          ] as const).map(([label, by]) => (
+            <button key={label} className="ghost" onClick={() => jump(by)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {skew > 0 && (
+          <>
+            <p className="muted small">
+              Running {formatSkew(skew)} ahead of the wall clock. Putting it back leaves the farm
+              checkpointed in the future, so it sits frozen until real time catches up.
+            </p>
+            <button
+              className="ghost"
+              onClick={() => {
+                setClockSkew(0);
+                setSkew(0);
+              }}
+            >
+              Put the clock back
+            </button>
+          </>
+        )}
       </section>
 
       <section>
-        <h3>Dev tooling</h3>
+        <h3>Fill the yard</h3>
         <p className="muted small">
-          Shortcuts for looking at the game rather than playing it. These are real digs, so they
-          respect every multiplier you own — and they will absolutely ruin your save's pacing.
+          Real digs, so they respect every multiplier you own — and they will absolutely ruin your
+          save's pacing.
         </p>
         <div className="choices">
           {([
@@ -285,11 +352,77 @@ function BackRoom({
       </section>
 
       <section>
-        <h3>Title screen</h3>
-        <p className="muted small">Your farm keeps running. This just goes back to the front door.</p>
-        <button className="ghost" onClick={onTitle}>
-          Back to the title
+        <h3>Break something</h3>
+        <p className="muted small">
+          Pulls the next scheduled event forward to now. Same event, early — it's how you get damaged
+          kit and a dirty soil bar without waiting for the sky.
+        </p>
+        <button className="ghost" onClick={() => dispatch({ type: "dev_weather" })}>
+          Send the next event
         </button>
+      </section>
+
+      <section>
+        <h3>Seeds</h3>
+        <p className="muted small">
+          Without the hand-down that normally pays for them, so the perk table is reachable on a
+          first run.
+        </p>
+        <div className="choices">
+          {[10, 1_000, 100_000].map((seeds) => (
+            <button key={seeds} className="ghost" onClick={() => dispatch({ type: "dev_seeds", seeds })}>
+              +{seeds.toLocaleString()}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <h3>The horizon</h3>
+        <p className="muted small">
+          {farm.converged
+            ? "Strips the kit that only exists in here and puts the Ur-Potato back on the shelf, which leaves you one purchase short of the fold. Your yard and this run's harvest are untouched."
+            : "Folds it without the purchase, so without the animation. To watch that, buy the Ur-Potato."}
+        </p>
+        <button
+          className="ghost"
+          onClick={() => dispatch({ type: "dev_fold", converged: !farm.converged })}
+        >
+          {farm.converged ? "Put the sky back" : "Fold it now"}
+        </button>
+      </section>
+
+      <section>
+        <h3>Versus a bot</h3>
+        <p className="muted small">
+          The older head-to-head prototype: two farms, one clock, and upgrades that reach across the
+          table. Parked, but it still runs.
+        </p>
+        <button className="ghost" onClick={onVersus}>
+          Open the lobby
+        </button>
+      </section>
+
+      <section>
+        <h3>Start over</h3>
+        <p className="muted small">
+          Not a hand-down. This keeps nothing — not the seeds, not the generation, not the fold.
+        </p>
+        <div className="choices">
+          <button className="ghost" onClick={onTitle}>
+            Back to the title
+          </button>
+          <button
+            className="ghost danger"
+            onClick={() => {
+              if (window.confirm("Plough it all under? This keeps nothing — not even seeds.")) {
+                onAbandon();
+              }
+            }}
+          >
+            Plough it all under
+          </button>
+        </div>
       </section>
     </div>
   );
@@ -404,7 +537,6 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
   // slots in at the far end where appearing later doesn't shuffle the rest.
   const nav: { id: FarmSheet; label: string; icon: Parameters<typeof PxIcon>[0]["name"] }[] = [
     ...(showSeeds ? ([{ id: "seeds", label: "Seeds", icon: "sprout" }] as const) : []),
-    { id: "books", label: "Books", icon: "clipboard" },
     // Named for what you do in it rather than for what put you there. "Weather"
     // was the cause, and it stopped being true the moment the horizon closed —
     // nothing sends weather at a folded farm, and the tab still said so. Repairs,
@@ -429,6 +561,8 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
   useSpaceToDig(onDig, report === null && sheet === null && omen === null && !converging);
 
   const soilPct = Math.round(farm.soil * 100);
+  const hold = useHold(useCallback(() => setSheet("back"), []));
+  const kitOnTheLand = solo.SOLO_PRODUCERS.reduce((n, p) => n + (farm.producers[p.id] ?? 0), 0);
 
   // The shop has emptied itself for the Ur-Potato. Worth knowing out here as
   // well as inside the sheet: the bottom bar is the only part of the game a
@@ -439,7 +573,10 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
   return (
     <div className="app farm-app">
       <header className="hud">
-        <div className="hud-bank">
+        {/* Hold the potato for the back room. Nothing on screen says so, which
+            is the point — everything back there is either parked or a cheat,
+            and neither is worth a pixel of a bar you look at all game. */}
+        <div className="hud-bank" {...hold}>
           <PxIcon name="potato" size={22} />
           <div>
             <div className="hud-value">{format(budget)}</div>
@@ -527,7 +664,10 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
           foot={
             lastPurchase ? undefined : (
               <>
-                <span className="muted">To spend</span>
+                {/* The one number off the old ledger that had nowhere else to
+                    go. It reads as a footnote to a catalogue rather than a
+                    stat: what you've bought, under what you can spend. */}
+                <span className="muted">{kitOnTheLand} on the land</span>
                 <strong>{format(budget)}</strong>
               </>
             )
@@ -557,6 +697,36 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
             </>
           }
         >
+          {/* Which farm you're standing on heads the sheet that's about a farm.
+              It used to be a lever in the back room, on the grounds that what it
+              should look like out front is a question about the whole post-fold
+              layout — but Upkeep is already the per-world screen. What you can
+              build and what's broken both change when you step across, so the
+              door belongs on top of them rather than three taps away with the
+              cheats. */}
+          {farm.converged && (
+            <div className="choices halves world-door">
+              {(["outside", "inside"] as const).map((to) => (
+                <button
+                  key={to}
+                  className={farm.world === to ? "on" : ""}
+                  // Disabled where you already are, rather than dispatching a
+                  // warp the sim will refuse — a refusal is an error banner, and
+                  // one that says "You're already there." over a button drawn as
+                  // already-there is the game telling you off for agreeing.
+                  disabled={farm.world === to}
+                  onClick={() => {
+                    dispatch({ type: "warp", to });
+                    // The point of stepping across is to be standing there.
+                    setSheet(null);
+                  }}
+                >
+                  {to === "outside" ? "Out under the sky" : "Inside the potato"}
+                </button>
+              ))}
+            </div>
+          )}
+          <Damage farm={farm} />
           <LandPanel farm={farm} budget={budget} dispatch={dispatch} />
           <h3 className="sheet-section">Field report</h3>
           <FarmFeed farm={farm} now={now} />
@@ -565,41 +735,23 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
       {sheet === "seeds" && (
         <Sheet
           title="Seeds"
-          sub="Hand the farm down, or spend what the last one left you."
+          sub={`Generation ${farm.generation}. Hand the farm down, or spend what the last one left you.`}
           onClose={() => setSheet(null)}
         >
-          <LegacyPanel farm={farm} dispatch={dispatch} />
+          <LegacyPanel farm={farm} now={now} pendingDigs={pendingDigs} dispatch={dispatch} />
         </Sheet>
       )}
-      {sheet === "books" && (
-        <Sheet
-          title="The books"
-          sub={`Generation ${farm.generation}`}
-          onClose={() => setSheet(null)}
-        >
-          <FarmStatus
-            farm={farm}
-            now={now}
-            budget={budget}
-            pendingDigs={pendingDigs}
-            onAbandon={() => {
-              abandon();
-              setSheet(null);
-            }}
-          />
-          {/* The side doors used to hold a sixth of the bottom bar for a
-              parked prototype and three dev buttons. They live at the back of
-              the ledger now, which is about what they're worth. */}
-          <h3 className="sheet-section">Side doors</h3>
+      {/* No tab, no button, no hint: hold the potato on the HUD. Everything in
+          here is either parked or a cheat, and both are things you go looking
+          for on purpose. */}
+      {sheet === "back" && (
+        <Sheet title="The back room" sub="Levers, not gameplay." onClose={() => setSheet(null)}>
           <BackRoom
             farm={farm}
             onVersus={() => onGo({ kind: "versus-lobby" })}
             onTitle={() => onGo({ kind: "home" })}
-            // The point of stepping across is to be standing there. Leaving the
-            // ledger open over the top of the other farm makes the door feel
-            // like a setting you toggled rather than a place you went.
-            onWarp={(to) => {
-              dispatch({ type: "warp", to });
+            onAbandon={() => {
+              abandon();
               setSheet(null);
             }}
             dispatch={dispatch}

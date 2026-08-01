@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { P, format, solo, type Potatoes } from "@battle/sim";
+import { P, format, solo, type Millis, type Potatoes } from "@battle/sim";
 
 import { producerArt, upgradePreview } from "../marks.js";
 import { artUrl, type Art } from "../render/pixel.js";
@@ -406,15 +406,20 @@ export function LandPanel({
 
 export function LegacyPanel({
   farm,
+  now,
+  pendingDigs,
   dispatch,
 }: {
   farm: solo.FarmState;
+  now: Millis;
+  pendingDigs: number;
   dispatch: (cmd: solo.FarmCommand) => void;
 }) {
   // Which world the next generation gets. Defaults to the one you're standing
   // in: coming back out is a thing you go and ask for.
   const [outside, setOutside] = useState(false);
   const pending = solo.pendingSeeds(farm);
+  const thisRun = solo.projectedHarvested(farm, now);
   const multNow = 1 + solo.MULT_PER_UNSPENT_SEED * farm.seeds;
   const multAfter = 1 + solo.MULT_PER_UNSPENT_SEED * (farm.seeds + pending);
 
@@ -425,8 +430,14 @@ export function LegacyPanel({
           <div className="legacy-value">{farm.seeds}</div>
           <div className="muted small">Heirloom Seed · ×{multNow.toFixed(2)} output</div>
         </div>
-        <div className="muted small">
-          Lifetime harvest {format(farm.lifetimeHarvested)}
+        {/* This run's harvest is what `pendingSeeds` is computed from, so it
+            reads here rather than in a ledger somewhere else — the number and
+            the thing it buys in the same glance. Lifetime is the only figure in
+            the game that never goes backwards, and it's the one that makes a
+            hand-down feel like it added up to something. */}
+        <div className="muted small legacy-runs">
+          <div>This run {format(P.add(thisRun, P.mul(solo.clickYield(farm), pendingDigs)))}</div>
+          <div>Lifetime {format(farm.lifetimeHarvested)}</div>
         </div>
       </div>
 

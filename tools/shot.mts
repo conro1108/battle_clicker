@@ -26,6 +26,9 @@
  * opens a sheet. Watch the namespace — every one of these shares it with the
  * producer ids, which is why handing down isn't `hand=`.
  *
+ * `open=back` is the odd one: the back room has no button, so that one holds
+ * the potato on the HUD for 700ms the way a player has to.
+ *
  * `hour=` fakes the wall clock the sky runs on, so night can be shot at noon.
  */
 
@@ -154,13 +157,29 @@ if (args.buy) {
 } else if (args.plough) {
   // The other wipe: a new farm on a new seed, keeping nothing.
   page.on("dialog", (d) => void d.accept());
-  await page.getByRole("button", { name: "Books", exact: true }).click();
+  await openBackRoom();
   await page.getByRole("button", { name: "Plough it all under" }).click();
   await page.waitForTimeout(Number(args.after ?? 2500));
+} else if (args.open === "back") {
+  await openBackRoom();
 } else if (args.open) {
   // Any of the nav sheets by name: `open=Shop`, `open=Seeds`, `open=Upkeep`.
   await page.getByRole("button", { name: args.open, exact: true }).click();
   // The sheet slides up; shooting on the click catches it still off the bottom.
+  await page.waitForTimeout(500);
+}
+
+/**
+ * The back room has no button. It's a 700ms hold on the potato in the HUD, so
+ * this is a real press-and-wait rather than a click — `.click()` releases in a
+ * few milliseconds and the timer never fires.
+ */
+async function openBackRoom() {
+  const potato = page.locator(".hud-bank");
+  await potato.hover();
+  await page.mouse.down();
+  await page.waitForTimeout(900);
+  await page.mouse.up();
   await page.waitForTimeout(500);
 }
 

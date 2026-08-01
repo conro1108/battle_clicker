@@ -797,7 +797,7 @@ describe("the two worlds", () => {
   });
 });
 
-describe("dev grant", () => {
+describe("the back room", () => {
   it("pays out where a capped dig can't, and says so in the log", () => {
     const farm = developedFarm("grant");
     const digs = 10_000;
@@ -811,6 +811,77 @@ describe("dev grant", () => {
 
     const entries = (res as { entries: { text: string }[] }).entries;
     expect(entries.some((e) => e.text.startsWith("dev:"))).toBe(true);
+  });
+
+  it("pulls the next event forward without changing which one it is", () => {
+    const farm = developedFarm("weather-lever");
+    // What the schedule was always going to send next, left alone.
+    const natural = advance(farm, ms(farm.nextWeatherAt + 1_000)).events[0];
+    expect(natural).toBeDefined();
+
+    const res = applyFarmCommand(farm, { type: "dev_weather" }, farm.checkpointAt);
+    expect(res.ok).toBe(true);
+    const pulled = (res as { farm: FarmState }).farm;
+    expect(pulled.nextWeatherAt).toBe(farm.checkpointAt);
+
+    // It lands on the very next tick, and it's the same event — the lever moves
+    // the appointment, not the schedule.
+    const soon = advance(pulled, ms(pulled.checkpointAt + 1_000));
+    expect(soon.events).toHaveLength(1);
+    expect(soon.events[0]!.id).toBe(natural!.id);
+  });
+
+  it("grants seeds without a hand-down", () => {
+    const farm = developedFarm("seed-lever");
+    const res = applyFarmCommand(farm, { type: "dev_seeds", seeds: 500 }, farm.checkpointAt);
+    const next = (res as { farm: FarmState }).farm;
+    expect(next.seeds).toBe(farm.seeds + 500);
+    // Nothing else about the run moves — this is not a prestige.
+    expect(next.generation).toBe(farm.generation);
+    expect(next.producers).toEqual(farm.producers);
+  });
+
+  it("folds and unfolds, leaving a farm one purchase short of the fold", () => {
+    const base = developedFarm("fold-lever");
+    const folded = (applyFarmCommand(base, { type: "dev_fold", converged: true }, base.checkpointAt) as {
+      farm: FarmState;
+    }).farm;
+    expect(folded.converged).toBe(true);
+    expect(applyFarmCommand(folded, { type: "dev_fold", converged: true }, folded.checkpointAt).ok).toBe(
+      false,
+    );
+
+    // Buy the things that only exist under a ceiling, then take the ceiling away.
+    const kitted: FarmState = {
+      ...folded,
+      world: "inside",
+      producers: { ...folded.producers, furrow: 12 },
+      broken: { ...folded.broken, furrow: 3 },
+      land: { ...folded.land, callus_beds: 1 },
+      upgrades: [...folded.upgrades, CONVERGENCE_UPGRADE, "furrow_x2a", "ceiling_rights"],
+    };
+    const opened = (applyFarmCommand(kitted, { type: "dev_fold", converged: false }, kitted.checkpointAt) as {
+      farm: FarmState;
+    }).farm;
+
+    expect(opened.converged).toBe(false);
+    expect(opened.world).toBe("outside");
+    expect(opened.producers.furrow).toBeUndefined();
+    expect(opened.broken.furrow).toBeUndefined();
+    // The Ur-Potato goes back on the shelf, which is the whole point: the fold
+    // only animates on a real purchase, so this is the state to watch it from.
+    expect(opened.upgrades).not.toContain(CONVERGENCE_UPGRADE);
+    expect(opened.upgrades).not.toContain("furrow_x2a");
+    expect(opened.land.callus_beds).toBeUndefined();
+    // `ceiling_rights` is gated on the Inversion Furrow, so it goes with it —
+    // whereas an upgrade gated on an outside rung is untouched.
+    expect(opened.upgrades).not.toContain("ceiling_rights");
+    // The yard and the run's harvest are somebody's afternoon. Left alone.
+    expect(opened.potatoes).toBe(kitted.potatoes);
+    expect(opened.harvested).toBe(kitted.harvested);
+    // And what it leaves behind is a farm the sim will actually accept commands
+    // against — no orphaned inside kit, no upgrade with nothing to multiply.
+    expect(applyFarmCommand(opened, { type: "warp", to: "inside" }, opened.checkpointAt).ok).toBe(false);
   });
 });
 
