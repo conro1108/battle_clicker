@@ -203,24 +203,62 @@ const LAMP_SPREAD = 52;
  * of the building on the lower one. The near one is on its own phase, because a
  * third parallel copy reads as a printing error rather than as hills.
  */
+/**
+ * Inside the tuber the same three ridges are still there — they have to be,
+ * every back lot stands on them — but they stop being hills.
+ *
+ * Recolouring them wasn't enough: a rolling sine horizon is a landscape no
+ * matter what colour it is, and three tan ones under a flesh ceiling just read
+ * as a sunset over the same farm. So each ridge carries a second profile, and
+ * the fold morphs from one to the other.
+ *
+ * The flesh profile is the opposite shape on purpose. A hill rolls everywhere
+ * and is level nowhere; this is level almost everywhere and swells in three or
+ * four places — long flat shelves of cut flesh with lumps pushing up through
+ * them, and a dent where one caved. That's a tuber's inside wall: mostly
+ * featureless, occasionally knuckled.
+ *
+ * The lumps have to be *narrow* to get that. The first pass gave them
+ * half-widths in the thirties, which over a 176px scene left no flat anywhere
+ * and simply rebuilt the hills in a different colour. Nothing wider than about
+ * a seventh of the width, or the shelf disappears and the shape goes back to
+ * being landscape.
+ */
 interface Ridge {
   amp: number;
   base: number;
   phase: number;
+  /** The shelf the flesh profile sits at, before any lumps. */
+  flat: number;
+  /** Lumps on that shelf, as `[centre, half-width, rise]`. Rise may be negative. */
+  lumps: readonly (readonly [number, number, number])[];
 }
 
 const RIDGES: Ridge[] = [
-  { amp: 4, base: 40, phase: 5 },
-  { amp: 4, base: 29, phase: 5 },
-  { amp: 4, base: 19, phase: 7 },
+  { amp: 4, base: 40, phase: 5, flat: 35, lumps: [[30, 13, 9], [124, 11, 7]] },
+  { amp: 4, base: 29, phase: 5, flat: 26, lumps: [[64, 12, 8], [150, 10, 6], [16, 14, -4]] },
+  { amp: 4, base: 19, phase: 7, flat: 18, lumps: [[42, 11, 7], [110, 9, 5], [152, 12, -4]] },
 ];
 
 /** Sky the ridges need at full height. Less than this and they flatten out. */
 const RIDGE_ROOM = 56;
 
-/** How far above the horizon a ridge stands at `x`, given the sky it's got. */
-function ridgeAt(ridge: Ridge, x: number, scale: number): number {
-  return Math.round(scale * (ridge.base + ridge.amp * Math.cos((2 * Math.PI * x) / 61 + ridge.phase)));
+/**
+ * How far above the horizon a ridge stands at `x`, given the sky it's got and
+ * how far through the fold the world is (`flesh`, 0..1).
+ */
+function ridgeAt(ridge: Ridge, x: number, scale: number, flesh = 0): number {
+  const hill = ridge.base + ridge.amp * Math.cos((2 * Math.PI * x) / 61 + ridge.phase);
+  if (flesh <= 0) return Math.round(scale * hill);
+
+  let lumped = ridge.flat;
+  for (const [cx, half, rise] of ridge.lumps) {
+    const d = Math.abs(x - cx) / half;
+    // Raised cosine: a lump with no corner on it, and flat ground either side
+    // of it rather than the next trough of a wave.
+    if (d < 1) lumped += rise * 0.5 * (1 + Math.cos(Math.PI * d));
+  }
+  return Math.round(scale * (hill + (lumped - hill) * flesh));
 }
 
 // ---------------------------------------------------------------------------
@@ -1157,6 +1195,13 @@ export class FarmScene {
   private rngSeed = 1;
   /** When the horizon started closing. Null if it isn't, or if it already had. */
   private foldAt: number | null = null;
+  /**
+   * How much of this frame's world is flesh, 0..1. Worked out once at the top of
+   * `draw` and read by the ridges, the lots standing on them and the floor: the
+   * land, the shape of the land and the thing growing on it all have to turn
+   * over together, or the fold lands on a farm that half-agrees with it.
+   */
+  private flesh = 0;
   /** Whether a view has ever been pushed. The first one never animates. */
   private sawView = false;
   /**
@@ -1876,6 +1921,7 @@ export class FarmScene {
     // Mid-fold the old sky is still down there under the advancing edge, so it
     // gets drawn and then covered rather than swapped out.
     const open = !this.view.converged || fold < 1;
+    this.flesh = this.view.converged ? fold : 0;
     const lots = this.lots(horizon);
     this.noteArrivals(lots, t);
     // The hills and the deep end of every lot go up together, back to front.
@@ -2536,22 +2582,38 @@ export class FarmScene {
     // Once the horizon folds there's no sky to be a hill against, so the hills
     // go over to flesh — each ridge to its own shade of it, or three ridges the
     // same colour is one flat wall.
-    const gone = this.view.converged ? fold : 0;
+    const gone = this.flesh;
     // The far ones wash out toward the sky they're seen against, which is the
     // only thing that tells three ridges of the same green apart at night.
+    // Inside, they're also the only thing between a bright lid and a dark floor,
+    // so they're spread wide up the range rather than clustered near the deep
+    // end: three shades a shove apart is what keeps the middle of the picture
+    // from going one flat brown.
     const colors = [
-      mix(mix(sky.hillFar, sky.bottom, 0.4), mix(FLESH_DEEP, FLESH_LIT, 0.3), gone),
-      mix(sky.hillFar, mix(FLESH_DEEP, FLESH_LIT, 0.18), gone),
-      mix(sky.hill, mix(FLESH_DEEP, FLESH_LIT, 0.06), gone),
+      mix(mix(sky.hillFar, sky.bottom, 0.4), mix(FLESH_DEEP, FLESH_LIT, 0.44), gone),
+      mix(sky.hillFar, mix(FLESH_DEEP, FLESH_LIT, 0.29), gone),
+      mix(sky.hill, mix(FLESH_DEEP, FLESH_LIT, 0.15), gone),
     ];
+
+    // The lit lip along each crest. A hill doesn't need one — grass in daylight
+    // has no edge — but flesh does: without it the lumps are three flat cutouts
+    // stacked up, and the shape stops reading as anything with a surface.
+    const lips = colors.map((c) => mix(c, FLESH_LIT, 0.5));
 
     for (let i = 0; i < RIDGES.length; i++) {
       // Drawn as 1px columns so the ridge sits on the buffer's grid instead of
       // being antialiased into a smear by a path fill.
-      ctx.fillStyle = colors[i]!;
+      const ridge = RIDGES[i]!;
       for (let x = 0; x < SCENE_W; x++) {
-        const h = ridgeAt(RIDGES[i]!, x, scale);
+        const h = ridgeAt(ridge, x, scale, gone);
+        ctx.fillStyle = colors[i]!;
         ctx.fillRect(x, horizon - h, 1, h);
+        if (gone > 0) {
+          ctx.globalAlpha = gone;
+          ctx.fillStyle = lips[i]!;
+          ctx.fillRect(x, horizon - h, 1, 1);
+          ctx.globalAlpha = 1;
+        }
       }
       // Layer i is the row standing on ridge i, so each ridge goes up under its
       // own row and in front of the row above it.
@@ -2565,15 +2627,37 @@ export class FarmScene {
     // Tired soil isn't a number on this screen — the field goes the colour of a
     // field that needs help.
     const dry = 1 - Math.max(0, Math.min(1, soil));
+    const flesh = this.flesh;
+
+    // Inside the tuber you are not standing on grass. The floor is the same cut
+    // flesh as the ceiling, and lit the other way up: dark at the horizon, where
+    // it runs back into the seam, and catching the light down at the front where
+    // you are. Two opposed gradients meeting at the seam is what gives the world
+    // a middle — a floor lit like the ceiling would close the picture into a
+    // tube with a bright band across the waist of it.
     ctx.fillStyle = mix(GRASS, "#a89b46", dry);
     ctx.fillRect(0, horizon, SCENE_W, yardY - horizon);
+    if (flesh > 0) {
+      const far = mix(mix(FLESH_DEEP, "#3b2618", 0.58), "#544f3c", dry * 0.6);
+      const near = mix(mix(FLESH_DEEP, FLESH_LIT, 0.2), "#a09c78", dry * 0.6);
+      const floor = ctx.createLinearGradient(0, horizon, 0, yardY);
+      floor.addColorStop(0, far);
+      floor.addColorStop(1, near);
+      ctx.globalAlpha = flesh;
+      ctx.fillStyle = floor;
+      ctx.fillRect(0, horizon, SCENE_W, yardY - horizon);
+      ctx.globalAlpha = 1;
+    }
 
     // Furrows: shallow bands that give the field a direction to be ploughed in.
-    ctx.fillStyle = mix(GRASS_DARK, "#8d8a3a", dry);
+    ctx.fillStyle = mix(mix(GRASS_DARK, "#8d8a3a", dry), mix(FLESH_DEEP, "#2f1e12", 0.45), flesh);
     for (let y = horizon + 6; y < yardY; y += 9) ctx.fillRect(0, y, SCENE_W, 2);
 
-    // The yard: beaten dirt, because this is where everything gets dumped.
-    ctx.fillStyle = DIRT;
+    // The yard: beaten dirt, because this is where everything gets dumped. It
+    // goes over too, but barely — trodden flesh and trodden soil are close
+    // enough that the difference is a shift in the warmth of it, not a new
+    // material. The yard's job is being the floor you dump things on either way.
+    ctx.fillStyle = mix(DIRT, mix(FLESH_DEEP, FLESH_LIT, 0.16), flesh);
     ctx.fillRect(0, yardY, SCENE_W, this.sh - yardY);
     // Shade along the back of it, under the fence, where nothing stands. One
     // flat brown from the fence to the bottom of the screen gave the yard no
@@ -2654,7 +2738,7 @@ export class FarmScene {
       for (const [r, row] of LOT_ROWS.entries()) {
         if (r > 0) y -= step;
         if (row.ridge !== undefined) {
-          y = Math.min(y, horizon - ridgeAt(RIDGES[row.ridge]!, x + width / 2, scale));
+          y = Math.min(y, horizon - ridgeAt(RIDGES[row.ridge]!, x + width / 2, scale, this.flesh));
         }
         // Clamped, so a squat landscape sky crowds the lot together rather than
         // posting its far end off the top of the buffer.
@@ -3285,13 +3369,32 @@ export class FarmScene {
     // leave the headland the machines turn on.
     const rowGround = (r: number) => lane(0.08 + (r * 0.78) / (FIELD_ROWS - 1));
 
-    // A little ambient green around the edges of the worked ground.
+    // A little ambient green around the edges of the worked ground — and
+    // inside the tuber, where green has nothing to be, the same scatter comes up
+    // as the pale etiolated sprouts the ceiling grows. Weeds in a field and
+    // sprouts in a cellar are the same fact about ground nobody is working, so
+    // they get the same spots and cross-fade through the fold rather than one
+    // set vanishing and another appearing somewhere else.
     const tuft = artCanvas(TUFT);
     const flowers = artCanvas(FLOWERS);
     for (let i = 0; i < 14; i++) {
       const sprite = rng() < 0.3 ? flowers : tuft;
       const x = Math.floor(rng() * (SCENE_W - sprite.w));
-      ctx.drawImage(sprite.canvas, x, lane(rng()) - sprite.h);
+      const foot = lane(rng());
+      if (this.flesh < 1) {
+        ctx.globalAlpha = 1 - this.flesh;
+        ctx.drawImage(sprite.canvas, x, foot - sprite.h);
+        ctx.globalAlpha = 1;
+      }
+      if (this.flesh > 0) {
+        ctx.globalAlpha = this.flesh;
+        ctx.fillStyle = "#cbb8dc";
+        ctx.fillRect(x + 2, foot - 4, 1, 4);
+        ctx.fillStyle = "#e6dcef";
+        ctx.fillRect(x + 1, foot - 3, 1, 1);
+        ctx.fillRect(x + 3, foot - 2, 1, 1);
+        ctx.globalAlpha = 1;
+      }
     }
 
     this.beds.length = 0;
@@ -3327,7 +3430,10 @@ export class FarmScene {
       ctx.fillRect(left - 2, ground - 2, worked, 3);
       ctx.fillStyle = DIRT_DARK;
       ctx.fillRect(left - 2, ground + 1, worked, 1);
-      ctx.fillStyle = GRASS_DARK;
+      // The staked-out rest of the row. Grass outside, a scored line in the
+      // flesh inside — the marker has to survive the fold, because it's the one
+      // thing telling you the beds you haven't bought are still there.
+      ctx.fillStyle = mix(GRASS_DARK, mix(FLESH_DEEP, "#2f1e12", 0.4), this.flesh);
       for (let c = count; c < perRow; c++) ctx.fillRect(left + c * step, ground, step - 2, 1);
 
       // A hundred plots is a crop that glows in the dark. One band the length
