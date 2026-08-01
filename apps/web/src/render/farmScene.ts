@@ -47,36 +47,17 @@ const YARD_SHARE = 0.23; // the hoard yard, front band — deep enough to stand 
 const FIELD_SHARE = 0.46; // the working field
 const MIN_SKY = 20;
 
-/**
- * How long the horizon takes to close, and how long it waits before starting.
- *
- * **Neither of these fires any more, and that's on purpose.** They were written
- * for a Convergence that handed you back the same farm under a new ceiling: the
- * DOM cutscene held the screen, the canvas held the old sky underneath it, and
- * the veil lifted on the horizon coming down in front of you.
- *
- * The fold hands you a different farm now — `world` flips to "inside" on the
- * purchase, this scene is torn down for `insideScene`, and what the veil lifts
- * on is the hollow. So the closing is delivered by the cutscene, and the only
- * thing this scene ever draws is a ceiling that has already landed: what a
- * player sees when they warp back out to the old farm.
- *
- * The animation is kept rather than ripped out because it is the *only* thing
- * that knows how to get from a sky to a ceiling, and the shape of the folded
- * game is still moving. Nothing sets `foldAt`, so `foldProgress` is pinned at 1
- * and every branch below reads as the landed state. Don't retune these against
- * `CONVERGE_MS` — that coupling is gone.
- */
-const FOLD_MS = 3400;
-const FOLD_HOLD_MS = 9000;
-
 /** The shared outline ink, for the bits of the scene drawn as rects not art. */
 const INK = "#402e3a";
 
 /**
- * The flesh, at its two extremes. Shared with the sky, because what stains the
- * sky before the fold has to be the exact thing that replaces it — a warm wash
- * in some other ochre would just read as a sunset.
+ * The flesh, at its two extremes.
+ *
+ * All that's left of it out here is the stain that creeps across the sky as the
+ * Convergence gets close — the ceiling itself is somewhere else now, and this
+ * has to be the exact colour of it or the omen is promising the wrong thing.
+ * `insideScene.ts` keeps its own copy of both, because that's where the flesh
+ * actually lives.
  */
 const FLESH_LIT = "#ecd9a6";
 const FLESH_DEEP = "#7d5330";
@@ -106,14 +87,14 @@ export interface FarmView {
   /** Stable across reloads, so the farm's layout is *your* farm's layout. */
   seed: string;
   /**
-   * The horizon has closed. Set once the Ur-Potato is bought, and never unset —
-   * the sky band stops being sky and becomes the inside of the tuber.
-   */
-  converged: boolean;
-  /**
-   * How close the horizon is to closing, 0..1. The ceiling starts bleeding
+   * How close the horizon is to closing, 0..1. The flesh starts bleeding
    * through the sky from the first Tuber Singularity, so the fold arrives
    * rather than happening to you.
+   *
+   * Back to zero once it *has* closed. The Convergence used to replace this
+   * sky with a ceiling; it opens a second farm now, and this one goes back to
+   * being the farm with the weather on it — so the stain is a warning about
+   * something coming, and once it has come there's nothing left to warn about.
    */
   looming: number;
   /**
@@ -131,7 +112,6 @@ export const EMPTY_VIEW: FarmView = {
   soil: 1,
   hoard: 0,
   seed: "0",
-  converged: false,
   looming: 0,
   generation: 1,
 };
@@ -202,62 +182,24 @@ const LAMP_SPREAD = 52;
  * of the building on the lower one. The near one is on its own phase, because a
  * third parallel copy reads as a printing error rather than as hills.
  */
-/**
- * Inside the tuber the same three ridges are still there — they have to be,
- * every back lot stands on them — but they stop being hills.
- *
- * Recolouring them wasn't enough: a rolling sine horizon is a landscape no
- * matter what colour it is, and three tan ones under a flesh ceiling just read
- * as a sunset over the same farm. So each ridge carries a second profile, and
- * the fold morphs from one to the other.
- *
- * The flesh profile is the opposite shape on purpose. A hill rolls everywhere
- * and is level nowhere; this is level almost everywhere and swells in three or
- * four places — long flat shelves of cut flesh with lumps pushing up through
- * them, and a dent where one caved. That's a tuber's inside wall: mostly
- * featureless, occasionally knuckled.
- *
- * The lumps have to be *narrow* to get that. The first pass gave them
- * half-widths in the thirties, which over a 176px scene left no flat anywhere
- * and simply rebuilt the hills in a different colour. Nothing wider than about
- * a seventh of the width, or the shelf disappears and the shape goes back to
- * being landscape.
- */
 interface Ridge {
   amp: number;
   base: number;
   phase: number;
-  /** The shelf the flesh profile sits at, before any lumps. */
-  flat: number;
-  /** Lumps on that shelf, as `[centre, half-width, rise]`. Rise may be negative. */
-  lumps: readonly (readonly [number, number, number])[];
 }
 
 const RIDGES: Ridge[] = [
-  { amp: 4, base: 40, phase: 5, flat: 35, lumps: [[30, 13, 9], [124, 11, 7]] },
-  { amp: 4, base: 29, phase: 5, flat: 26, lumps: [[64, 12, 8], [150, 10, 6], [16, 14, -4]] },
-  { amp: 4, base: 19, phase: 7, flat: 18, lumps: [[42, 11, 7], [110, 9, 5], [152, 12, -4]] },
+  { amp: 4, base: 40, phase: 5 },
+  { amp: 4, base: 29, phase: 5 },
+  { amp: 4, base: 19, phase: 7 },
 ];
 
 /** Sky the ridges need at full height. Less than this and they flatten out. */
 const RIDGE_ROOM = 56;
 
-/**
- * How far above the horizon a ridge stands at `x`, given the sky it's got and
- * how far through the fold the world is (`flesh`, 0..1).
- */
-function ridgeAt(ridge: Ridge, x: number, scale: number, flesh = 0): number {
-  const hill = ridge.base + ridge.amp * Math.cos((2 * Math.PI * x) / 61 + ridge.phase);
-  if (flesh <= 0) return Math.round(scale * hill);
-
-  let lumped = ridge.flat;
-  for (const [cx, half, rise] of ridge.lumps) {
-    const d = Math.abs(x - cx) / half;
-    // Raised cosine: a lump with no corner on it, and flat ground either side
-    // of it rather than the next trough of a wave.
-    if (d < 1) lumped += rise * 0.5 * (1 + Math.cos(Math.PI * d));
-  }
-  return Math.round(scale * (hill + (lumped - hill) * flesh));
+/** How far above the horizon a ridge stands at `x`, given the sky it's got. */
+function ridgeAt(ridge: Ridge, x: number, scale: number): number {
+  return Math.round(scale * (ridge.base + ridge.amp * Math.cos((2 * Math.PI * x) / 61 + ridge.phase)));
 }
 
 // ---------------------------------------------------------------------------
@@ -574,9 +516,10 @@ const PORTER_TIP = 300;
 /**
  * The tiers this scene draws, which is the outside farm and only that.
  *
- * Everything inside the potato has its own picture — see `insideScene.ts`. The
- * fold still happens here, because the ceiling coming down is something that
- * happens to the *sky*; what it drops you into is somewhere else entirely.
+ * Everything inside the potato has its own picture — see `insideScene.ts`. So
+ * does the ceiling that used to come down over this one: the Convergence opens
+ * a second place rather than repainting this one, and a farm you can walk back
+ * out to is a farm with its sky still in it.
  */
 type OutsideId = Extract<
   solo.SoloProducerId,
@@ -1195,15 +1138,6 @@ export class FarmScene {
   private clock = 0;
   private view: FarmView = EMPTY_VIEW;
   private rngSeed = 1;
-  /** When the horizon started closing. Null if it isn't, or if it already had. */
-  private foldAt: number | null = null;
-  /**
-   * How much of this frame's world is flesh, 0..1. Worked out once at the top of
-   * `draw` and read by the ridges, the lots standing on them and the floor: the
-   * land, the shape of the land and the thing growing on it all have to turn
-   * over together, or the fold lands on a farm that half-agrees with it.
-   */
-  private flesh = 0;
   /** Whether a view has ever been pushed. The first one never animates. */
   private sawView = false;
   /**
@@ -1296,16 +1230,10 @@ export class FarmScene {
   }
 
   update(view: FarmView): void {
-    const was = this.view.converged;
     const wiped =
       this.sawView && (view.generation !== this.view.generation || view.seed !== this.view.seed);
     this.view = view;
     this.rngSeed = hashSeed(view.seed);
-    // The fold plays once, and only when it actually happens in front of you.
-    // A farm that was already folded when the tab opened is just folded — the
-    // first view a scene is handed is a restore, not an event, and replaying
-    // the best moment in the game on every reload would spend it.
-    if (view.converged && !was && this.sawView) this.foldAt = performance.now() + FOLD_HOLD_MS;
     this.sawView = true;
     if (wiped) this.clearOut();
   }
@@ -1351,16 +1279,6 @@ export class FarmScene {
     this.lotSeen.clear();
     this.raising.clear();
     this.sawLots = false;
-  }
-
-  /**
-   * How far through the fold we are, 0..1. Everything the animation does hangs
-   * off this one number so the phases can't drift out of step with each other.
-   */
-  private foldProgress(now: number): number {
-    if (!this.view.converged) return 0;
-    if (this.foldAt === null) return 1;
-    return clamp((now - this.foldAt) / FOLD_MS, 0, 1);
   }
 
   /** Which mark of a tier to draw, given the upgrades bought on it. */
@@ -1919,29 +1837,13 @@ export class FarmScene {
     // before it draws the things that fall toward them.
     this.stepWells(t, horizon);
 
-    const fold = this.foldProgress(now);
-    // Mid-fold the old sky is still down there under the advancing edge, so it
-    // gets drawn and then covered rather than swapped out.
-    const open = !this.view.converged || fold < 1;
-    this.flesh = this.view.converged ? fold : 0;
     const lots = this.lots(horizon);
     this.noteArrivals(lots, t);
     // The hills and the deep end of every lot go up together, back to front.
-    // Once the horizon has folded they go up *after* the ceiling instead of
-    // before it: the fold swallows the far half of the property along with the
-    // sky, and what comes back is the same hills and the same plant with the
-    // world they're standing in made of potato.
-    if (open) {
-      this.drawSky(phase, t, horizon);
-      this.drawDistance(lots, phase, horizon, fold, t);
-    }
-    // `fold > 0` rather than just `converged`: through the cutscene's hold the
-    // horizon is still the old one, and a ceiling drawn at zero would leave its
-    // leading edge sitting on the top of the sky for the whole eight seconds.
-    if (this.view.converged && fold > 0) this.drawCeiling(horizon, fold, t);
-    if (!open) this.drawDistance(lots, phase, horizon, fold, t);
+    this.drawSky(phase, t, horizon);
+    this.drawDistance(lots, phase, horizon, t);
     this.drawGround(horizon, yardY);
-    this.drawBack(lots, t, now, horizon, phase, fold);
+    this.drawBack(lots, t, now, horizon, phase);
     this.drawField(t, now, horizon, yardY);
     this.drawSacks(now);
     this.drawPuffs(now, dt);
@@ -2173,17 +2075,19 @@ export class FarmScene {
   }
 
   /**
-   * The ceiling, showing through early.
+   * The flesh, showing through early.
    *
    * From the first Tuber Singularity the top of the sky starts taking on the
-   * colour of the flesh, deepening with every one you buy until the Ur-Potato
-   * is affordable and it's unmistakable. It's over the clouds and the sun
-   * rather than under them, because it isn't weather — it's the far side of
-   * something, and the things in front of it should be stained by it too.
+   * colour of the thing on the other side of it, deepening with every one you
+   * buy until the Ur-Potato is affordable and it's unmistakable. It's over the
+   * clouds and the sun rather than under them, because it isn't weather — it's
+   * the far side of something, and the things in front of it should be stained
+   * by it too.
    *
    * This is the only build-up the fold gets. Without it you buy a rung, nothing
    * acknowledges it, and nine purchases later the world folds with no warning
-   * that it was ever going to.
+   * that it was ever going to. It clears the moment the fold lands: what's
+   * bleeding through arrives, and this sky goes back to being a sky.
    */
   private drawBleed(horizon: number, t: number): void {
     const looming = clamp(this.view.looming, 0, 1);
@@ -2219,185 +2123,6 @@ export class FarmScene {
   }
 
   /**
-   * The fold — what the sky becomes once the Ur-Potato is bought.
-   *
-   * Not a second farm overhead. The first pass drew the far side of the field
-   * up there, mirrored, and it was the wrong idea twice: two farms competed for
-   * the screen and the one you actually play lost, and "there is another farm
-   * above me" is a much smaller thought than the one the moment is for. This is
-   * the inside of the tuber — cut flesh, a vascular ring, and eyes sprouting
-   * down at you out of the dark.
-   *
-   * The gradient runs bright at the top to deep shadow at the fold, which is the
-   * inverse of a sky and the whole reason it reads as a lid rather than an
-   * opening: what's directly overhead is close enough to catch light, and the
-   * far side across the width of the thing is not.
-   *
-   * Night is not special-cased: `draw` already lays its dimming pass over
-   * everything above the yard, and the ceiling wants that same treatment.
-   */
-  private drawCeiling(horizon: number, fold: number, t: number): void {
-    const ctx = this.ctx;
-    // Tired soil drags the flesh too. The land going grey is supposed to be the
-    // whole world going grey, not just the floor of it.
-    const dry = 1 - clamp(this.view.soil, 0, 1);
-    const lit = mix(FLESH_LIT, "#a09c78", dry * 0.6);
-    const deep = mix(FLESH_DEEP, "#544f3c", dry * 0.6);
-
-    // The three beats. A pause on the old sky first — the fold shouldn't start
-    // on the same frame as the click, or nobody connects the two — then the
-    // sweep down, then the eyes opening once it's settled.
-    const sweep = clamp((fold - 0.22) / 0.6, 0, 1);
-    // Ease-out cubic: it comes down fast and arrives slowly, which is what makes
-    // it land rather than stop.
-    const eased = 1 - Math.pow(1 - sweep, 3);
-    const travel = 1 - eased;
-    const cover = Math.max(1, Math.round(horizon * eased));
-
-    // The light going out of the old world ahead of the thing replacing it.
-    if (fold < 1) {
-      ctx.fillStyle = `rgba(22, 17, 30, ${0.6 * eased})`;
-      ctx.fillRect(0, cover, SCENE_W, horizon - cover);
-    }
-
-    // The flesh is drawn at its full resting size and revealed through a moving
-    // window, so it descends rather than stretching into place. A band that
-    // scaled would put the vascular rings somewhere different every frame.
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, SCENE_W, cover);
-    ctx.clip();
-
-    const grad = ctx.createLinearGradient(0, 0, 0, horizon);
-    grad.addColorStop(0, lit);
-    grad.addColorStop(0.5, mix(lit, deep, 0.4));
-    grad.addColorStop(1, deep);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, SCENE_W, horizon);
-
-    this.drawFlesh(horizon, lit, deep);
-    this.drawEyes(horizon, clamp((fold - 0.62) / 0.33, 0, 1));
-    ctx.restore();
-
-    // The leading edge, and the resting seam it becomes. Bright while it's
-    // moving, settling to the one hard line in the picture once it lands.
-    if (travel > 0.01) {
-      const glow = ctx.createLinearGradient(0, Math.max(0, cover - 16), 0, cover);
-      glow.addColorStop(0, "rgba(255, 230, 182, 0)");
-      glow.addColorStop(1, `rgba(255, 230, 182, ${0.55 * travel})`);
-      ctx.fillStyle = glow;
-      ctx.fillRect(0, Math.max(0, cover - 16), SCENE_W, Math.min(16, cover));
-    }
-    ctx.fillStyle = `rgba(240, 208, 154, ${0.5 + 0.45 * travel})`;
-    ctx.fillRect(0, cover - 3, SCENE_W, 3);
-    ctx.fillStyle = mix(lit, deep, 0.25);
-    ctx.fillRect(0, cover - 1, SCENE_W, 1);
-
-    // And the moment of arrival: one short flash off the whole underside as the
-    // edge touches down.
-    const land = fold > 0.8 ? Math.max(0, 1 - (fold - 0.8) / 0.14) : 0;
-    if (land > 0) {
-      ctx.fillStyle = `rgba(255, 242, 210, ${0.4 * land})`;
-      ctx.fillRect(0, 0, SCENE_W, cover);
-    }
-  }
-
-  /** Starch marbling and the vascular ring — the texture of a cut potato. */
-  private drawFlesh(horizon: number, lit: string, deep: string): void {
-    const ctx = this.ctx;
-    const rng = mulberry32(this.rngSeed ^ 0xf1e5);
-
-    // Blotches, low contrast on purpose: this is the quiet half of the screen
-    // and anything with an edge on it starts competing with the farm again.
-    for (let i = 0; i < 90; i++) {
-      const y = Math.floor(rng() * horizon);
-      const x = Math.floor(rng() * SCENE_W);
-      // Lighter high up where the flesh catches light, darker down in the fold.
-      const near = 1 - y / horizon;
-      ctx.globalAlpha = 0.06 + 0.07 * rng();
-      ctx.fillStyle = rng() < 0.35 + 0.4 * near ? lit : deep;
-      const w = 3 + Math.floor(rng() * 9);
-      for (let k = 0, yy = y; k < 2 + Math.floor(rng() * 2); k++, yy++) {
-        ctx.fillRect(x + Math.floor(rng() * 3), yy, w - Math.floor(rng() * 2), 1);
-      }
-    }
-    ctx.globalAlpha = 1;
-
-    // The vascular ring. Two of them, wavy, running the full width — the one
-    // piece of structure in here, and what stops the flesh reading as fog.
-    for (const [depth, alpha] of [[0.42, 0.22], [0.62, 0.14]] as const) {
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = deep;
-      const base = Math.round(horizon * depth);
-      for (let x = 0; x < SCENE_W; x++) {
-        const y = base + Math.round(2.5 * Math.sin(x / 23) + 1.5 * Math.sin(x / 7 + 2));
-        ctx.fillRect(x, y, 1, 1);
-      }
-      ctx.globalAlpha = 1;
-    }
-  }
-
-  /**
-   * Eyes, sprouting downward.
-   *
-   * The detail that does the most work for the least ink: a potato you are
-   * inside of is still a potato, and it is still trying to grow. Placement is
-   * seeded, so they're in the same spots every time you open the farm.
-   */
-  private drawEyes(horizon: number, open = 1): void {
-    const ctx = this.ctx;
-    if (open <= 0) return;
-
-    // Every roll happens up front, before anything can skip an eye. Drawing
-    // them lazily meant a hidden eye swallowed its own rng() call and shifted
-    // the stream for the ones after it, so they walked across the ceiling as
-    // the fold faded them in.
-    const rng = mulberry32(this.rngSeed ^ 0x3ee5);
-    const spots = Array.from({ length: 4 }, () => ({
-      x: 10 + Math.floor(rng() * (SCENE_W - 24)),
-      // Upper half only: down at the fold there isn't the light to see one, and
-      // a sprout near the seam looks like it's growing out of your own field.
-      y: 5 + Math.floor(rng() * horizon * 0.42),
-      len: 5 + Math.floor(rng() * 4),
-    }));
-
-    for (const [i, spot] of spots.entries()) {
-      const { x, y } = spot;
-      // Staggered, so they don't all open on the same frame like a light going
-      // on. Each one waits a little longer than the last.
-      const mine = clamp((open - i * 0.12) / 0.5, 0, 1);
-      if (mine <= 0) continue;
-
-      ctx.globalAlpha = (0.95 - 0.35 * (y / horizon)) * mine;
-      // The dimple, with a lit lip above it so it reads as a pit rather than a
-      // smudge. Six across rather than four: the band is only sixty-odd pixels
-      // deep, and at four this was a speck nobody could find.
-      ctx.fillStyle = "rgba(246, 224, 182, 0.7)";
-      ctx.fillRect(x, y - 1, 6, 1);
-      ctx.fillStyle = "#3d2917";
-      ctx.fillRect(x, y, 6, 3);
-      ctx.fillStyle = "#2b1c0f";
-      ctx.fillRect(x + 1, y + 1, 4, 1);
-
-      // The sprout, drawn by hand rather than by flipping the grass tuft — at
-      // four pixels a tuft upside down is a spider, which is not the note. Pale
-      // rather than green on purpose: a potato sprouting in the dark etiolates,
-      // and it also keeps the one growing thing up here from reading as crop.
-      // It grows out of the eye rather than arriving at full length.
-      const len = Math.round(spot.len * mine);
-      if (len > 0) {
-        ctx.fillStyle = "#cbb8dc";
-        ctx.fillRect(x + 2, y + 3, 1, len);
-        ctx.fillStyle = "#e6dcef";
-        ctx.fillRect(x + 1, y + 3 + Math.floor(len * 0.45), 1, 1);
-        ctx.fillRect(x + 3, y + 3 + len - 2, 1, 1);
-        ctx.fillRect(x + 2, y + 3 + len, 1, 1);
-      }
-      ctx.globalAlpha = 1;
-    }
-  }
-
-  /**
    * The far half of the property: three ridges and the deep end of every lot
    * standing on them, drawn back to front so each ridge buries the feet of
    * what's on the one behind it.
@@ -2406,49 +2131,26 @@ export class FarmScene {
    * than as a second row of buildings floating over the first. A building whose
    * base is cut off by a hill is over that hill.
    */
-  private drawDistance(lots: Lot[], phase: Phase, horizon: number, fold: number, t: number): void {
+  private drawDistance(lots: Lot[], phase: Phase, horizon: number, t: number): void {
     const ctx = this.ctx;
     const sky = SKY[phase];
     const scale = Math.min(1, horizon / RIDGE_ROOM);
-    // Once the horizon folds there's no sky to be a hill against, so the hills
-    // go over to flesh — each ridge to its own shade of it, or three ridges the
-    // same colour is one flat wall.
-    const gone = this.flesh;
     // The far ones wash out toward the sky they're seen against, which is the
     // only thing that tells three ridges of the same green apart at night.
-    // Inside, they're also the only thing between a bright lid and a dark floor,
-    // so they're spread wide up the range rather than clustered near the deep
-    // end: three shades a shove apart is what keeps the middle of the picture
-    // from going one flat brown.
-    const colors = [
-      mix(mix(sky.hillFar, sky.bottom, 0.4), mix(FLESH_DEEP, FLESH_LIT, 0.44), gone),
-      mix(sky.hillFar, mix(FLESH_DEEP, FLESH_LIT, 0.29), gone),
-      mix(sky.hill, mix(FLESH_DEEP, FLESH_LIT, 0.15), gone),
-    ];
-
-    // The lit lip along each crest. A hill doesn't need one — grass in daylight
-    // has no edge — but flesh does: without it the lumps are three flat cutouts
-    // stacked up, and the shape stops reading as anything with a surface.
-    const lips = colors.map((c) => mix(c, FLESH_LIT, 0.5));
+    const colors = [mix(sky.hillFar, sky.bottom, 0.4), sky.hillFar, sky.hill];
 
     for (let i = 0; i < RIDGES.length; i++) {
       // Drawn as 1px columns so the ridge sits on the buffer's grid instead of
       // being antialiased into a smear by a path fill.
       const ridge = RIDGES[i]!;
       for (let x = 0; x < SCENE_W; x++) {
-        const h = ridgeAt(ridge, x, scale, gone);
+        const h = ridgeAt(ridge, x, scale);
         ctx.fillStyle = colors[i]!;
         ctx.fillRect(x, horizon - h, 1, h);
-        if (gone > 0) {
-          ctx.globalAlpha = gone;
-          ctx.fillStyle = lips[i]!;
-          ctx.fillRect(x, horizon - h, 1, 1);
-          ctx.globalAlpha = 1;
-        }
       }
       // Layer i is the row standing on ridge i, so each ridge goes up under its
       // own row and in front of the row above it.
-      this.drawLotLayer(lots, i, phase, fold, t);
+      this.drawLotLayer(lots, i, phase, t);
     }
   }
 
@@ -2458,37 +2160,16 @@ export class FarmScene {
     // Tired soil isn't a number on this screen — the field goes the colour of a
     // field that needs help.
     const dry = 1 - Math.max(0, Math.min(1, soil));
-    const flesh = this.flesh;
 
-    // Inside the tuber you are not standing on grass. The floor is the same cut
-    // flesh as the ceiling, and lit the other way up: dark at the horizon, where
-    // it runs back into the seam, and catching the light down at the front where
-    // you are. Two opposed gradients meeting at the seam is what gives the world
-    // a middle — a floor lit like the ceiling would close the picture into a
-    // tube with a bright band across the waist of it.
     ctx.fillStyle = mix(GRASS, "#a89b46", dry);
     ctx.fillRect(0, horizon, SCENE_W, yardY - horizon);
-    if (flesh > 0) {
-      const far = mix(mix(FLESH_DEEP, "#3b2618", 0.58), "#544f3c", dry * 0.6);
-      const near = mix(mix(FLESH_DEEP, FLESH_LIT, 0.2), "#a09c78", dry * 0.6);
-      const floor = ctx.createLinearGradient(0, horizon, 0, yardY);
-      floor.addColorStop(0, far);
-      floor.addColorStop(1, near);
-      ctx.globalAlpha = flesh;
-      ctx.fillStyle = floor;
-      ctx.fillRect(0, horizon, SCENE_W, yardY - horizon);
-      ctx.globalAlpha = 1;
-    }
 
     // Furrows: shallow bands that give the field a direction to be ploughed in.
-    ctx.fillStyle = mix(mix(GRASS_DARK, "#8d8a3a", dry), mix(FLESH_DEEP, "#2f1e12", 0.45), flesh);
+    ctx.fillStyle = mix(GRASS_DARK, "#8d8a3a", dry);
     for (let y = horizon + 6; y < yardY; y += 9) ctx.fillRect(0, y, SCENE_W, 2);
 
-    // The yard: beaten dirt, because this is where everything gets dumped. It
-    // goes over too, but barely — trodden flesh and trodden soil are close
-    // enough that the difference is a shift in the warmth of it, not a new
-    // material. The yard's job is being the floor you dump things on either way.
-    ctx.fillStyle = mix(DIRT, mix(FLESH_DEEP, FLESH_LIT, 0.16), flesh);
+    // The yard: beaten dirt, because this is where everything gets dumped.
+    ctx.fillStyle = DIRT;
     ctx.fillRect(0, yardY, SCENE_W, this.sh - yardY);
     // Shade along the back of it, under the fence, where nothing stands. One
     // flat brown from the fence to the bottom of the screen gave the yard no
@@ -2569,7 +2250,7 @@ export class FarmScene {
       for (const [r, row] of LOT_ROWS.entries()) {
         if (r > 0) y -= step;
         if (row.ridge !== undefined) {
-          y = Math.min(y, horizon - ridgeAt(RIDGES[row.ridge]!, x + width / 2, scale, this.flesh));
+          y = Math.min(y, horizon - ridgeAt(RIDGES[row.ridge]!, x + width / 2, scale));
         }
         // Clamped, so a squat landscape sky crowds the lot together rather than
         // posting its far end off the top of the buffer.
@@ -2586,14 +2267,13 @@ export class FarmScene {
     now: number,
     horizon: number,
     phase: Phase,
-    fold: number,
   ): void {
     // Steam first, so it comes out from behind the towers rather than over
     // the front of them.
     this.drawPlumes(now);
 
-    this.drawLotLayer(lots, 3, phase, fold, t);
-    this.drawLotLayer(lots, 4, phase, fold, t);
+    this.drawLotLayer(lots, 3, phase, t);
+    this.drawLotLayer(lots, 4, phase, t);
 
     // No barn. It stood here for a long time as a bookend and it never meant
     // anything — nothing you buy touched it, and it was taking a third of the
@@ -2601,7 +2281,7 @@ export class FarmScene {
     const tree = artCanvas(TREE);
     this.ctx.drawImage(tree.canvas, SCENE_W - tree.w - 3, horizon + 10 - tree.h);
 
-    this.drawLotLayer(lots, 5, phase, fold, t);
+    this.drawLotLayer(lots, 5, phase, t);
   }
 
   /**
@@ -2610,11 +2290,10 @@ export class FarmScene {
    * over its neighbour's foreground.
    *
    */
-  private drawLotLayer(lots: Lot[], layer: number, phase: Phase, fold: number, t: number): void {
+  private drawLotLayer(lots: Lot[], layer: number, phase: Phase, t: number): void {
     const ctx = this.ctx;
-    // What the distance is seen through: the air over the hills, or once the
-    // horizon has closed, whatever the ceiling is made of.
-    const haze = mix(SKY[phase].hillFar, FLESH_DEEP, this.view.converged ? fold : 0);
+    // What the distance is seen through: the air over the hills.
+    const haze = SKY[phase].hillFar;
 
     for (const lot of lots) {
       if (lot.pad && layer === LOT[0]!.layer) this.drawPad(lot);
@@ -3200,32 +2879,15 @@ export class FarmScene {
     // leave the headland the machines turn on.
     const rowGround = (r: number) => lane(0.08 + (r * 0.78) / (FIELD_ROWS - 1));
 
-    // A little ambient green around the edges of the worked ground — and
-    // inside the tuber, where green has nothing to be, the same scatter comes up
-    // as the pale etiolated sprouts the ceiling grows. Weeds in a field and
-    // sprouts in a cellar are the same fact about ground nobody is working, so
-    // they get the same spots and cross-fade through the fold rather than one
-    // set vanishing and another appearing somewhere else.
+    // A little ambient green around the edges of the worked ground: weeds are
+    // what ground nobody is working does.
     const tuft = artCanvas(TUFT);
     const flowers = artCanvas(FLOWERS);
     for (let i = 0; i < 14; i++) {
       const sprite = rng() < 0.3 ? flowers : tuft;
       const x = Math.floor(rng() * (SCENE_W - sprite.w));
       const foot = lane(rng());
-      if (this.flesh < 1) {
-        ctx.globalAlpha = 1 - this.flesh;
-        ctx.drawImage(sprite.canvas, x, foot - sprite.h);
-        ctx.globalAlpha = 1;
-      }
-      if (this.flesh > 0) {
-        ctx.globalAlpha = this.flesh;
-        ctx.fillStyle = "#cbb8dc";
-        ctx.fillRect(x + 2, foot - 4, 1, 4);
-        ctx.fillStyle = "#e6dcef";
-        ctx.fillRect(x + 1, foot - 3, 1, 1);
-        ctx.fillRect(x + 3, foot - 2, 1, 1);
-        ctx.globalAlpha = 1;
-      }
+      ctx.drawImage(sprite.canvas, x, foot - sprite.h);
     }
 
     this.beds.length = 0;
@@ -3261,10 +2923,9 @@ export class FarmScene {
       ctx.fillRect(left - 2, ground - 2, worked, 3);
       ctx.fillStyle = DIRT_DARK;
       ctx.fillRect(left - 2, ground + 1, worked, 1);
-      // The staked-out rest of the row. Grass outside, a scored line in the
-      // flesh inside — the marker has to survive the fold, because it's the one
-      // thing telling you the beds you haven't bought are still there.
-      ctx.fillStyle = mix(GRASS_DARK, mix(FLESH_DEEP, "#2f1e12", 0.4), this.flesh);
+      // The staked-out rest of the row: the marker telling you the beds you
+      // haven't bought yet are still there.
+      ctx.fillStyle = GRASS_DARK;
       for (let c = count; c < perRow; c++) ctx.fillRect(left + c * step, ground, step - 2, 1);
 
       // A hundred plots is a crop that glows in the dark. One band the length

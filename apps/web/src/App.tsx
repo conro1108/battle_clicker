@@ -370,7 +370,14 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
 
   const perDig = solo.clickYield(farm);
   const rate = solo.currentRate(farm);
-  const needsAttention = solo.brokenRate(farm) > 0 || farm.soil < 1;
+  // Only what you can actually do something about from here. The dot is a call
+  // to action, and repairs are per-world — a badge lit by kit broken on the
+  // other farm sends you to a panel with nothing in it to press. What's broken
+  // over there is still worth knowing, and the panel says so once you're in it.
+  // Soil is one number for both farms, so it counts wherever you're standing.
+  const needsAttention =
+    farm.soil < 1 ||
+    solo.producersIn(farm.world).some((p) => solo.brokenCount(farm, p.id) > 0);
   // Held until the world has folded, and then never taken away.
   //
   // `SEED_DIVISOR` puts the first hand-down in day 1-2 of a run, which is a day

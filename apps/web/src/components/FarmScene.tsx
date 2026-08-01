@@ -112,8 +112,11 @@ export const FarmScene = forwardRef<FarmSceneHandle, {
       soil: farm.soil,
       hoard,
       seed: farm.seed,
-      converged: farm.converged,
-      looming: solo.convergenceProgress(farm),
+      // Zero once it's happened: `convergenceProgress` pins at 1 forever, and
+      // the stain is a warning rather than a state. Under this sky the fold is
+      // still ahead of you or already behind you, and either way the weather
+      // came back.
+      looming: farm.converged ? 0 : solo.convergenceProgress(farm),
       generation: farm.generation,
     };
   }, [farm, hoard]);
