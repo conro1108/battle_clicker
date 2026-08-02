@@ -47,6 +47,18 @@ function developedFarm(seed = "dev", forMs = HOUR): FarmState {
   return simulateFarm({ seed, durationMs: forMs, style: "keen" }).farm;
 }
 
+/**
+ * The same farm with a run behind it big enough that a hand-down pays.
+ *
+ * `seedsFor` puts the first seed around the Convergence, which the always-on bot
+ * takes days of simulated time to reach — far too slow for a test that only
+ * wants to check what prestige does to a farm. So the harvest is asserted rather
+ * than earned.
+ */
+function worthHandingDown(f: FarmState): FarmState {
+  return { ...f, harvested: Math.max(f.harvested, 4e18) as never };
+}
+
 describe("the ladder", () => {
   it("gets more expensive per potato of output as you climb", () => {
     const paybacks = SOLO_PRODUCERS.map((p) => p.baseCost / p.baseRate);
@@ -475,18 +487,34 @@ describe("weather", () => {
 
 describe("prestige", () => {
   it("pays more for a bigger run, with sharply diminishing returns", () => {
-    expect(seedsFor(1e10 as never)).toBe(1);
-    expect(seedsFor(1e13 as never)).toBe(10);
-    expect(seedsFor(1e16 as never)).toBe(100);
-    // Ten seeds costs a thousand times the harvest of one.
-    expect(seedsFor(1e13 as never)).toBeGreaterThan(seedsFor(1e12 as never));
+    expect(seedsFor(4e14 as never)).toBe(1);
+    expect(seedsFor(4e18 as never)).toBe(10);
+    expect(seedsFor(4e22 as never)).toBe(100);
+    // Ten seeds costs ten thousand times the harvest of one.
+    expect(seedsFor(4e18 as never)).toBeGreaterThan(seedsFor(4e17 as never));
+  });
+
+  /**
+   * The reason the curve is a fourth root rather than a cube root. Harvest above
+   * the fold runs about a million times a pre-fold run's, and a cube root turned
+   * that into tens of thousands of seeds — enough unspent multiplier to make the
+   * next generation a formality. This is the guard on that: a run six orders of
+   * magnitude richer is worth double digits more seeds, not four.
+   */
+  it("keeps a converged run's payout in the same league as an unconverged one", () => {
+    const preFold = seedsFor(5e17 as never);
+    const deepConverged = seedsFor(2.5e24 as never);
+    expect(preFold).toBeGreaterThan(0);
+    expect(deepConverged / preFold).toBeLessThan(100);
+    // And the pile it hands over is a boost, not a coronation.
+    expect(1 + MULT_PER_UNSPENT_SEED * deepConverged).toBeLessThan(20);
   });
 
   it("wipes the run, keeps the inheritance, and starts you stronger", () => {
-    // With the slower economy, prestige requires more than a few hours of play.
-    // 24 hours is a good milestone: the farm should be well into mid-game by
-    // then and have accumulated enough to earn a seed.
-    const base = developedFarm("prestige", 24 * HOUR);
+    // Seeds now land around the Convergence rather than a day or two short of
+    // it, so the milestone this measures at is a multi-day run at a realistic
+    // check-in cadence — not the always-on bot, which never gets there.
+    const base = simulateCadence({ seed: "prestige", days: 5, cadence: "normal" }).farm;
     const earned = pendingSeeds(base);
     expect(earned).toBeGreaterThan(0);
 
@@ -586,7 +614,7 @@ describe("the Convergence", () => {
   });
 
   it("happens to you once, and outlives the farm it happened to", () => {
-    const base = developedFarm("fold", 24 * HOUR);
+    const base = worthHandingDown(developedFarm("fold", 24 * HOUR));
     const folded: FarmState = { ...base, converged: true };
     const res = applyFarmCommand(folded, { type: "prestige" }, folded.checkpointAt);
     expect(res.ok).toBe(true);
@@ -601,7 +629,7 @@ describe("the Convergence", () => {
    * the only thing in the game that puts a permanent flag back.
    */
   it("hands the sky down too, if that's what you asked for", () => {
-    const base = developedFarm("sky", 24 * HOUR);
+    const base = worthHandingDown(developedFarm("sky", 24 * HOUR));
     const folded: FarmState = { ...base, converged: true };
     const res = applyFarmCommand(folded, { type: "prestige", outside: true }, folded.checkpointAt);
     expect(res.ok).toBe(true);
@@ -620,7 +648,7 @@ describe("the Convergence", () => {
   });
 
   it("has no sky to offer a farm that never folded", () => {
-    const base = developedFarm("nofold", 24 * HOUR);
+    const base = worthHandingDown(developedFarm("nofold", 24 * HOUR));
     expect(base.converged).toBe(false);
     const res = applyFarmCommand(base, { type: "prestige", outside: true }, base.checkpointAt);
     expect(res.ok).toBe(true);
@@ -789,7 +817,7 @@ describe("the two worlds", () => {
    * back room.
    */
   it("starts every generation outside, with the door still open behind it", () => {
-    const base = folded(developedFarm("handdown", 24 * HOUR));
+    const base = folded(worthHandingDown(developedFarm("handdown", 24 * HOUR)));
     const stay = applyFarmCommand(base, { type: "prestige" }, base.checkpointAt);
     const kept = (stay as { farm: FarmState }).farm;
     expect(kept.world).toBe("outside");

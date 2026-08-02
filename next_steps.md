@@ -543,3 +543,40 @@ Two things came out of that. `hoistStep` is a pure function now, purely so
 service every bench and reach both ends — the bug reproduces in that test in one
 line. And when a burst is the only tool available, extract the position of the
 thing and compare the numbers rather than looking at the frames.
+
+### The seed economy, retuned
+
+The post-Convergence perk row shipped and it was the right call, but it only
+fixed the *spending* half. The minting half was still a cube root of a harvest
+that the fold had multiplied by a million, so a converged week paid tens of
+thousands of seeds — and at 2% output per unspent seed, the second generation
+opened at a four-figure multiplier on a farm of four potato plots. Play-tested
+verdict: mega-overpowered from the first plot, which is the whole first act of
+the game deleted.
+
+`seedsFor` is a **fourth root** now, divisor 4e14. Measured at `probe`, three
+sessions a day:
+
+| | day 3 | day 5 (folds) | day 7 | day 14 |
+|---|---|---|---|---|
+| before | 41 | 374 | 7,758 | 55,432 |
+| after | 1 | 6 | 58 | 255 |
+
+The exponent matters more than the divisor: it damps run-to-run feedback as well
+as absolute yield, so a generation that harvests 10x its parent mints 1.8x the
+seeds rather than 2.2x, and the meta-layer converges instead of running away.
+
+Perk costs came down with it — growth 1.4 across the board, shorter rows, and
+the above-fold row repriced from thousands to tens. The pre-fold table now costs
+~1,765 cumulative and the above-fold one ~9,066, so the meta-game is roughly ten
+hand-downs to finish the first and thirty-odd for the second. Growth 1.7 over 20
+levels was the real reason the old table looked so expensive: the last level cost
+40,000x the first, so most of every row was decoration.
+
+**The Seeds tab is no longer held until the Convergence.** That gate existed
+because the first seed used to land a day or two *before* the fold, so revealing
+prestige offered a reset just short of the payoff. The new curve puts the first
+seed at the fold instead, which makes an early hand-down worth one or two seeds —
+not a trap worth locking a door over. It's a sentence in the panel now instead:
+the shop has an end you haven't reached. The binding constraint above is
+untouched, since nothing about seeds gates the Convergence.

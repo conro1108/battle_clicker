@@ -457,6 +457,18 @@ export function LegacyPanel({
           you'd want to show someone gone for good. So: the horizon is part of
           what you hand down. Keep the ceiling, or give the next generation a
           sky and the climb back to it. */}
+      {/* The tab used to be held until the fold so nobody could hand the farm
+          down on the eve of the best thing in the game. It isn't any more, so
+          the warning has to live somewhere — and a sentence is a better version
+          of it than a locked door, because it tells you what you'd be giving up
+          instead of pretending there's nothing there. */}
+      {!farm.converged && (
+        <p className="hint">
+          The shop still has an end you haven't reached. Nothing stops you handing this farm down
+          first, but the run that gets all the way there is worth having once.
+        </p>
+      )}
+
       {farm.converged && (
         <>
           <p className="hint">

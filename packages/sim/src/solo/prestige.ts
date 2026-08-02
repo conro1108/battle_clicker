@@ -36,29 +36,39 @@ export interface Perk {
   afterFold?: boolean;
 }
 
+/**
+ * Everything here is priced against `seedsFor`, so the two move together.
+ *
+ * A dedicated run mints a few hundred seeds and the whole table below the fold
+ * costs about 1,700 cumulative — ten-odd hand-downs to finish it, which is the
+ * length the meta-game wants. The growth rate is what sets that: at 1.7 the
+ * twentieth level of anything costs 40,000x the first, so the top half of every
+ * row was decoration nobody was ever going to buy. Shorter rows at 1.4 are the
+ * same total spend with every level of it reachable.
+ */
 export const PERKS: readonly Perk[] = [
   {
     id: "green_thumb",
     name: "Green Thumb",
     blurb: "+15% output per level, forever.",
     baseCost: 3,
-    growth: 1.7,
-    maxLevel: 20,
+    growth: 1.4,
+    maxLevel: 12,
   },
   {
     id: "head_start",
     name: "Head Start",
     blurb: "Begin each generation with a bigger stake.",
     baseCost: 2,
-    growth: 1.6,
-    maxLevel: 20,
+    growth: 1.4,
+    maxLevel: 12,
   },
   {
     id: "deep_roots",
     name: "Deep Roots",
     blurb: "The land holds together better. Weather takes 8% less per level.",
-    baseCost: 5,
-    growth: 1.8,
+    baseCost: 4,
+    growth: 1.4,
     maxLevel: 12,
   },
   {
@@ -66,7 +76,7 @@ export const PERKS: readonly Perk[] = [
     name: "Strong Back",
     blurb: "Digs are worth 10% more per level.",
     baseCost: 2,
-    growth: 1.5,
+    growth: 1.4,
     // Multiplies the click-from-rate upgrades, so this is the second half of
     // the same feedback loop. Kept to a bit over 2x at full stack.
     maxLevel: 8,
@@ -76,7 +86,7 @@ export const PERKS: readonly Perk[] = [
     name: "Salvage Yard",
     blurb: "Repairs cost 10% less per level.",
     baseCost: 4,
-    growth: 1.7,
+    growth: 1.4,
     maxLevel: 8,
   },
   {
@@ -84,26 +94,24 @@ export const PERKS: readonly Perk[] = [
     name: "Night Shift",
     blurb: "+20% production per level while you're away.",
     baseCost: 4,
-    growth: 1.7,
+    growth: 1.4,
     maxLevel: 10,
   },
 
   // --- Above the fold ------------------------------------------------------
   //
-  // A converged run mints roughly 37x the seeds of an unconverged one, because
-  // harvest goes up ~52,000x and the cube root of that is 37. Against the table
-  // above, that turns a hundred-run perk meta-game into about three. The fix is
-  // not to hand out fewer seeds — `seedsFor`'s unused `vigor` parameter was
-  // going to be a *reward* for converging, which would have made it worse — but
-  // to give the new scale something to buy. These are priced against what an
-  // inside-the-potato run actually earns, and they're the only reason to keep
-  // handing the farm down once you've folded it.
+  // A converged run still mints several times what an unconverged one does, and
+  // these are what that scale is for: about 9,000 seeds for the row, thirty-odd
+  // converged hand-downs, and the only reason to keep giving the farm up once
+  // you've folded it. Held to a few times the table above rather than the
+  // thousandfold they were first priced at — that pricing assumed the cube root,
+  // and fell with it.
   {
     id: "flesh_tithe",
     name: "Flesh Tithe",
     blurb: "The tuber pays rent. +40% output per level, forever.",
-    baseCost: 4_000,
-    growth: 1.7,
+    baseCost: 40,
+    growth: 1.4,
     maxLevel: 12,
     afterFold: true,
   },
@@ -111,8 +119,8 @@ export const PERKS: readonly Perk[] = [
     id: "dormancy",
     name: "Induced Dormancy",
     blurb: "It stirs 10% less often per level.",
-    baseCost: 6_000,
-    growth: 1.8,
+    baseCost: 60,
+    growth: 1.4,
     maxLevel: 8,
     afterFold: true,
   },
@@ -120,8 +128,8 @@ export const PERKS: readonly Perk[] = [
     id: "ur_yield",
     name: "Ur-Yield",
     blurb: "Everything above the fold produces +100% per level.",
-    baseCost: 12_000,
-    growth: 2.2,
+    baseCost: 120,
+    growth: 1.8,
     maxLevel: 4,
     afterFold: true,
   },
@@ -139,30 +147,35 @@ export function perkCost(perk: Perk, level: number): number {
 export const MULT_PER_UNSPENT_SEED = 0.02;
 
 /**
- * Seeds a run is worth. Cube root, so each seed costs ~3x the harvest of the
- * one before it — the standard idle-game shape, and the reason a prestige is
- * always eventually worth doing but never worth doing immediately.
+ * Seeds a run is worth. Fourth root, not cube root, and that exponent is the
+ * whole tuning.
  *
- * The divisor sets when the first hand-down becomes worth it. Calibrated for
- * the slower economy: a 24-hour run accumulates roughly billions, so 1e10 puts
- * the first seed at around that mark and leaves the first prestige landing
- * naturally in day 1-2 of a multi-day run.
+ * The ladder didn't grow evenly when the fold was added: harvest above the fold
+ * runs about a million times a pre-fold run's, so a cube root turned a converged
+ * week into 55,000 seeds — a x1,100 output multiplier from the unspent pile
+ * alone, handed to a farm that starts again at four potato plots. The second
+ * generation wasn't a run, it was a victory lap. A fourth root damps the same
+ * span to a few hundred, and damps the run-to-run feedback with it: a generation
+ * that harvests 10x more than the last mints only 1.8x the seeds, so the meta
+ * layer converges instead of running away.
  *
- * That's a day or two *before* the world would have folded, which is why the
- * Seeds tab is held until the Convergence rather than revealed the moment this
- * pays out. Nothing here gates the fold, and nothing should: the first run is
- * for the fold, and seeds are for the runs after it.
+ * The divisor sets when the first hand-down becomes worth it. 4e14 puts the
+ * first seed around day 3 of a multi-day run — close enough to the Convergence
+ * that reaching for prestige early costs you one seed, which is what lets the
+ * Seeds tab be shown before the fold instead of held until after it.
  */
-const SEED_DIVISOR = 1e10;
+const SEED_DIVISOR = 4e14;
+const SEED_EXPONENT = 1 / 4;
 
 /**
  * `vigor` is a damper, if it's ever used at all. It is deliberately not wired
- * to the Convergence — a converged run already mints ~37x, and paying it a
- * bonus on top would make the perk table it's meant to fund even shorter.
+ * to the Convergence — a converged run already mints several times what an
+ * unconverged one does, and paying it a bonus on top would make the perk table
+ * it's meant to fund even shorter.
  */
 export function seedsFor(lifetimeRunHarvest: Potatoes, vigor = 1): number {
   if (lifetimeRunHarvest <= 0) return 0;
-  return Math.floor(Math.cbrt(lifetimeRunHarvest / SEED_DIVISOR) * vigor);
+  return Math.floor(Math.pow(lifetimeRunHarvest / SEED_DIVISOR, SEED_EXPONENT) * vigor);
 }
 
 /** Potatoes you start a generation with, from Head Start. */

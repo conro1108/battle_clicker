@@ -592,22 +592,22 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
   const needsAttention =
     farm.soil < 1 ||
     solo.producersIn(farm.world).some((p) => solo.brokenCount(farm, p.id) > 0);
-  // Held until the world has folded, and then never taken away.
+  // Shown the moment a hand-down would pay anything, and then never taken away.
   //
-  // `SEED_DIVISOR` puts the first hand-down in day 1-2 of a run, which is a day
-  // or two *before* the Convergence — so revealing this the moment it pays
-  // would offer a reset just short of the payoff, and a player who takes the
-  // hint doesn't see the fold until their second run at the earliest. The whole
-  // point of the first run is that it's one unbroken climb to the fold. Prestige
-  // arrives afterwards, as the thing that makes the folded world repeatable.
+  // This was held until the Convergence, on the reasoning that the first seed
+  // landed a day or two short of the fold and a player who took that hint would
+  // reset just before the payoff. But holding a whole mechanic behind the
+  // endgame means a first save can't find out prestige exists, and the fold is
+  // days of play to reach — that's a long time to be told nothing. The fix
+  // belonged in `seedsFor`, and it's there now: the first seed lands around the
+  // fold rather than well before it, so an early reset costs a seed or two and
+  // the trap this gate was guarding against mostly isn't one.
   //
-  // Anyone who already has seeds or has already handed a farm down keeps the
-  // tab regardless. Seeds can only be got by prestiging and prestige can only
-  // be reached from here, so that costs a first run nothing — and without it a
-  // save that converged and then prestiged *before* the flag existed would come
-  // back with `upgrades` wiped, `converged` backfilling to false, and no way to
-  // spend the seeds it's holding short of re-climbing to the fold.
-  const showSeeds = farm.converged || farm.seeds > 0 || farm.generation > 1;
+  // Anyone who already has seeds or has already handed a farm down keeps the tab
+  // regardless of what this run has earned, which also covers a save that
+  // converged and prestiged before `converged` existed as a flag.
+  const showSeeds =
+    farm.converged || farm.seeds > 0 || farm.generation > 1 || solo.pendingSeeds(farm) > 0;
 
   // Right to left in order of how often you reach for it. The far left of a
   // bottom bar is the corner a thumb has to travel for, and Shop is where you
