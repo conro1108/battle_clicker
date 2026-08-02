@@ -84,7 +84,13 @@
 
 import type { solo } from "@battle/sim";
 
-import { POTATO_SPRITE, PRODUCER_MARKS } from "./art.js";
+import {
+  HOIST_CAGE,
+  POTATO_SPRITE,
+  PRODUCER_MARKS,
+  SHAFT_CREW,
+  SHAFT_CREW_UP,
+} from "./art.js";
 import {
   EMPTY_VIEW,
   SCENE_W,
@@ -469,6 +475,60 @@ interface Crop {
   from: InsideId;
 }
 
+/**
+ * One of the shaft crew, and the reason the place stops looking abandoned.
+ *
+ * The outside farm has hands walking crop down to the yard, and dropping them on
+ * the way in here is most of why the inside read as machinery running in an
+ * empty building. These do the same job the hands do — give the picture
+ * something with intent in it — with the descent's own set of verbs: work a
+ * face, walk the bench, wait at the shaft, ride the cage to another level.
+ *
+ * `post` is which bench they're on, as a zone index and which of its two rungs.
+ * Everything else is where they are on it and what they're in the middle of.
+ */
+interface Crew {
+  x: number;
+  y: number;
+  post: { zone: number; first: boolean };
+  state: "walk" | "work" | "wait" | "ride" | "mingle";
+  /** Where they're heading along the bench. */
+  tx: number;
+  /** Scene-clock time the current state runs out. */
+  until: number;
+  /** Where they're going when the cage comes, while waiting or riding. */
+  bound: { zone: number; first: boolean } | null;
+  facing: 1 | -1;
+  /** Phase for the walk bob, so a line of them isn't in lockstep. */
+  phase: number;
+}
+
+/** How long a unit stays visibly in the middle of having made something. */
+const WORK_BEAT_S = 0.45;
+
+const CREW_SPEED = 13;
+const MAX_CREW = 9;
+
+/**
+ * The hoist: one cage on a rope, running the shaft and stopping at every bench.
+ *
+ * Crop goes *down* by gravity and always will — that's the scene's spine. So the
+ * cage carries the only thing that has any reason to go up, which is people, and
+ * the two motions don't compete: potatoes fall past a cage climbing, which is
+ * exactly the traffic a working shaft has.
+ */
+interface Hoist {
+  y: number;
+  dir: 1 | -1;
+  /** Scene-clock time it starts moving again, if it's stopped at a level. */
+  restUntil: number;
+  riders: Crew[];
+}
+
+const HOIST_SPEED = 19;
+const HOIST_REST_S = 1.3;
+const HOIST_SEATS = 2;
+
 const MAX_CROP = 26;
 /** Buffer pixels a second. A potato rolling itself along a ledge is unhurried. */
 const ROLL_SPEED = 26;
@@ -575,6 +635,17 @@ export class InsideScene {
   private dug: Dug[] = [];
   private puffs: Puff[] = [];
   private crop: Crop[] = [];
+  private crew: Crew[] = [];
+  private hoist: Hoist = { y: 40, dir: 1, restUntil: 0, riders: [] };
+  /**
+   * When each drawn unit last turned something up, keyed `id:index`.
+   *
+   * Production used to be a potato appearing next to a machine that never moved,
+   * which reads as the potato having nothing to do with the machine. A unit that
+   * has just worked bobs and throws a spark for a moment, so the thing you bought
+   * is visibly the thing making the number go up.
+   */
+  private worked = new Map<string, number>();
   private sawView = false;
   /**
    * How many strata are drawn open, which chases how many *are*.
@@ -634,6 +705,9 @@ export class InsideScene {
     this.dug = [];
     this.puffs = [];
     this.crop = [];
+    this.crew = [];
+    this.hoist = { y: 40, dir: 1, restUntil: 0, riders: [] };
+    this.worked.clear();
     this.shown = Math.max(0, this.view.hoard);
   }
 
@@ -837,6 +911,11 @@ export class InsideScene {
       const band = bands[i]!;
       if (band.zone >= 0) this.drawTiers(band, t);
     }
+
+    this.stepHoist(bands, t);
+    this.stepCrew(bands, t);
+    this.drawHoist(bands);
+    this.drawCrew();
 
     this.drawMotes(bands[0]!.bottom, sump.top, t);
     this.drawHoard(sump.top);
@@ -1124,8 +1203,20 @@ export class InsideScene {
       }
 
       slots.forEach((slot, i) => {
+        // The work beat: a unit that just turned something up drops a pixel and
+        // comes back, and throws a spark off its face. It's two pixels of motion
+        // and it's the difference between "a potato appeared near that thing" and
+        // "that thing made a potato".
+        const since = t - (this.worked.get(`${id}:${i}`) ?? -99);
+        const beat = since < WORK_BEAT_S ? 1 - since / WORK_BEAT_S : 0;
+        const drop = Math.round(Math.sin(beat * Math.PI) * 2);
         this.primeGlow(id, slot.x, slot.y, art.w, art.h, t, i);
-        ctx.drawImage(art.canvas, slot.x, slot.y);
+        ctx.drawImage(art.canvas, slot.x, slot.y + drop);
+        if (beat > 0.55) {
+          ctx.fillStyle = rgba("#fff4c0", (beat - 0.55) * 2);
+          ctx.fillRect(slot.x + art.w - 2, slot.y + drop + 2, 2, 1);
+          ctx.fillRect(slot.x + art.w, slot.y + drop + 1, 1, 1);
+        }
       });
     });
   }
@@ -1264,8 +1355,10 @@ export class InsideScene {
         const n = this.working(id);
         if (n <= 0 || !this.chance(flow(n))) return;
         const slots = this.slots(id, band);
-        const from = slots[Math.floor(Math.random() * slots.length)];
+        const pick = Math.floor(Math.random() * slots.length);
+        const from = slots[pick];
         if (!from) return;
+        this.worked.set(`${id}:${pick}`, t);
         const art = artCanvas(this.mark(id));
         // Off the bench it was cut on, not off the band's floor — a potato that
         // appears a bench below the machine that made it breaks the one link the
@@ -1279,7 +1372,6 @@ export class InsideScene {
     if (this.owned("second") > 0 && this.chance(0.2)) {
       this.puff(this.boreRight() + 2, bands[bands.length - 1]!.top - 6, -4);
     }
-    void t;
   }
 
   private cut(x: number, y: number, from: InsideId): void {
@@ -1335,6 +1427,230 @@ export class InsideScene {
     }
   }
 
+  // --- The crew and the hoist ------------------------------------------------
+
+  /** How many bodies a farm this size puts underground. Log, like everything. */
+  private crewSize(bands: Band[]): number {
+    const posts = bands.filter((b) => b.zone >= 0).length * 2;
+    if (posts === 0) return 0;
+    let total = 0;
+    for (const id of ORDER) total += this.owned(id);
+    return Math.max(1, Math.min(MAX_CREW, posts, shownCount(total, MAX_CREW, 1.5)));
+  }
+
+  /** Which benches exist to stand on, as `(zone, first)` pairs. */
+  private posts(bands: Band[]): { zone: number; first: boolean }[] {
+    const out: { zone: number; first: boolean }[] = [];
+    for (const b of bands) {
+      if (b.zone < 0) continue;
+      for (const first of [true, false]) {
+        if (this.working(ZONES[b.zone]!.tiers[first ? 0 : 1]) > 0) out.push({ zone: b.zone, first });
+      }
+    }
+    return out;
+  }
+
+  private postY(bands: Band[], post: { zone: number; first: boolean }): number {
+    const band = bands.find((b) => b.zone === post.zone);
+    return band ? this.benchY(band, post.first) : bands[bands.length - 1]!.top;
+  }
+
+  /**
+   * The crew, going about it.
+   *
+   * Nothing here is fast and nothing here is synchronised, which is the same rule
+   * the outside hands run on: a farm where everyone starts and stops together
+   * reads as a machine, and a farm where they don't reads as a place people work.
+   */
+  private stepCrew(bands: Band[], t: number): void {
+    const posts = this.posts(bands);
+    if (posts.length === 0) {
+      this.crew = [];
+      this.hoist.riders = [];
+      return;
+    }
+    const want = this.crewSize(bands);
+    while (this.crew.length > want) this.crew.pop();
+    while (this.crew.length < want) {
+      const post = posts[this.crew.length % posts.length]!;
+      this.crew.push({
+        x: this.boreRight() + 6 + this.rng() * 40,
+        y: this.postY(bands, post),
+        post,
+        state: "walk",
+        tx: this.boreRight() + 10 + this.rng() * 60,
+        until: 0,
+        bound: null,
+        facing: 1,
+        phase: this.rng() * 6.28,
+      });
+    }
+
+    const head = this.boreRight() - 4;
+    for (const c of this.crew) {
+      // A bench that stopped existing — the tier was sold or the farm was wiped —
+      // puts whoever was standing on it back on a bench that does.
+      if (!posts.some((p) => p.zone === c.post.zone && p.first === c.post.first)) {
+        c.post = posts[Math.floor(this.rng() * posts.length)]!;
+        c.state = "walk";
+      }
+      if (c.state !== "ride") c.y = this.postY(bands, c.post);
+
+      switch (c.state) {
+        case "walk": {
+          const d = c.tx - c.x;
+          c.facing = d >= 0 ? 1 : -1;
+          if (Math.abs(d) <= 1) {
+            c.x = c.tx;
+            if (c.tx <= head + 2 && c.bound) {
+              c.state = "wait";
+            } else {
+              // Most of the time, go and lean on a machine. Sometimes go and
+              // stand next to whoever else is on this bench instead.
+              const near = this.crew.find(
+                (o) =>
+                  o !== c &&
+                  o.post.zone === c.post.zone &&
+                  o.post.first === c.post.first &&
+                  o.state === "work",
+              );
+              if (near && this.rng() < 0.35) {
+                c.state = "mingle";
+                c.until = t + 2 + this.rng() * 3;
+                c.facing = near.x > c.x ? 1 : -1;
+              } else {
+                c.state = "work";
+                c.until = t + 1.6 + this.rng() * 3.4;
+              }
+            }
+          } else {
+            c.x += Math.sign(d) * CREW_SPEED * this.dt;
+          }
+          break;
+        }
+        case "work":
+        case "mingle": {
+          if (t < c.until) break;
+          c.state = "walk";
+          // Every so often, change levels. That's what the cage is for, and it's
+          // the only thing that makes the shaft feel connected to the benches
+          // rather than a hole they happen to stand next to.
+          if (posts.length > 1 && this.rng() < 0.3) {
+            let to = posts[Math.floor(this.rng() * posts.length)]!;
+            if (to.zone === c.post.zone && to.first === c.post.first) {
+              to = posts[(posts.indexOf(c.post) + 1) % posts.length] ?? to;
+            }
+            c.bound = to;
+            c.tx = head;
+          } else {
+            c.bound = null;
+            c.tx = this.wanderTo(c, bands);
+          }
+          break;
+        }
+        case "wait": {
+          const at = this.postY(bands, c.post);
+          if (
+            this.hoist.riders.length < HOIST_SEATS &&
+            Math.abs(this.hoist.y - at) <= 3 &&
+            t < this.hoist.restUntil
+          ) {
+            c.state = "ride";
+            this.hoist.riders.push(c);
+          }
+          break;
+        }
+        case "ride": {
+          c.x = BORE_X + 1 + this.hoist.riders.indexOf(c) * 4;
+          c.y = this.hoist.y + 9;
+          const to = c.bound;
+          if (to && Math.abs(this.hoist.y - this.postY(bands, to)) <= 3 && t < this.hoist.restUntil) {
+            this.hoist.riders = this.hoist.riders.filter((r) => r !== c);
+            c.post = to;
+            c.bound = null;
+            c.state = "walk";
+            c.x = head;
+            c.tx = this.wanderTo(c, bands);
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  /** Somewhere on this bench worth walking to — usually a machine on it. */
+  private wanderTo(c: Crew, bands: Band[]): number {
+    const band = bands.find((b) => b.zone === c.post.zone);
+    if (!band) return c.x;
+    const id = ZONES[c.post.zone]!.tiers[c.post.first ? 0 : 1];
+    const slots = this.slots(id, band);
+    if (slots.length > 0 && this.rng() < 0.8) {
+      const slot = slots[Math.floor(this.rng() * slots.length)]!;
+      return clamp(slot.x - 5, this.boreRight() + 2, SCENE_W - 8);
+    }
+    return this.boreRight() + 4 + this.rng() * (SCENE_W - this.boreRight() - 14);
+  }
+
+  private stepHoist(bands: Band[], t: number): void {
+    const top = bands[0]!.bottom + 4;
+    const floor = bands[bands.length - 1]!.top - 12;
+    if (floor <= top) return;
+    if (t < this.hoist.restUntil) return;
+
+    this.hoist.y += this.hoist.dir * HOIST_SPEED * this.dt;
+    if (this.hoist.y >= floor) {
+      this.hoist.y = floor;
+      this.hoist.dir = -1;
+      this.hoist.restUntil = t + HOIST_REST_S;
+    } else if (this.hoist.y <= top) {
+      this.hoist.y = top;
+      this.hoist.dir = 1;
+      this.hoist.restUntil = t + HOIST_REST_S;
+    }
+    // Stop at every bench on the way past, whether or not anyone's waiting. A
+    // cage that only stops when it's needed reads as teleporting.
+    for (const post of this.posts(bands)) {
+      const at = this.postY(bands, post);
+      if (Math.abs(this.hoist.y - at) <= 2) {
+        this.hoist.y = at;
+        this.hoist.restUntil = t + HOIST_REST_S;
+        break;
+      }
+    }
+  }
+
+  private drawHoist(bands: Band[]): void {
+    const ctx = this.ctx;
+    const cage = artCanvas(HOIST_CAGE);
+    const x = BORE_X + 1;
+    const top = bands[0]!.bottom;
+    // The rope, all the way up to the head. It's what says the cage is hung
+    // rather than hovering.
+    ctx.fillStyle = rgba("#b8c0c8", 0.75);
+    ctx.fillRect(x + 4, top, 1, Math.max(0, Math.round(this.hoist.y) - top));
+    // Lit from inside, so a steel box in a black shaft is something you can find
+    // without hunting for it — same reason the crew carry lamps.
+    this.glow(x + 4, Math.round(this.hoist.y) + 6, 13, "#ffe6a0", 0.16);
+    ctx.drawImage(cage.canvas, x, Math.round(this.hoist.y));
+  }
+
+  private drawCrew(): void {
+    const ctx = this.ctx;
+    for (const c of this.crew) {
+      // Arms up on the ladder and at the face; down while walking or standing
+      // about. Two poses is the whole animation budget at eleven pixels, and it's
+      // enough as long as which one you see means something.
+      const up = c.state === "ride" || c.state === "work";
+      const art = artCanvas(up ? SHAFT_CREW_UP : SHAFT_CREW);
+      const bob = c.state === "walk" ? Math.round(Math.sin(this.clock * 7 + c.phase) * 0.5) : 0;
+      const x = Math.round(c.x);
+      const y = Math.round(c.y) - art.h + bob;
+      // The lamp, which is what makes them findable in the deep strata at all.
+      this.glow(x + 3, y + 2, 9, "#ffe6a0", 0.22);
+      ctx.drawImage(art.canvas, x, y);
+    }
+  }
+
   // --- The sump --------------------------------------------------------------
 
   /**
@@ -1357,7 +1673,7 @@ export class InsideScene {
 
     // The cysts first: the mound is heaped in front of them.
     const cysts = Math.min(CYST_SLOTS.length, Math.floor(layout.stage / CYST_EVERY));
-    for (let i = 0; i < cysts; i++) this.drawCyst(CYST_SLOTS[i]!, sumpTop);
+    for (let i = 0; i < cysts; i++) this.drawCyst(CYST_SLOTS[i]!, sumpTop, i);
 
     const potato = artCanvas(POTATO_SPRITE);
     const slots = heapSlots();
@@ -1373,33 +1689,71 @@ export class InsideScene {
   /**
    * One swelling in the flesh, drawn rather than blitted.
    *
-   * A dome built out of narrowing courses, because a cyst is the one thing in
-   * either scene whose size is a *variable* — it's how much of your hoard the
-   * tuber has grown around — and a sprite would mean ten sprites. Outlined and
-   * lit from the top left like everything else on the canvas, so it sits in the
-   * same world as the art it stands next to instead of reading as a UI shape.
+   * A cyst is the one thing in either scene whose size is a *variable* — it's how
+   * much of your hoard the tuber has grown around — so it's built from courses
+   * rather than being ten sprites.
+   *
+   * It was a plain dome for a long time and it was the least legible object on
+   * the canvas: a smooth pale blob with an outline, ten of them scattered across
+   * an empty floor, holding nothing and never moving. Outside, a silo reads as
+   * storage because you already know what a silo is; a dome has no such luck and
+   * has to earn it. Three things do that here, and they're the parts to keep:
+   *
+   *  - **You can see the crop through it.** Potatoes packed inside, showing as
+   *    dark rounds under a translucent skin. A container you can see into is a
+   *    container. This is the whole fix; the rest is polish.
+   *  - **It breathes.** A slow swell on a phase taken from its own slot, so a
+   *    bank of them isn't pulsing in lockstep. Nothing else in the sump moves,
+   *    and something that never moves reads as scenery.
+   *  - **It's lit from the shaft**, like everything else down here, with a wet
+   *    highlight — flesh rather than a UI shape sitting on top of the picture.
    */
-  private drawCyst(slot: { x: number; row: number; w: number }, sumpTop: number): void {
+  private drawCyst(slot: { x: number; row: number; w: number }, sumpTop: number, i: number): void {
     const ctx = this.ctx;
+    const breathe = Math.sin(this.clock * 0.8 + i * 1.7);
     const base = sumpTop + 6 + slot.row * 6;
-    const courses = Math.max(2, Math.round(slot.w / 2.4));
+    const w = slot.w + (breathe > 0.6 ? 1 : 0);
+    const courses = Math.max(2, Math.round(w / 2.4));
     const skin = mix(SUMP_SPOIL, "#e6dcc0", 0.4);
+
+    // The skin, opaque. Drawing it translucent over the crop was the obvious way
+    // round and it was wrong: a pale film at 60% over a dark sump comes out grey,
+    // and a bank of grey blobs is less legible than the plain domes were. Opaque
+    // skin first keeps the silhouette warm, and the crop goes *on* it — dimmed,
+    // which reads as "under the surface" without spending the colour.
     for (let c = 0; c < courses; c++) {
       // Narrows faster near the crown, which is what makes it a dome and not a
       // ziggurat. Whole pixels: no rounding fudge on a 176-wide buffer.
-      const inset = Math.round(Math.pow(c / courses, 1.5) * (slot.w / 2));
-      const w = slot.w - inset * 2;
-      if (w <= 0) break;
+      const inset = Math.round(Math.pow(c / courses, 1.5) * (w / 2));
+      const span = w - inset * 2;
+      if (span <= 0) break;
       const y = base - c;
       ctx.fillStyle = INK;
-      ctx.fillRect(slot.x + inset - 1, y, w + 2, 1);
-      ctx.fillStyle = c === courses - 1 ? mix(skin, "#f7f1dc", 0.5) : skin;
-      ctx.fillRect(slot.x + inset, y, w, 1);
+      ctx.fillRect(slot.x + inset - 1, y, span + 2, 1);
+      ctx.fillStyle = c === courses - 1 ? mix(skin, "#f7f1dc", 0.55) : skin;
+      ctx.fillRect(slot.x + inset, y, span, 1);
     }
+
+    // What it's holding, showing through: packed rounds of crop, in the potato's
+    // own colour so there's no doubt what's in there.
+    const rng = mulberry32(0x9c + i * 71);
+    for (let c = 1; c < courses - 1; c += 2) {
+      const inset = Math.round(Math.pow(c / courses, 1.5) * (w / 2)) + 2;
+      for (let x = slot.x + inset; x < slot.x + w - inset - 1; x += 4) {
+        if (rng() < 0.2) continue;
+        ctx.fillStyle = rgba("#8a5a24", 0.5);
+        ctx.fillRect(x, base - c - 1, 3, 2);
+        ctx.fillStyle = rgba("#c98b4b", 0.45);
+        ctx.fillRect(x, base - c - 1, 2, 1);
+      }
+    }
+
     ctx.fillStyle = INK;
-    ctx.fillRect(slot.x - 1, base + 1, slot.w + 2, 1);
-    ctx.fillStyle = rgba("#f7f1dc", 0.45);
+    ctx.fillRect(slot.x - 1, base + 1, w + 2, 1);
+    // The wet highlight down its shaft-facing shoulder.
+    ctx.fillStyle = rgba("#fff4e0", 0.55 + breathe * 0.15);
     ctx.fillRect(slot.x + 2, base - courses + 2, 1, Math.max(1, courses - 3));
+    ctx.fillRect(slot.x + 3, base - courses + 1, 1, 1);
   }
 
   /**

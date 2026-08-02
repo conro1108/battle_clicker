@@ -454,3 +454,39 @@ Each of these typechecked and passed every test before the screenshot said no.
 - The Chorus is still just its own silhouette in a wash. Standing on the ring's
   floor works, but nothing about the ring says *why* the other yous are there.
 - The seed economy, unchanged and still the real open problem — see above.
+
+## Life, added afterwards
+
+The descent read as a place and still looked dead, which is a separate fault
+with a separate fix: it had no people in it. The outside farm has hands walking
+crop to the yard and that's most of what makes it feel inhabited — dropping them
+on the way in was never examined.
+
+- **Shaft crew.** The farmhand silhouette in a hard hat with a lamp on it, one
+  per bench up to nine, scaling on everything you own. They walk their bench,
+  stand at a machine and swing at it, occasionally stop next to each other and
+  do nothing for a few seconds. The lamp is the whole sprite: at eleven pixels a
+  figure in the dark is a smudge, and a figure with one bright pixel at head
+  height is a person. It's also the only thing that makes anyone visible in the
+  bottom two strata.
+- **The hoist.** One cage on a rope running the shaft, stopping at every bench
+  whether or not anyone's waiting — a cage that only stops when needed reads as
+  teleporting. It carries *crew*, not crop, which is the point: gravity already
+  moves the potatoes down, so the cage moves the only thing with a reason to go
+  up and the two motions don't compete. Potatoes fall past a climbing cage, which
+  is the traffic a working shaft has.
+- **The work beat.** A unit that just turned something up drops two pixels and
+  throws a spark. Production used to be a potato appearing beside a machine that
+  never moved, which reads as the potato having nothing to do with the machine.
+
+**And the cysts, which were the least legible thing on the canvas.** Smooth pale
+domes, scattered over an empty floor, holding nothing, never moving. A silo reads
+as storage because you already know what a silo is; a dome has to earn it. They
+now show packed crop through the skin, breathe on their own phase, and carry a
+wet highlight down the shaft-facing side.
+
+One thing worth recording because the obvious approach was wrong: **drawing the
+skin translucent over the crop came out grey.** A pale film at 60% over a dark
+sump desaturates to nothing, and a bank of grey blobs was *less* legible than the
+plain domes had been. Opaque skin first, crop dimmed on top of it — the read is
+the same and the colour survives.
