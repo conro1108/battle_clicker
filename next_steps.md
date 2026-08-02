@@ -524,3 +524,22 @@ from 30 to 34 specifically so a finished ladder reaches three; two never felt
 like a working shaft. Crew board whichever cage is standing at their level with a
 seat free, rather than waiting for a particular one — nobody at a pit head does
 that.
+
+**The cages shipped not moving, and that is the lesson worth keeping.** The stop
+test asked whether a cage was *near* a bench rather than whether it had *crossed*
+one, so a cage that had stopped sat exactly on the bench, advanced a third of a
+pixel when its rest expired, was still inside the threshold, snapped back and
+rested again. All three moored themselves at the first bench they reached.
+
+Nothing caught it. Not the typechecker, and — worse — not the screenshot pass,
+because **a still of three cages parked at three different benches is pixel-for-
+pixel a still of three cages working.** The whole reason this repo shoots the
+scene is to catch what `tsc` can't see, and here the shot was as blind as the
+compiler. Motion cannot be verified from one frame, and it can't reliably be
+verified from a burst either unless you measure the *same* object across it.
+
+Two things came out of that. `hoistStep` is a pure function now, purely so
+`inside.test.ts` can walk one cage the length of the shaft and require it to
+service every bench and reach both ends — the bug reproduces in that test in one
+line. And when a burst is the only tool available, extract the position of the
+thing and compare the numbers rather than looking at the frames.

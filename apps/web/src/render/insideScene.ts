@@ -542,6 +542,43 @@ export function hoistCount(bore: number): number {
  * cages in a shaft pass each other close, and the rope tells you which is which. */
 const HOIST_LANE = 9;
 
+/**
+ * Move one cage `dist` pixels along the shaft, reversing at the ends and pulling
+ * up at any bench it passes through.
+ *
+ * Pulled out of the class and made pure entirely so it can be tested, because
+ * the bug it had was the worst kind: **the cages didn't move at all**, and
+ * nothing caught it. The stop test used to ask whether the cage was *near* a
+ * bench rather than whether it had *crossed* one, so a cage that had stopped sat
+ * exactly on the bench, advanced a third of a pixel when its rest expired, was
+ * still inside the threshold, snapped back and rested again. Every cage moored
+ * itself at the first bench it reached and stayed there.
+ *
+ * It survived review and a screenshot pass because a still of three cages parked
+ * at three different benches looks exactly like a still of three cages working.
+ * `inside.test.ts` now walks one the length of the shaft instead.
+ */
+export function hoistStep(
+  y: number,
+  dir: 1 | -1,
+  dist: number,
+  top: number,
+  floor: number,
+  stops: readonly number[],
+): { y: number; dir: 1 | -1; stopped: boolean } {
+  const was = y;
+  let next = y + dir * dist;
+  if (next >= floor) return { y: floor, dir: -1, stopped: true };
+  if (next <= top) return { y: top, dir: 1, stopped: true };
+  for (const at of stops) {
+    if ((was < at && next >= at) || (was > at && next <= at)) {
+      next = at;
+      return { y: next, dir, stopped: true };
+    }
+  }
+  return { y: next, dir, stopped: false };
+}
+
 const HOIST_SPEED = 19;
 const HOIST_REST_S = 1.3;
 const HOIST_SEATS = 2;
@@ -1654,25 +1691,12 @@ export class InsideScene {
     const stops = this.posts(bands).map((p) => this.postY(bands, p));
     for (const h of this.hoists) {
       if (t < h.restUntil) continue;
-      h.y += h.dir * HOIST_SPEED * this.dt;
-      if (h.y >= floor) {
-        h.y = floor;
-        h.dir = -1;
-        h.restUntil = t + HOIST_REST_S;
-      } else if (h.y <= top) {
-        h.y = top;
-        h.dir = 1;
-        h.restUntil = t + HOIST_REST_S;
-      }
-      // Stop at every bench on the way past, whether or not anyone's waiting. A
-      // cage that only stops when it's needed reads as teleporting.
-      for (const at of stops) {
-        if (Math.abs(h.y - at) <= 2) {
-          h.y = at;
-          h.restUntil = t + HOIST_REST_S;
-          break;
-        }
-      }
+      // Stops at every bench it passes through, whether or not anyone's waiting.
+      // A cage that only stops when it's needed reads as teleporting.
+      const step = hoistStep(h.y, h.dir, HOIST_SPEED * this.dt, top, floor, stops);
+      h.y = step.y;
+      h.dir = step.dir;
+      if (step.stopped) h.restUntil = t + HOIST_REST_S;
     }
   }
 

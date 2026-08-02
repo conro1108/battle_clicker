@@ -8,6 +8,7 @@ import {
   boreWidth,
   flow,
   hoistCount,
+  hoistStep,
   openZones,
   shownCount,
   territory,
@@ -168,6 +169,51 @@ describe("the cages", () => {
       // on top of the stratum next to it.
       expect((n - 1) * 9 + 9).toBeLessThanOrEqual(bore + 8);
     }
+  });
+
+  /**
+   * The regression that made this file worth extending: the cages did not move.
+   *
+   * The stop test asked whether a cage was *near* a bench rather than whether it
+   * had *crossed* one, so a cage that had stopped sat exactly on the bench,
+   * advanced a third of a pixel when its rest expired, was still inside the
+   * threshold, snapped back and rested again. All three moored themselves at the
+   * first bench they reached. Nothing caught it — not the typechecker, not the
+   * screenshots, because a still of three cages parked at three benches looks
+   * exactly like a still of three cages working.
+   *
+   * So: walk one the length of the shaft, honouring every stop it asks for the
+   * way the scene does, and require that it actually gets somewhere.
+   */
+  it("works the whole shaft instead of mooring itself at the first bench", () => {
+    const top = 10;
+    const floor = 120;
+    const stops = [28, 47, 66, 85, 104];
+    let y = top;
+    let dir: 1 | -1 = 1;
+    const seen = new Set<number>();
+    let ends = 0;
+    // A frame's travel at 60fps, which is the scale the bug lived at: big enough
+    // to move, far smaller than the threshold it used to get caught by.
+    for (let i = 0; i < 20_000; i++) {
+      const step = hoistStep(y, dir, 0.32, top, floor, stops);
+      y = step.y;
+      if (step.dir !== dir) ends++;
+      dir = step.dir;
+      if (step.stopped) seen.add(Math.round(y));
+    }
+    // Every bench serviced, and both ends of the shaft reached more than once —
+    // it's running the length of it, not shuffling around one level.
+    for (const at of stops) expect(seen).toContain(at);
+    expect(ends).toBeGreaterThanOrEqual(4);
+  });
+
+  it("comes to rest exactly on a bench, so crew can step off onto it", () => {
+    const step = hoistStep(46, 1, 3, 10, 120, [47]);
+    expect(step).toEqual({ y: 47, dir: 1, stopped: true });
+    // ...and having stopped there, it can leave again. This is the whole bug.
+    expect(hoistStep(47, 1, 0.32, 10, 120, [47]).y).toBeGreaterThan(47);
+    expect(hoistStep(47, 1, 0.32, 10, 120, [47]).stopped).toBe(false);
   });
 
   it("adds cages as the shaft widens, never takes them away", () => {
