@@ -17,12 +17,12 @@ export function setServerOffset(deltaMs: number): void {
  *
  * It's a separate number from `offset` because it's a different kind of lie: the
  * server offset corrects the clock, this one falsifies it. Kept in
- * `localStorage` because the alternative is worse — the sim checkpoints at the
- * skewed time, so a skew that vanished on reload would leave a farm whose
- * checkpoint is in the future, and `resumeFarm` would freeze it until the real
- * clock caught up. Two days of a dead game is a strange thing for a dev button
- * to do. So the skew stays until it's cleared, and clearing it has that same
- * consequence, said out loud on the button.
+ * `localStorage` so a reload doesn't silently undo a jump you're in the middle
+ * of testing with — the sim checkpoints at the skewed time, and a skew that
+ * vanished under it would put the farm's checkpoint in the future. That used to
+ * freeze the game until the real clock caught up; `solo.rebase` handles it now,
+ * so this is a convenience rather than the only thing standing between a dev
+ * button and a dead save.
  */
 const SKEW_KEY = "potatoes-inc:dev-skew";
 

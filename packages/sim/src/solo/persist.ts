@@ -8,7 +8,7 @@
 
 import { P, ms, type Millis, type Potatoes } from "../numbers.js";
 import { MAX_SOIL, type World } from "./content.js";
-import { advance, CONVERGENCE_UPGRADE } from "./farm.js";
+import { advance, CONVERGENCE_UPGRADE, rebase } from "./farm.js";
 import type { FarmState } from "./state.js";
 import type { WeatherEvent } from "./weather.js";
 
@@ -141,15 +141,14 @@ export interface OfflineReport {
 /**
  * Resolve everything that happened between the save and now.
  *
- * A clock that moved backwards (timezone change, a fiddled system clock) is
- * treated as no time passing rather than as an error — the farm just picks up
- * from the later of the two.
+ * A clock that moved backwards (an NTP correction, a fiddled system clock, the
+ * back room's skew lever being put back) is no time passing rather than an
+ * error: the farm rebases onto the earlier clock and carries on. It used to keep
+ * the later checkpoint, which is the same thing as freezing the game until the
+ * wall clock caught up — see `rebase`.
  */
 export function resumeFarm(saved: FarmState, now: Millis): { farm: FarmState; report: OfflineReport | null } {
-  if (now <= saved.checkpointAt) {
-    const rebased = ms(Math.max(now, saved.checkpointAt));
-    return { farm: { ...saved, checkpointAt: rebased }, report: null };
-  }
+  if (now <= saved.checkpointAt) return { farm: rebase(saved, now), report: null };
 
   const before = saved.potatoes;
   const { farm, events } = advance(saved, now, true);

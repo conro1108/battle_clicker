@@ -82,6 +82,43 @@ export function createFarm(opts: { seed: string; startedAt: Millis }): FarmState
   return { ...farm, nextWeatherAt: scheduleNext(farm, opts.startedAt) };
 }
 
+/**
+ * Bring a farm whose checkpoint is in the *future* back to now.
+ *
+ * Clocks move backwards: an NTP correction, a device someone set by hand, or the
+ * back room's own skew lever being put back after a jump. Whatever the cause,
+ * the farm comes out of it holding a checkpoint the wall clock hasn't reached.
+ *
+ * That used to freeze the game solid. `integrate` clamps rather than paying out
+ * negative production — correct on its own — but every command was refused with
+ * "Time moved backwards." until the clock caught up, which after a week's jump
+ * is a week of a farm that can't be dug, bought from or repaired. A dev lever
+ * that bricks the save for a week is not a lever, and a player whose phone
+ * corrected its clock never touched a lever at all.
+ *
+ * So the farm rebases: the checkpoint comes back to now and everything scheduled
+ * off it comes back by the same amount, so the weather keeps its place in the
+ * queue instead of arriving all at once. Nothing is paid out and nothing is
+ * taken away — the time simply didn't happen. What it *doesn't* do is defend
+ * against a player jumping the clock forward, taking the offline production and
+ * jumping back for another go. That's a cheat available from a menu that also
+ * hands out free potatoes, in a game with nobody else in it.
+ */
+export function rebase(f: FarmState, now: Millis): FarmState {
+  if (now >= f.checkpointAt) return f;
+  const back = f.checkpointAt - now;
+  return {
+    ...f,
+    checkpointAt: now,
+    nextWeatherAt: ms(Math.max(now, f.nextWeatherAt - back)),
+    // Everything else stamped with a time, so nothing in the game is asked how
+    // long ago something in the future was.
+    startedAt: ms(Math.min(f.startedAt, now)),
+    runStartedAt: ms(Math.min(f.runStartedAt, now)),
+    log: f.log.map((e) => (e.at > now ? { ...e, at: ms(e.at - back) } : e)),
+  };
+}
+
 /** Roll the farm forward with no weather in between. */
 function integrate(f: FarmState, to: Millis, offline: boolean): FarmState {
   if (to <= f.checkpointAt) return { ...f, checkpointAt: ms(Math.max(f.checkpointAt, to)) };
@@ -113,7 +150,10 @@ export interface AdvanceResult {
  */
 export function advance(f: FarmState, to: Millis, offline = false): AdvanceResult {
   const events: WeatherEvent[] = [];
-  let farm = f;
+  // A farm ahead of the clock comes back to it first, so the tick loop heals a
+  // backwards clock by itself within a tick rather than sitting on a checkpoint
+  // it can never reach.
+  let farm = rebase(f, to);
   let guard = 0;
 
   while (farm.nextWeatherAt <= to && guard++ < MAX_EVENTS_PER_ADVANCE) {
@@ -170,8 +210,10 @@ function fail(reason: string): FarmResult {
  * without touching any game logic.
  */
 export function applyFarmCommand(f0: FarmState, cmd: FarmCommand, now: Millis): FarmResult {
-  if (now < f0.checkpointAt) return fail("Time moved backwards.");
-
+  // A clock that went backwards is `advance`'s problem and it deals with it by
+  // rebasing. This used to refuse the command instead, which meant a farm
+  // holding a future checkpoint couldn't be dug, bought from or repaired until
+  // the wall clock caught up with it.
   const advanced = advance(f0, now);
   let farm = advanced.farm;
   const entries: FarmLogEntry[] = [];

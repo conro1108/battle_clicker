@@ -338,8 +338,9 @@ function BackRoom({
         {skew > 0 && (
           <>
             <p className="muted small">
-              Running {formatSkew(skew)} ahead of the wall clock. Putting it back leaves the farm
-              checkpointed in the future, so it sits frozen until real time catches up.
+              Running {formatSkew(skew)} ahead of the wall clock. Putting it back rebases the farm
+              onto real time — you keep everything the jump produced, and the clock you skipped
+              simply didn't happen.
             </p>
             <button
               className="ghost"

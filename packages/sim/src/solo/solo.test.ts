@@ -285,6 +285,35 @@ describe("offline resolution", () => {
     expect(report).toBeNull();
     expect(farm.potatoes).toBe(base.potatoes);
   });
+
+  /**
+   * The back room can shove the clock a week forward, and putting it back left
+   * the farm holding a checkpoint the wall clock wouldn't reach for a week. It
+   * kept its potatoes and its kit, and refused every command that whole time:
+   * no digging, no buying, no repairs, one red banner. A phone correcting its
+   * own clock did the same thing to a player who never opened the back room.
+   */
+  it("keeps playing after the clock is put back, rather than freezing until it catches up", () => {
+    const base = developedFarm("skew");
+    // A week ahead, the way the dev lever leaves it...
+    const { farm: jumped } = resumeFarm(base, ms(base.checkpointAt + 7 * DAY));
+    // ...and then back to real time.
+    const back = ms(base.checkpointAt + HOUR);
+    const { farm: rebased } = resumeFarm(jumped, back);
+    expect(rebased.checkpointAt).toBe(back);
+    // Nothing the week produced is taken away.
+    expect(rebased.potatoes).toBe(jumped.potatoes);
+    // Nothing is stamped in the future any more, so nothing is asked how long
+    // ago something that hasn't happened was.
+    expect(rebased.nextWeatherAt).toBeGreaterThanOrEqual(back);
+    expect(rebased.runStartedAt).toBeLessThanOrEqual(back);
+    for (const e of rebased.log) expect(e.at).toBeLessThanOrEqual(back);
+    // And the farm answers commands again.
+    const dug = applyFarmCommand(rebased, { type: "dig", count: 1 }, back);
+    expect(dug.ok).toBe(true);
+    // Even from the raw future-checkpointed farm, without a reload in between.
+    expect(applyFarmCommand(jumped, { type: "dig", count: 1 }, back).ok).toBe(true);
+  });
 });
 
 describe("putting everything right", () => {
