@@ -371,6 +371,92 @@ export function shownCount(owned: number, cap: number, spread = 2.4): number {
   return Math.min(cap, 4 + Math.floor(Math.log2(owned / 4) * spread));
 }
 
+/**
+ * How a tier occupies its stratum.
+ *
+ * Every rung used to be laid out the same way: `n` copies of one sprite, evenly
+ * spaced, on a ruled line. Which is fine once and is the whole picture eight
+ * times — the descent came out as eight shelves of merchandise, and the fact
+ * that the sprites differed didn't matter, because what you read first is the
+ * rhythm and the rhythm was identical all the way down. It's the same failure
+ * the header blames for five Periderm Gates in a gallery row, wearing better
+ * art.
+ *
+ * So the bench stops being where things *stand* and goes back to being what it
+ * is — the walkway the crew use — and each rung does something else with the
+ * space around it:
+ *
+ * - `bench`: standing on the line. Kept for the rungs that are few and huge, so
+ *   the picture still has a floor to read the rest against.
+ * - `knot`: gathered into two or three working groups with real gaps between
+ *   them, some units tucked *behind* their neighbours and dimmed, so a count is
+ *   a crowd with depth in it rather than a row.
+ * - `niche`: cut into the wall above the bench at staggered heights, each in its
+ *   own pocket. The one that most obviously isn't a shelf.
+ * - `sunk`: set into the floor, showing only what's above the rim.
+ * - `hang`: suspended from the roof of the stratum on stems of different lengths,
+ *   with the walkway clear underneath.
+ *
+ * Assigned so that no two rungs you can see at once do the same thing, and so
+ * that what each rung does is something its fiction would do: quarries cut into
+ * a face, wells go down, a vascular ring hangs off the vessel above it.
+ */
+type Layout = "bench" | "knot" | "niche" | "sunk" | "hang";
+
+const LAYOUT: Record<InsideId, Layout> = {
+  bruise: "knot",
+  // Never drawn from a slot — the Pit Hands are the crew.
+  pithand: "bench",
+  quarry: "niche",
+  well: "sunk",
+  ring: "hang",
+  chorus: "knot",
+  heart: "niche",
+  // Two of them, and each is most of a stratum. Anything but standing there.
+  second: "bench",
+};
+
+/**
+ * How often the gap between two units is a tight one rather than an open one.
+ *
+ * This is what turns a spread into knots: high, and a tier gathers into a couple
+ * of working groups with daylight between them; low, and it's a picket fence
+ * again. Per layout, because a crowd wants to clump and a row of wall pockets
+ * wants to breathe.
+ */
+const TIGHT: Record<Layout, number> = {
+  bench: 0.3,
+  knot: 0.62,
+  niche: 0.34,
+  sunk: 0.4,
+  hang: 0.36,
+};
+
+/**
+ * The closest two units of a tier can ever be, on top of their own width.
+ *
+ * A knot wants its units touching — that's what makes it a knot. Anything with a
+ * *setting* around it does not: the first pass let pockets abut at staggered
+ * heights and four cut niches merged into one stepped black block that read as a
+ * broken shelf rather than as four holes in a wall. The gap is the difference
+ * between a pocket and a mass.
+ */
+const MIN_GAP: Record<Layout, number> = {
+  bench: 1,
+  knot: 0,
+  niche: 5,
+  sunk: 3,
+  hang: 4,
+};
+
+/** Where a unit stands, and whether it's tucked in behind the ones in front. */
+interface Slot {
+  x: number;
+  y: number;
+  /** Set back into the group: drawn first, dimmer, and a little higher. */
+  back: boolean;
+}
+
 /** How many of each tier ever appear on its ledge, however many you own. */
 const CAP: Record<InsideId, number> = {
   bruise: 5,
@@ -881,12 +967,13 @@ export class InsideScene {
    * half-way up fills the band, separates the two tiers by more than position,
    * and is what a worked seam actually looks like.
    *
-   * Within its half, a tier spreads by `territory` and every unit is jittered off
-   * the line. Evenly spaced identical sprites at a constant y is a shelf of
-   * merchandise; a couple of pixels of scatter is a worked seam, and that is the
-   * entire difference.
+   * Within its half a tier spreads by `territory`, and how it uses that spread is
+   * its `LAYOUT` — knots on the bench, pockets cut into the wall, sunk into the
+   * floor, hung off the roof. The gaps are uneven on purpose: the spacing carries
+   * as much of the read as the sprite does, and evenly spaced anything is a shelf
+   * whatever's on it.
    */
-  private slots(id: InsideId, band: Band): { x: number; y: number }[] {
+  private slots(id: InsideId, band: Band): Slot[] {
     const n = this.working(id);
     if (n <= 0) return [];
     const art = artCanvas(this.mark(id));
@@ -897,26 +984,62 @@ export class InsideScene {
     const from = first ? left : mid + 2;
     const to = first ? mid - 2 : right;
     const foot = this.benchY(band, first);
+    const kind = LAYOUT[id];
 
     const room = Math.max(art.w, to - from);
     // Never tighter than the units are wide. `territory` alone is a *how much
     // ground* number and says nothing about how many things are standing on it,
     // so a well-bought tier whose ground hadn't caught up drew six sprites into
     // four sprites' worth of ledge and came out as a heap of rubble.
-    const spread = clamp(territory(this.owned(id), art.w + 2, room), n * (art.w + 1), room);
+    const pitch = art.w + MIN_GAP[kind];
+    const spread = clamp(territory(this.owned(id), art.w + 2, room), n * (pitch + 1), room);
     // Seeded off the tier, so a farm's scatter is the same every frame and the
     // same on every reload. Jitter that re-rolls per frame is a vibrating farm.
     const rng = mulberry32(hashSeed(id) ^ 0x51e);
-    const out: { x: number; y: number }[] = [];
+
+    // Every gap is either tight or open, and the slack in the tier's ground gets
+    // divided between them by weight — so the same spread comes out as groups
+    // with daylight between them instead of a constant pitch.
+    const gaps: number[] = [];
+    for (let i = 0; i < n - 1; i++) gaps.push(rng() < TIGHT[kind] ? 0.22 : 1.5);
+    const total = gaps.reduce((a, w) => a + w, 0) || 1;
+    const slack = Math.max(0, spread - n * pitch);
+
+    // Headroom between this tier's line and whatever is above it, which is what
+    // the layouts that leave the line have to play with.
+    const roof = first ? band.top : this.benchY(band, true);
+    const headroom = Math.max(0, foot - roof - art.h - 4);
+
+    const out: Slot[] = [];
+    let x = from;
     for (let i = 0; i < n; i++) {
-      const k = n === 1 ? 0 : i / (n - 1);
-      const along = k * Math.max(0, spread - art.w);
-      const x = Math.round(from + along + (rng() - 0.5) * 5);
+      if (i > 0) x += pitch + (slack * gaps[i - 1]!) / total;
+      // Only inside a knot, and only behind someone: a unit on its own with
+      // nothing to be behind just looks faded.
+      const back = kind === "knot" && i > 0 && gaps[i - 1]! < 1 && rng() < 0.55;
+      let y: number;
+      switch (kind) {
+        case "niche":
+          // Staggered up the face, never so high it breaks the roof of the seam.
+          y = foot - art.h - 3 - Math.round(rng() * Math.min(10, headroom));
+          break;
+        case "sunk":
+          // Set into the floor, showing about half. `drawTiers` clips the rest.
+          y = foot - art.h + Math.max(2, Math.round(art.h * 0.45));
+          break;
+        case "hang":
+          // Off the roof on a stem, each a different length.
+          y = roof + 3 + Math.round(rng() * Math.min(14, headroom));
+          break;
+        default:
+          // On the line, bedded a pixel or two into it so the bottom edge is
+          // ragged rather than ruled — and a step back if it's tucked in behind.
+          y = foot - art.h + Math.round(rng() * 2) - (back ? 3 : 0);
+      }
       out.push({
-        x: clamp(x, this.boreRight() + 1, SCENE_W - art.w - 1),
-        // Bedded a pixel or two into their own bench, at slightly different
-        // depths, so the row has a ragged bottom edge instead of a ruled one.
-        y: foot - art.h + Math.round(rng() * 2),
+        x: clamp(Math.round(x) + (back ? -3 : 0), this.boreRight() + 1, SCENE_W - art.w - 1),
+        y: clamp(y, roof + 1, foot - 1),
+        back,
       });
     }
     return out;
@@ -1267,7 +1390,16 @@ export class InsideScene {
         ctx.fillRect(x0 + 1, foot + 1, x1 - x0 - 2, 2);
       }
 
-      slots.forEach((slot, i) => {
+      const kind = LAYOUT[id];
+      const foot = this.benchY(band, ti === 0);
+      const roof = ti === 0 ? band.top : this.benchY(band, true);
+      // The ones set back go down first, so the front of a knot overlaps them.
+      const order = [...slots.keys()].sort(
+        (a, b) => Number(slots[b]!.back) - Number(slots[a]!.back),
+      );
+
+      order.forEach((i) => {
+        const slot = slots[i]!;
         // The work beat: a unit that just turned something up drops a pixel and
         // comes back, and throws a spark off its face. It's two pixels of motion
         // and it's the difference between "a potato appeared near that thing" and
@@ -1275,8 +1407,23 @@ export class InsideScene {
         const since = t - (this.worked.get(`${id}:${i}`) ?? -99);
         const beat = since < WORK_BEAT_S ? 1 - since / WORK_BEAT_S : 0;
         const drop = Math.round(Math.sin(beat * Math.PI) * 2);
+        this.setting(kind, zone, slot, art.w, art.h, roof, foot);
         this.primeGlow(id, slot.x, slot.y, art.w, art.h, t, i);
-        ctx.drawImage(art.canvas, slot.x, slot.y + drop);
+        // Set back into the group, so it takes the stratum's own shadow — the
+        // cheapest depth cue there is, and the only one available at eleven
+        // pixels a sprite.
+        const sprite = slot.back ? artTinted(this.mark(id), zone.deep, 0.45) : art;
+        if (kind === "sunk") {
+          // Only what's above the rim. The rest is in the floor.
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(0, roof, SCENE_W, Math.max(0, foot - roof));
+          ctx.clip();
+          ctx.drawImage(sprite.canvas, slot.x, slot.y + drop);
+          ctx.restore();
+        } else {
+          ctx.drawImage(sprite.canvas, slot.x, slot.y + drop);
+        }
         if (beat > 0.55) {
           ctx.fillStyle = rgba("#fff4c0", (beat - 0.55) * 2);
           ctx.fillRect(slot.x + art.w - 2, slot.y + drop + 2, 2, 1);
@@ -1284,6 +1431,73 @@ export class InsideScene {
         }
       });
     });
+  }
+
+  /**
+   * What a unit sits in, hangs off or is cut into — drawn behind it.
+   *
+   * This is where most of the difference between the strata actually lands. The
+   * sprites were always distinct; what made the descent read as one repeated row
+   * was that every one of them was blitted onto the same ruled line with nothing
+   * around it. A pocket in the wall, a rim in the floor and a stem from the roof
+   * cost a handful of rectangles each and they change what the tier *is*.
+   */
+  private setting(
+    kind: Layout,
+    zone: Zone,
+    slot: Slot,
+    w: number,
+    h: number,
+    roof: number,
+    foot: number,
+  ): void {
+    const ctx = this.ctx;
+    if (kind === "niche") {
+      // Its own short ledge, cut into the face at whatever height it works at.
+      //
+      // This was a *pocket* first — a bounded box behind each unit — and a
+      // bounded box with a lit line under it and something pale inside it is a
+      // picture in a frame. Five of them in a row is the exact failure this
+      // file's header blames for the scene it replaced, rebuilt from scratch.
+      //
+      // A ledge has no left or right edge to close the shape, so it reads as the
+      // face being cut rather than as an object hung on it. Same three lines the
+      // main benches use — lit top, ink, undercut — so the strata agree with each
+      // other about what cut material looks like; short and staggered rather than
+      // ruled across the band, which is the whole point.
+      const rng = mulberry32(hashSeed(zone.id) ^ (slot.x * 2654435761));
+      const lx = slot.x - 1 - Math.round(rng() * 2);
+      const lw = w + 3 + Math.round(rng() * 3);
+      // The face behind it, in its own shadow, so the unit isn't lit from behind
+      // by the flat wall.
+      ctx.fillStyle = rgba(zone.deep, 0.45);
+      ctx.fillRect(slot.x - 1, slot.y + 1, w + 2, h);
+      ctx.fillStyle = rgba(mix(zone.lit, "#ffffff", 0.35), 0.6);
+      ctx.fillRect(lx, slot.y + h, lw, 1);
+      ctx.fillStyle = INK;
+      ctx.fillRect(lx, slot.y + h + 1, lw, 1);
+      ctx.fillStyle = rgba(zone.deep, 0.5);
+      ctx.fillRect(lx + 1, slot.y + h + 2, lw - 2, 1);
+      // Spoil under the cut, because something had to come out of it.
+      ctx.fillStyle = rgba(zone.deep, 0.55);
+      for (let s = 0; s < 3; s++) {
+        ctx.fillRect(lx + Math.round(rng() * lw), slot.y + h + 3 + Math.round(rng() * 2), 1, 1);
+      }
+    } else if (kind === "hang") {
+      // The stem, all the way up to the roof of the seam. Two pixels of it are
+      // what say the thing is hanging rather than floating at a strange height.
+      const x = slot.x + Math.floor(w / 2);
+      ctx.fillStyle = rgba(mix(zone.lit, "#ffffff", 0.3), 0.5);
+      ctx.fillRect(x, roof, 1, Math.max(0, slot.y - roof));
+      ctx.fillStyle = rgba(zone.deep, 0.7);
+      ctx.fillRect(x - 1, roof, 3, 1);
+    } else if (kind === "sunk") {
+      // The rim it's sunk through, and the shadow the hole throws under it.
+      ctx.fillStyle = rgba(zone.deep, 0.85);
+      ctx.fillRect(slot.x - 1, foot - 3, w + 2, 3);
+      ctx.fillStyle = rgba(mix(zone.lit, "#ffffff", 0.3), 0.5);
+      ctx.fillRect(slot.x - 2, foot - 4, w + 4, 1);
+    }
   }
 
   /**
