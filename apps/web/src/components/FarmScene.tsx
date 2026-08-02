@@ -94,7 +94,7 @@ export const FarmScene = forwardRef<FarmSceneHandle, {
     const marks: FarmView["marks"] = {};
     // Only the world you're standing in. The other farm is still producing —
     // that's the whole arrangement after the fold — but it's producing somewhere
-    // you can't see from here, and drawing an Inversion Furrow over a wheat
+    // you can't see from here, and drawing an Bruise Bed over a wheat
     // field would say the opposite.
     for (const prod of solo.producersIn(farm.world)) {
       const owned = farm.producers[prod.id] ?? 0;

@@ -96,7 +96,10 @@ const KINDS: readonly WeatherKind[] = [
  * rested on.
  */
 const IMMUNE_KINDS: readonly WeatherKind[] = [
-  { id: "suberin", name: "Suberin Bloom", weight: 14, effect: { kind: "break", scope: "cheapest", share: 0.28 } },
+  // Ids are what the log stores, so they stay put; only the copy moved. "Suberin
+  // Bloom" and "Phloem Surge" were the last two things in here a player had to
+  // look up, which is the same fault the ladder's old names had.
+  { id: "suberin", name: "Skinning Over", weight: 14, effect: { kind: "break", scope: "cheapest", share: 0.28 } },
   { id: "callus", name: "Callus Growth", weight: 10, effect: { kind: "break", scope: "best", share: 0.26 } },
   {
     id: "sprout_pressure",
@@ -104,7 +107,7 @@ const IMMUNE_KINDS: readonly WeatherKind[] = [
     weight: 8,
     effect: { kind: "break", scope: "all", share: 0.2, soil: 0.06 },
   },
-  { id: "phloem", name: "Phloem Surge", weight: 20, effect: { kind: "soil", loss: 0.09 } },
+  { id: "phloem", name: "Ring Surge", weight: 20, effect: { kind: "soil", loss: 0.09 } },
   { id: "necrosis", name: "Necrosis", weight: 13, effect: { kind: "soil", loss: 0.17 } },
   { id: "starch_flood", name: "Starch Flood", weight: 9, effect: { kind: "soil", loss: 0.13 } },
   // Not "Dormancy": that's what the Dormancy Rig and Induced Dormancy are for,

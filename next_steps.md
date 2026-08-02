@@ -340,3 +340,117 @@ The actual levers are damping that multiplier (a log or a soft cap) or using
 `seedsFor`'s unused `vigor` parameter as a damper below 1. Neither is a
 spreadsheet decision: both change how every generation after the first one
 feels, and the first one is the only one this whole document was about.
+
+---
+
+# The inside, rethought as a descent
+
+The inside farm got a second scene of its own and it still didn't work. This is
+what was wrong and what replaced it. Nothing in the economy moved: rates, costs,
+growth, gates and all three wrinkles are pinned to the slots they were in, so
+every cadence guard in `solo.test.ts` holds untouched. This was a fiction and a
+picture problem, and it's fixed as one.
+
+## What was wrong
+
+Shot side by side against the outside farm, the diagnosis is five things that
+are all the same thing — **the inside had no depth model.**
+
+1. **Five stripes is a cross-section, not a place.** Outside is sky → hills →
+   field → fence → yard, a perspective the eye already has, so the bands read as
+   distance without being told. Roof / hollow / wall / floor / yard is a list of
+   surfaces with 1px rules between them.
+2. **Every colour in `insideScene.ts` was one hue.** Ochre at 30-40° top to
+   bottom. Outside, blue → green → brown separates the bands before any line has
+   to. On an empty inside farm the floor and the yard were the same colour with
+   a rule between them and you could not tell where the room stopped.
+3. **The vessel network was a wiring diagram.** A branch per tier, right-angle
+   routed, pale pink, no shadow, no ground contact, crossing everything. The
+   outside keeps the same promise with *one* machine on *one* edge.
+4. **Nothing was a familiar noun.** Starch Seam, Phloem Vein, Periderm Gate.
+   When art has to draw an abstraction it draws an abstract shape, which is how
+   five Periderm Gates became five white rectangles in a row like a gallery wall.
+5. **Progression was a taxonomy.** Eight surfaces of a tuber is a list. Nothing
+   at rung 8 had been earned by rung 1, and each tier was pinned to a band
+   height, so buying more meant denser overlap rather than the place growing.
+
+The founding call — "a second scene, not a variant of the first" — was right
+about the **nouns** and wrong about the **grammar**. The rewrite keeps every noun
+new and takes the grammar back.
+
+## The shaft
+
+You are cutting down through a potato and the picture is the cutaway. Lid at the
+top, sump with your mound at the bottom, strata in between in order, shallow
+above deep — the one arrangement where "further down the shop" and "further down
+the screen" are the same direction.
+
+**Four zones of two rungs** (`ZONES`), each with its own material and light:
+
+| Zone | Rungs | Reads as |
+|---|---|---|
+| hollow | Bruise Bed, Sprouting Eye | pale gold, where the fold left you |
+| cortex | Starch Quarry, Taproot Well | ochre, dense, quarried |
+| ring | Ring Main, Chorus | magenta-shadowed: an organ, not food |
+| core | Hollow Heart, Second Potato | near black-red |
+
+That vertical colour run is the depth model, and it's the single biggest reason
+this reads as somewhere. **Anything that puts all four zones back inside one hue
+family reinstates the original bug.**
+
+Three things fell out of the shape and each solved a separate old problem:
+
+- **Undug flesh.** Every zone gets the same share of the shaft *whether or not
+  the ones below it are open*, and the remainder is solid uncut potato. The
+  first pass divided the shaft among the open zones and a one-purchase farm got
+  one stratum stretched over the whole screen — the same empty-band failure the
+  old hollow had, in a different colour. Sized this way an early farm is a thin
+  working over a great mass it hasn't touched, which is the correct read in both
+  directions.
+- **Gravity is the conveyor.** One bore down the left, where the outside's
+  elevator runs, widening with everything you own. Crop rolls along its own bench
+  to the lip, tips in, falls the height of the picture and slides into the mound.
+  Three phases, one path, every rung. That deleted `RUNNER`, `Ride`, `Loose`,
+  `Porter`, `runnerWidth`, `pathLength` and `pointAlong` — most of the old file
+  and all of its visual noise.
+- **Three more reveals.** Buying into a new zone breaks the floor open. The
+  endgame previously had no beats after the fold at all; you bought eight rungs
+  and the picture got denser. Same restore rule as the fold — a save that opens
+  already deep renders deep without animating.
+
+## Things learned by looking, which is the only way any of it was learned
+
+Each of these typechecked and passed every test before the screenshot said no.
+
+- **A single stratum given the whole shaft is a wall.** See above. This is the
+  same lesson the old file recorded about the hollow and it was re-learned
+  anyway, which is worth knowing: *empty band* is the failure mode this scene
+  reaches for whenever a share gets divided among what's open rather than fixed.
+- **Every band is empty except its bottom twelve pixels** if both rungs stand on
+  the band's floor. Benching the shallower rung half-way up fills the stratum,
+  separates the two tiers by more than position, and is what a worked seam looks
+  like anyway.
+- **Horizontal terracing on the worked face reads as wooden panelling**, in every
+  band at once. Vertical tool marks read as cut. Same information, opposite
+  result.
+- **`territory` alone doesn't stop sprites colliding.** It's a *how much ground*
+  number and knows nothing about how many things are standing on it, so a
+  well-bought tier whose ground hadn't caught up drew six sprites into four
+  sprites' worth of ledge and came out as rubble. Spread is now floored at the
+  units' own width.
+- **A pale dome at eleven pixels is a bread roll.** The Starch Quarry was six of
+  them along a ledge and read as a bakery counter. Flat top plus a step plus a
+  dark undercut reads as something somebody cut. Nothing in nature is terraced,
+  which is the whole trick.
+- **Two nearly-black strata pool into one mass** unless the cut between them is
+  loud. The floor lines are three pixels with a bright lip, and that lip is what
+  keeps four bands reading as four at the bottom of the picture.
+
+## Still open
+
+- The Taproot Well's sprite is inherited from the Mantle Tap and at eleven pixels
+  it reads as a figure in an orange hat more than as a wellhead. It's the last
+  rung whose art wasn't drawn to its new noun.
+- The Chorus is still just its own silhouette in a wash. Standing on the ring's
+  floor works, but nothing about the ring says *why* the other yous are there.
+- The seed economy, unchanged and still the real open problem — see above.

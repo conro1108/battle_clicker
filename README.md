@@ -6,9 +6,9 @@ something is always working against you.
 The app opens onto your farm. There are two modes; the second one lives behind
 the House door in the bottom nav, along with the dev tooling:
 
-- **Your farm** — the persistent single-player homestead. Sixteen tiers, fifty
+- **Your farm** — the persistent single-player homestead. Twenty tiers, sixty
   upgrades, a prestige loop, and weather that damages your land permanently
-  whether or not the tab is open. Four of those tiers and the last of that
+  whether or not the tab is open. Eight of those tiers and the last of that
   weather only exist after the Convergence, which is below. This is where
   development is going.
 - **Versus a bot** — the original head-to-head prototype from
@@ -53,10 +53,17 @@ npm test
   counts the hoard out like money — three denominations side by side, each worth
   ten of the one to its right — and bundles ten of one into one of the next as
   you cross it, in either direction. After the Convergence you're standing in a
-  second scene (`insideScene.ts`) with its own bands and its own idiom for the
-  same two promises: each tier works a surface of the tuber and takes over more
-  of it as you buy more, and instead of a pipeline the flesh grows you a vessel
-  per tier that carries the crop to the same mound.
+  second scene (`insideScene.ts`), which is a **descent**: you're cutting down
+  through a potato and the picture is the cutaway, lid at the top and your mound
+  in the sump at the bottom. The eight inside rungs sit in four strata of two,
+  shallow above deep, so buying down the shop is buying down the shaft — and
+  opening a new stratum breaks the floor. Colour carries the depth, running from
+  pale gold at the lid through ochre to a near-black core; below your deepest
+  working is solid potato you haven't touched, which is what makes an early
+  inside farm read as having a long way to go. There's no pipeline and no
+  vessels: one bore down the left, where the outside's elevator runs, and
+  everything you cut rolls to the lip, falls the height of the picture and slides
+  into the mound. Gravity is the conveyor.
 
 Commands go through `applyCommand(state, cmd, now)`, which is the single
 authority for mutations. The local runtime calls it directly; swapping that for
@@ -88,14 +95,15 @@ exposure. They're worth roughly 3x the harvest of never building them — the
 difference between weather as a 6% running cost and weather as a 65% one.
 
 **The Convergence** fires when you buy The Ur-Potato. The horizon closes: the
-sky band stops being sky and becomes the inside of the tuber, and four more
-rungs arrive that farm the parts of it you're now standing in. The flag survives
+sky band stops being sky and becomes the inside of the tuber, and a ladder of
+eight more rungs arrives that cuts down through the thing you're now standing
+in, a stratum at a time. The flag survives
 prestige, so later generations start in the folded world and re-climb to the
 tiers that only exist inside it.
 
 Handing the farm down is the one way back out: the Seeds panel offers the next
 generation either world, defaulting to the one you're standing in. Under the sky
-means no Inversion Furrow and no Mantle Tap, weather instead of the tuber's
+means no Bruise Bed and no Hollow Heart, weather instead of the tuber's
 immune response, and the Convergence to reach all over again. "It happens to you
 once" is the right instinct for a first run and the wrong one for a save you keep
 for weeks — the alternative is the best ten seconds in the game locked behind a

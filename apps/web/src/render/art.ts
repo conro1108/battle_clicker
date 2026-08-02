@@ -826,27 +826,36 @@ export const SINGULARITY: Art = {
 // the one thing up there that isn't soft.
 
 /**
- * Hangs off the ceiling with its coulters biting *upward*. Everything about a
- * plough says which way is down, so the one drawn upside down is the cheapest
- * way to say the ground is over your head now.
+ * A press standing over a pad of flesh it has bruised.
+ *
+ * The shallowest rung, and the one that has to teach the whole inside farm's
+ * verb in one sprite: you damage it on purpose, it swells to seal the damage,
+ * you crop the swelling. So the machine is the plainest thing on the ladder — a
+ * ram and a plate, no more — and the interesting half of the sprite is the two
+ * rows under it, where the dark of the bruise is fringed by the pale of what
+ * grew back. Read those two rows and you've read the tier.
+ *
+ * It used to be a plough hung upside down off the ceiling, which was the right
+ * sprite for a scene that no longer exists.
  */
-export const FURROW: Art = {
+export const BRUISE_BED: Art = {
   rows: [
-    "m..m..m..m..m",
-    "m..m..m..m..m",
-    "kkkkkkkkkkkkk",
-    "kbbbbbbbbbbbk",
-    "kbggbbbbggbbk",
-    "kkkkkkkkkkkkk",
-    ".kk.......kk.",
-    "kwwk.....kwwk",
-    ".kk.......kk.",
+    "..kkkkkkk..",
+    "..kmmmmmk..",
+    "...kmmmk...",
+    "...kmmmk...",
+    "kkkkkkkkkkk",
+    "kmmmmmmmmmk",
+    "kkkkkkkkkkk",
+    ".kdddddddk.",
+    "kdswwwwwsdk",
+    ".kkkkkkkkk.",
   ],
-  palette: { k: K, b: "#3f6b74", g: "#ffe08a", m: "#cfd6dc", w: "#4d4148" },
+  palette: { k: K, m: "#8d959d", d: "#5e3040", s: "#a8657a", w: "#e6dcc0" },
 };
 
 /** A wellhead with the shaft running off the bottom of the world. */
-export const MANTLE: Art = {
+export const TAPROOT_WELL: Art = {
   rows: [
     "...kkkk...",
     "..kmmmmk..",
@@ -922,21 +931,29 @@ export const EYE: Art = {
 };
 
 /**
- * A cut face of starch with the plant working it. Wide and low: it's a quarry,
- * so it's the one thing down here that reads as ground rather than as a
- * structure standing on it.
+ * Two benches cut into a face of starch, with the undercut under them.
+ *
+ * It was a dome for a while and at eleven pixels a pale dome is a bread roll —
+ * six of them along a ledge looked like a bakery counter, which is the "what is
+ * that and what does it do" failure the whole inside ladder was rewritten to
+ * fix. The fix is the *flat top and the step*: nothing in nature is terraced, so
+ * a terrace is read as something somebody cut, and the dark undercut along the
+ * bottom is what stops it floating.
+ *
+ * Wide and low, so it's the one thing down here that reads as ground rather
+ * than as a structure standing on it.
  */
-export const STARCH_SEAM: Art = {
+export const STARCH_FACE: Art = {
   rows: [
-    "......kkkkkk....",
-    "....kkwwwwwwkk..",
-    "..kkwwwwwwwwwwk.",
-    ".kwwwwwwwwwwwwwk",
-    "kwwsswwwwwsswwwk",
-    "kwwwwwwwwwwwwwwk",
-    "kwwwwkkkkwwwwwwk",
-    "kwwwwkddkwwwwwwk",
-    "kkkkkkddkkkkkkkk",
+    "...kkkkkkkkk.",
+    "...kwwwwwwwk.",
+    "...kwsswwwwk.",
+    "kkkkkwwwwwwk.",
+    "kwwwwwwwwwwk.",
+    "kwsswwwwwwwk.",
+    "kwwwwwwwwwwk.",
+    "kdddddddddddk",
+    "kkkkkkkkkkkkk",
   ],
   palette: { k: K, w: "#e6dcc0", s: "#f7f1dc", d: "#2c1d14" },
 };
@@ -946,7 +963,7 @@ export const STARCH_SEAM: Art = {
  * potato's own plumbing, which is why it's the only rung drawn in a colour that
  * isn't in any other sprite on the farm.
  */
-export const PHLOEM_VEIN: Art = {
+export const RING_MAIN: Art = {
   rows: [
     "..kvvk....",
     "..kvvk....",
@@ -966,27 +983,30 @@ export const PHLOEM_VEIN: Art = {
 };
 
 /**
- * A door cut in the inside of the skin, propped open. What you can see through
- * it is more flesh, which is the joke and the reason the opening is drawn in the
- * ceiling's own ochre rather than as darkness.
+ * A cavity opened at the core, propped so it can't close again.
+ *
+ * The previous rung in this slot was a door — a neat outlined rectangle, and
+ * five of them stood in a row across the wall like paintings hung in a gallery.
+ * Nothing rectangular survives down here for that reason: the opening is ragged
+ * on every edge, the only straight lines in the sprite are the two stull legs
+ * holding it, and what's inside it is drawn as darkness rather than as more
+ * ochre. A hollow heart is a hole. It should look like one.
  */
-export const PERIDERM_GATE: Art = {
+export const HOLLOW_HEART: Art = {
   rows: [
-    "kkkkkkkkkkkkkk",
-    "kddddddddddddk",
-    "kdkkkkkkkkkkdk",
-    "kdkffffffffkdk",
-    "kdkfffllfffkdk",
-    "kdkfflllfffkdk",
-    "kdkffllffffkdk",
-    "kdkfffffffkkdk",
-    "kdkffffffffkdk",
-    "kdkffffffffkdk",
-    "kdkkkkkkkkkkdk",
-    "kddddddddddddk",
-    "kkkkkkkkkkkkkk",
+    "...kkkkkk...",
+    ".kkfllllfkk.",
+    ".kflnnnnlfk.",
+    "kflnnnnnnlfk",
+    "kflnsnnnnlfk",
+    "kflnnnnsnlfk",
+    "kflnnnnnnlfk",
+    ".kflnnnnlfk.",
+    ".kkfllllfkk.",
+    "...kkkkkk...",
+    "...k....k...",
   ],
-  palette: { k: K, d: "#6b4630", f: "#c9a05c", l: "#ecd9a6" },
+  palette: { k: K, f: "#8a4a52", l: "#c98b6a", n: "#2a1520", s: "#e8c39c" },
 };
 
 /** The last rung, hanging where the sun was. It has eyes. */
@@ -1544,27 +1564,25 @@ const SINGULARITY_4: Art = {
   palette: { p: "#e0c04a", v: "#a8792c", n: "#120c1c", y: "#fff0b8" },
 };
 
-/** Second Pass: two gangs and six coulters. It takes the ceiling twice. */
-const FURROW_4: Art = {
+/** It Stops Minding: the bed has stopped darkening and just swells, twice over. */
+const BRUISE_BED_4: Art = {
   rows: [
-    "m..m..m..m..m",
-    "m..m..m..m..m",
-    "kkkkkkkkkkkkk",
-    "kbbbbbbbbbbbk",
-    "kbggbbbbggbbk",
-    "kkkkkkkkkkkkk",
-    "kbbbbbbbbbbbk",
-    "kbggbbbbggbbk",
-    "kkkkkkkkkkkkk",
-    ".kk.kk.kk.kk.",
-    "kwwkwwkwwkwwk",
-    ".kk.kk.kk.kk.",
+    "..kkkkkkk..",
+    "..kmmmmmk..",
+    "...kmmmk...",
+    "kkkkkkkkkkk",
+    "kmmmmmmmmmk",
+    "kkkkkkkkkkk",
+    ".kdwwwwwdk.",
+    "kdwwwwwwwdk",
+    "kdwwwwwwwdk",
+    ".kkkkkkkkk.",
   ],
-  palette: { k: K, b: "#7a5ac0", g: "#ffd166", m: "#e2e8ee", w: "#4d4148" },
+  palette: { k: K, m: "#e2e8ee", d: "#a8657a", w: "#fff4c0" },
 };
 
 /** Core Breach: a derrick over the wellhead, and it's venting flame. */
-const MANTLE_4: Art = {
+const TAPROOT_WELL_4: Art = {
   rows: [
     "....gg....",
     "...gkkg...",
@@ -1635,25 +1653,24 @@ const EYE_4: Art = {
 };
 
 /** The Seam Goes Down: the cut face has become a shaft with a headframe. */
-const STARCH_SEAM_4: Art = {
+const STARCH_FACE_4: Art = {
   rows: [
-    "......kmmk......",
-    ".....kmmmmk.....",
-    "....km.mm.mk....",
-    "...km..mm..mk...",
-    "..kkkkkmmkkkkk..",
-    ".kwwwwkmmkwwwwk.",
-    "kwwsswwmmwwsswwk",
-    "kwwwwwwmmwwwwwwk",
-    "kwwwwkkmmkkwwwwk",
-    "kwwwwkdmmdkwwwwk",
-    "kkkkkkdmmdkkkkkk",
+    "....kmmmmk...",
+    "....kmssmk...",
+    "...kkmmmmkk..",
+    "...kwwwwwwk..",
+    "kkkkkwwwwwwk.",
+    "kwwwwwwsswwk.",
+    "kwsswwwwwwwk.",
+    "kwwwwwwwwwwk.",
+    "kdddddddddddk",
+    "kkkkkkkkkkkkk",
   ],
   palette: { k: K, w: "#f4ecd0", s: "#ffffff", d: "#2c1d14", m: "#e2e8ee" },
 };
 
 /** The Whole Circulation: three clamps on a vein that has split to feed them. */
-const PHLOEM_VEIN_4: Art = {
+const RING_MAIN_4: Art = {
   rows: [
     "..kvvk....",
     ".kkvvkk...",
@@ -1673,24 +1690,22 @@ const PHLOEM_VEIN_4: Art = {
   palette: { k: K, v: "#c48ac0", m: "#e2e8ee", s: "#8d959d", g: "#ffd166" },
 };
 
-/** The Skin Stops Closing: the door is gone and the hole is lit from outside. */
-const PERIDERM_GATE_4: Art = {
+/** It Was Always Hollow: the cavity has stopped being dark. Something in it is lit. */
+const HOLLOW_HEART_4: Art = {
   rows: [
-    "kkkkkkkkkkkkkk",
-    "kmmmmmmmmmmmmk",
-    "kmkkkkkkkkkkmk",
-    "kmklllllllllmk",
-    "kmklloooollkmk",
-    "kmkloooooolkmk",
-    "kmkloooooolkmk",
-    "kmkloooooolkmk",
-    "kmklloooollkmk",
-    "kmklllllllllmk",
-    "kmkkkkkkkkkkmk",
-    "kmmmmmmmmmmmmk",
-    "kkkkkkkkkkkkkk",
+    "...kkkkkk...",
+    ".kkflllofkk.",
+    ".kflonnolfk.",
+    "kflonoonolfk",
+    "kflonoooolfk",
+    "kfloooooolfk",
+    "kflonoooolfk",
+    ".kflonoolfk.",
+    ".kkfollofkk.",
+    "...kkkkkk...",
+    "...k....k...",
   ],
-  palette: { k: K, m: "#e2e8ee", l: "#ecd9a6", o: "#fff4c0" },
+  palette: { k: K, f: "#a8657a", l: "#e8c39c", n: "#2a1520", o: "#ffd166" },
 };
 
 /** It's Awake: the eyes opened, and it has started to sprout. */
@@ -1767,17 +1782,17 @@ export const PRODUCER_MARKS = {
     repaint(SINGULARITY, { p: "#e0c04a", v: "#a8792c", n: "#120c1c" }),
     SINGULARITY_4,
   ],
-  furrow: [
-    FURROW,
-    repaint(FURROW, { b: "#4f8f7a", g: "#b6f2fb" }),
-    repaint(FURROW, { b: "#7a5ac0", g: "#ffd166", m: "#e2e8ee" }),
-    FURROW_4,
+  bruise: [
+    BRUISE_BED,
+    repaint(BRUISE_BED, { b: "#4f8f7a", g: "#b6f2fb" }),
+    repaint(BRUISE_BED, { b: "#7a5ac0", g: "#ffd166", m: "#e2e8ee" }),
+    BRUISE_BED_4,
   ],
-  mantle: [
-    MANTLE,
-    repaint(MANTLE, { g: "#ff7a4a", h: "#7a4a24" }),
-    repaint(MANTLE, { g: "#ffe08a", m: "#cfd6dc", h: "#8a5a2c" }),
-    MANTLE_4,
+  well: [
+    TAPROOT_WELL,
+    repaint(TAPROOT_WELL, { g: "#ff7a4a", h: "#7a4a24" }),
+    repaint(TAPROOT_WELL, { g: "#ffe08a", m: "#cfd6dc", h: "#8a5a2c" }),
+    TAPROOT_WELL_4,
   ],
   chorus: [
     CHORUS_FIGURE,
@@ -1791,23 +1806,23 @@ export const PRODUCER_MARKS = {
     repaint(EYE, { i: "#c94a2c", h: "#c08a3c", w: "#fff0c8" }),
     EYE_4,
   ],
-  starch: [
-    STARCH_SEAM,
-    repaint(STARCH_SEAM, { s: "#ffffff", w: "#efe6cc" }),
-    repaint(STARCH_SEAM, { s: "#d8f0f8", w: "#f4ecd0", m: "#cfd6dc" }),
-    STARCH_SEAM_4,
+  quarry: [
+    STARCH_FACE,
+    repaint(STARCH_FACE, { s: "#ffffff", w: "#efe6cc" }),
+    repaint(STARCH_FACE, { s: "#d8f0f8", w: "#f4ecd0", m: "#cfd6dc" }),
+    STARCH_FACE_4,
   ],
-  vein: [
-    PHLOEM_VEIN,
-    repaint(PHLOEM_VEIN, { v: "#a86ea2", g: "#f0c6ec" }),
-    repaint(PHLOEM_VEIN, { v: "#c48ac0", g: "#ffd166", m: "#cfd6dc" }),
-    PHLOEM_VEIN_4,
+  ring: [
+    RING_MAIN,
+    repaint(RING_MAIN, { v: "#a86ea2", g: "#f0c6ec" }),
+    repaint(RING_MAIN, { v: "#c48ac0", g: "#ffd166", m: "#cfd6dc" }),
+    RING_MAIN_4,
   ],
-  skin: [
-    PERIDERM_GATE,
-    repaint(PERIDERM_GATE, { f: "#d8b070", l: "#f7e8c0" }),
-    repaint(PERIDERM_GATE, { d: "#8d959d", f: "#e2b077", l: "#fff4c0" }),
-    PERIDERM_GATE_4,
+  heart: [
+    HOLLOW_HEART,
+    repaint(HOLLOW_HEART, { f: "#d8b070", l: "#f7e8c0" }),
+    repaint(HOLLOW_HEART, { d: "#8d959d", f: "#e2b077", l: "#fff4c0" }),
+    HOLLOW_HEART_4,
   ],
   second: [
     SECOND_POTATO,

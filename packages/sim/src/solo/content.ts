@@ -36,13 +36,13 @@ export type SoloProducerId =
   | "reactor"
   | "orbital"
   | "singularity"
-  | "furrow"
+  | "bruise"
   | "eyes"
-  | "starch"
-  | "mantle"
-  | "vein"
+  | "quarry"
+  | "well"
+  | "ring"
   | "chorus"
-  | "skin"
+  | "heart"
   | "second";
 
 export interface SoloProducer {
@@ -248,18 +248,49 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
   // The first one is deliberately affordable more or less on arrival. Walking
   // into a new world and being able to buy the bottom of its shop is the point:
   // it's a place you start over in, not a wing of the old farm.
+  //
+  // **The ladder is a descent, and that was a rewrite.** It used to be eight
+  // surfaces of a tuber — a ceiling, a wall, a floor, a skin — which is a
+  // taxonomy and not a progression: nothing at rung 8 had been earned by rung 1,
+  // and the names were the ones a botanist uses rather than things a player can
+  // picture. Now each rung is further in than the one above it, through four
+  // zones of two: the hollow you arrived in, the cortex, the vascular ring, and
+  // the core. That buys three things at once — the shop reads as going somewhere,
+  // `insideScene` gets a depth to draw instead of five stripes of the same ochre,
+  // and buying into a new zone is a small reveal, which the endgame had none of
+  // after the fold.
+  //
+  // Rates, costs, growth and the three wrinkles did not move. They're pinned to
+  // their slots, so every cadence guard in `solo.test.ts` holds untouched and
+  // this is a fiction change, not an economy one. What *did* have to move is the
+  // justification for each wrinkle, since all three were argued from the old
+  // geography — see each one below.
   {
-    id: "furrow",
-    name: "Inversion Furrow",
-    blurb: "Ploughs the ceiling. Whatever falls, falls up now, which helps.",
-    hurt: "caved",
-    mend: "Re-plough",
+    id: "bruise",
+    name: "Bruise Bed",
+    blurb: "Press it until it darkens and it swells to seal itself. Crop the swelling.",
+    hurt: "split",
+    mend: "Dress",
     baseRate: 15_000_000_000,
     baseCost: P.of(750_000_000_000_000),
     growth: 1.19,
     world: "inside",
     // The one thing at the top of the ladder that feeds back into the land
     // half, which otherwise caps at four buildings and stops mattering.
+    //
+    // The old name for this slot was the Inversion Furrow and the mitigation was
+    // argued from "weather falls up in here", which the descent kills — there's
+    // no ceiling to plough any more. A bruise is the better carrier anyway,
+    // because the calming and the production are the same act rather than two
+    // facts about one row: you press the flesh, it swells to seal the damage,
+    // you crop the swelling, and a tuber busy sealing itself is a tuber
+    // spending less on noticing you. That's the immune response mitigated by
+    // the thing that feeds you.
+    //
+    // Not "Callus Bed", which is what this was for an hour: `LANDS` already has
+    // a Callus Beds and a Scar Tissue, and a producer sharing a word with a
+    // building it sits two panels away from is the kind of collision that only
+    // reads as a bug.
     calmPerUnit: 0.004,
   },
   {
@@ -274,9 +305,9 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     world: "inside",
   },
   {
-    id: "starch",
-    name: "Starch Seam",
-    blurb: "A pale reef of the stuff, quarried by the tonne.",
+    id: "quarry",
+    name: "Starch Quarry",
+    blurb: "Past the hollow it goes solid. Cut a face into it and work back.",
     hurt: "collapsed",
     mend: "Shore up",
     baseRate: 120_000_000_000,
@@ -285,21 +316,28 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     world: "inside",
   },
   {
-    id: "mantle",
-    name: "Mantle Tap",
-    blurb: "A shaft into the deep flesh. It goes further than you'd like.",
-    hurt: "clotted",
+    id: "well",
+    name: "Taproot Well",
+    blurb: "Sunk through the cortex. It fills from the field you left.",
+    hurt: "run dry",
     mend: "Re-bore",
     baseRate: 340_000_000_000,
     baseCost: P.of(40_000_000_000_000_000),
     growth: 1.19,
     world: "inside",
+    // Soil scaling used to be justified by "the deep flesh is made of the dirt",
+    // which asked the player to take the geology on faith. A well is the same
+    // mechanic with the reason drawn on it: it fills from above, and above is
+    // the farm you left standing in its own soil. Let that ground go and the
+    // wells come up short, which is what puts the dirt back on the table at the
+    // top of the ladder.
     soilScaled: true,
   },
   {
-    id: "vein",
-    name: "Phloem Vein",
-    blurb: "Tap the plumbing and it feeds you instead. It doesn't seem to mind.",
+    id: "ring",
+    // Named for its zone, and not "Sap Main" — `LANDS` owns Sap Reclamation.
+    name: "Ring Main",
+    blurb: "Under the cortex it's all plumbing. Clamp one and it feeds you instead.",
     hurt: "clamped",
     mend: "Unclamp",
     baseRate: 960_000_000_000,
@@ -310,7 +348,7 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
   {
     id: "chorus",
     name: "Chorus",
-    blurb: "The other yous, still working. You can hear them.",
+    blurb: "The other yous, still working. Down here you can hear them.",
     hurt: "silenced",
     mend: "Call back",
     baseRate: 2_700_000_000_000,
@@ -320,11 +358,11 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     generationScaled: true,
   },
   {
-    id: "skin",
-    name: "Periderm Gate",
-    blurb: "A door cut in the inside of the skin. It looks out on more flesh.",
-    hurt: "scarred over",
-    mend: "Cut open",
+    id: "heart",
+    name: "Hollow Heart",
+    blurb: "Every big one has a cavity at the middle. Something has to fill it.",
+    hurt: "closed up",
+    mend: "Open out",
     baseRate: 7_700_000_000_000,
     baseCost: P.of(2_100_000_000_000_000_000),
     growth: 1.19,
@@ -333,8 +371,8 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
   {
     id: "second",
     name: "Second Potato",
-    blurb: "Hangs where the sun was. Nobody has asked what's inside it.",
-    hurt: "bruised",
+    blurb: "Growing in the cavity. Nobody has asked what's inside it.",
+    hurt: "gone soft",
     mend: "Tend",
     baseRate: 22_000_000_000_000,
     baseCost: P.of(8_000_000_000_000_000_000),
@@ -428,13 +466,13 @@ function tierUpgrades(): SoloUpgrade[] {
     reactor: ["Magnetic Confinement", "Tritium Blanket", "Ignition"],
     orbital: ["Solar Sails", "Second Ring", "Lagrange Station"],
     singularity: ["Closed Timelike Furrow", "Retroactive Yield", "Event Horizon Lease"],
-    furrow: ["Reversed Gravity", "Ceiling Yield", "Second Pass"],
+    bruise: ["Deeper Press", "It Swells Faster", "It Stops Minding"],
     eyes: ["Wider Aperture", "Lidless", "It Sees the Whole Field"],
-    starch: ["Longwall Cut", "Deep Adit", "The Seam Goes Down"],
-    mantle: ["Deep Core Sampling", "Geothermal Assist", "Core Breach"],
-    vein: ["Wider Bore", "Reverse Flow", "The Whole Circulation"],
+    quarry: ["Longwall Cut", "Deep Adit", "The Face Goes Down"],
+    well: ["Deeper Bore", "Field Drainage", "It Never Runs Dry"],
+    ring: ["Wider Bore", "Reverse Flow", "The Whole Circulation"],
     chorus: ["Perfect Unison", "Every Generation", "All At Once"],
-    skin: ["Held Open", "Second Door", "The Skin Stops Closing"],
+    heart: ["Widen the Cavity", "Hollowed Through", "It Was Always Hollow"],
     second: ["Seed Stock", "It's Started", "It's Awake"],
   };
   const out: SoloUpgrade[] = [];
@@ -622,19 +660,19 @@ const GLOBAL_UPGRADES: SoloUpgrade[] = [
   },
   {
     id: "ceiling_rights",
-    name: "Ceiling Tenancy",
-    blurb: "The roof is yours to work too. Everything produces x2.",
-    cost: fleetCost("furrow", 25, 5),
+    name: "Right of Way Down",
+    blurb: "Nothing between you and the middle of it. Everything produces x2.",
+    cost: fleetCost("bruise", 25, 5),
     effect: { kind: "global_mult", factor: 2 },
-    requires: { producer: "furrow", count: 25 },
+    requires: { producer: "bruise", count: 25 },
   },
   {
     id: "mineral_rights",
     name: "Mineral Rights",
-    blurb: "Whatever's down there was always yours. Everything produces x2.",
-    cost: fleetCost("mantle", 25, 9),
+    blurb: "Whatever's further down was always yours. Everything produces x2.",
+    cost: fleetCost("well", 25, 9),
     effect: { kind: "global_mult", factor: 2 },
-    requires: { producer: "mantle", count: 25 },
+    requires: { producer: "well", count: 25 },
   },
   {
     id: "unbroken_line",

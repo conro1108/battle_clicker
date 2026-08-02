@@ -185,7 +185,7 @@ export function GrowPanel({
   }
 
   // One shop per world. The outside farm keeps its ladder and keeps earning
-  // while you're inside, but you can't buy a Mantle Tap for a wheat field or a
+  // while you're inside, but you can't buy a Taproot Well for a wheat field or a
   // Combine Harvester for a room made of flesh — so the shop is the shop of the
   // place you're standing in, and warping is how you change it.
   const ladder = solo.producersIn(farm.world);
@@ -215,7 +215,7 @@ export function GrowPanel({
           const n = qty === "max" ? Math.max(1, solo.affordableCount(farm, prod.id, budget)) : qty;
           const cost = solo.producerCost(farm, prod.id, n);
           // What it would actually add to the farm as it stands, tired soil and
-          // all — the Mantle Tap's rate moves with the dirt, so a clean-rate
+          // all — the Taproot Well's rate moves with the dirt, so a clean-rate
           // quote would be advertising a machine you can't currently buy.
           const each = solo.producerRateEach(farm, prod.id);
           const broken = solo.brokenCount(farm, prod.id);
@@ -462,7 +462,7 @@ export function LegacyPanel({
           <p className="hint">
             You can hand down the sky as well. Stay inside and the next generation starts under the
             ceiling, with the tiers that farm it already in the shop. Go back out and the horizon
-            opens — no Inversion Furrow, no Mantle Tap, weather instead of the tuber, and the
+            opens — no Bruise Bed, no Taproot Well, weather instead of the tuber, and the
             Convergence to reach all over again.
           </p>
           <div className="choices halves">

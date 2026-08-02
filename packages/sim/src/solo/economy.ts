@@ -64,7 +64,7 @@ export function producerMultiplier(f: FarmState, id: SoloProducerId): number {
 }
 
 /**
- * The extra factor of soil the Mantle Tap gets, and that nothing else does.
+ * The extra factor of soil the Taproot Well gets, and that nothing else does.
  *
  * Kept out of `producerMultiplier` on purpose: that function is what
  * `cleanRate` and `repairCost` are quoted against, and both of them mean "with
@@ -132,10 +132,10 @@ export function brokenRate(f: FarmState): Rate {
  * right would actually give back.
  *
  * Not `rate * (1 - soil)`. That's only the same thing for producers the soil
- * multiplies once; the Mantle Tap's rate scales with soil *as well as* being
+ * multiplies once; the Taproot Well's rate scales with soil *as well as* being
  * multiplied by it, so what it loses is `1 - soil²`, and the short version
  * understates it threefold at half health. This is the number the "Restore the
- * soil" row advertises, and the Mantle Tap exists to make that row a decision.
+ * soil" row advertises, and the Taproot Well exists to make that row a decision.
  */
 export function soilLossRate(f: FarmState): Rate {
   let lost = 0;
@@ -178,7 +178,7 @@ export function mitigation(f: FarmState, role: LandRole): number {
     through *= Math.pow(1 - 0.08, perkLevel(f, "deep_roots"));
   }
   if (role === "frequency") {
-    // Inversion Furrows, on the same diminishing shape as a building and under
+    // Bruise Beds, on the same diminishing shape as a building and under
     // the same clamp — two hundred of them must not zero the weather.
     for (const prod of SOLO_PRODUCERS) {
       if (!prod.calmPerUnit) continue;
@@ -196,7 +196,7 @@ export function mitigation(f: FarmState, role: LandRole): number {
 // The tiers, buildings and perks above the fold don't exist until the world has
 // folded. That's enforced here rather than only in the shop, because the sim is
 // the authority on what a farm can be — a hand-edited save shouldn't be able to
-// buy a Mantle Tap into a farm with a sky.
+// buy a Taproot Well into a farm with a sky.
 
 export function isProducerAvailable(f: FarmState, id: SoloProducerId): boolean {
   return f.converged || SOLO_PRODUCER_BY_ID[id].world === "outside";

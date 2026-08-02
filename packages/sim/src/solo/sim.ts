@@ -80,7 +80,7 @@ export const FARMER_STYLES: Record<string, FarmerStyle> = {
 /**
  * Production per potato spent — the only ranking that matters when buying.
  * Measured as what the unit would actually add to the farm's rate as it stands,
- * not its clean rate, so the Mantle Tap gets discounted for tired soil the way
+ * not its clean rate, so the Taproot Well gets discounted for tired soil the way
  * a buyer looking at the shop would discount it.
  */
 function valueOf(f: FarmState, id: SoloProducerId): number {

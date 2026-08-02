@@ -616,30 +616,30 @@ describe("the Convergence", () => {
   });
 
   /**
-   * The Inversion Furrow is the only thing at the top of the ladder that feeds
+   * The Bruise Bed is the only thing at the top of the ladder that feeds
    * back into the land half, and the reason that half currently stops mattering
    * at four buildings. It has to stack the way a building does — diminishing,
    * under the clamp — or two hundred of them turn the weather off.
    */
   it("lets the ceiling calm the weather without ever stopping it", () => {
     const base: FarmState = { ...developedFarm("calm"), converged: true };
-    const few: FarmState = { ...base, producers: { ...base.producers, furrow: 10 } };
-    const many: FarmState = { ...base, producers: { ...base.producers, furrow: 400 } };
+    const few: FarmState = { ...base, producers: { ...base.producers, bruise: 10 } };
+    const many: FarmState = { ...base, producers: { ...base.producers, bruise: 400 } };
     expect(mitigation(few, "frequency")).toBeGreaterThan(mitigation(base, "frequency"));
     expect(mitigation(many, "frequency")).toBeGreaterThan(mitigation(few, "frequency"));
     expect(mitigation(many, "frequency")).toBeLessThanOrEqual(MAX_MITIGATION);
   });
 
   /**
-   * The Mantle Tap's wrinkle: its rate scales *with* soil as well as being
+   * The Taproot Well's wrinkle: its rate scales *with* soil as well as being
    * multiplied by it, so letting the dirt go costs it twice and restoring the
    * dirt is a live decision at the top instead of a rounding error.
    */
-  it("makes the Mantle Tap care about the soil twice over", () => {
+  it("makes the Taproot Well care about the soil twice over", () => {
     const base: FarmState = {
-      ...developedFarm("mantle"),
+      ...developedFarm("well"),
       converged: true,
-      producers: { mantle: 10 },
+      producers: { well: 10 },
       broken: {},
     };
     const half: FarmState = { ...base, soil: 0.5 };
@@ -855,10 +855,10 @@ describe("the back room", () => {
     const kitted: FarmState = {
       ...folded,
       world: "inside",
-      producers: { ...folded.producers, furrow: 12 },
-      broken: { ...folded.broken, furrow: 3 },
+      producers: { ...folded.producers, bruise: 12 },
+      broken: { ...folded.broken, bruise: 3 },
       land: { ...folded.land, callus_beds: 1 },
-      upgrades: [...folded.upgrades, CONVERGENCE_UPGRADE, "furrow_x2a", "ceiling_rights"],
+      upgrades: [...folded.upgrades, CONVERGENCE_UPGRADE, "bruise_x2a", "ceiling_rights"],
     };
     const opened = (applyFarmCommand(kitted, { type: "dev_fold", converged: false }, kitted.checkpointAt) as {
       farm: FarmState;
@@ -866,14 +866,14 @@ describe("the back room", () => {
 
     expect(opened.converged).toBe(false);
     expect(opened.world).toBe("outside");
-    expect(opened.producers.furrow).toBeUndefined();
-    expect(opened.broken.furrow).toBeUndefined();
+    expect(opened.producers.bruise).toBeUndefined();
+    expect(opened.broken.bruise).toBeUndefined();
     // The Ur-Potato goes back on the shelf, which is the whole point: the fold
     // only animates on a real purchase, so this is the state to watch it from.
     expect(opened.upgrades).not.toContain(CONVERGENCE_UPGRADE);
-    expect(opened.upgrades).not.toContain("furrow_x2a");
+    expect(opened.upgrades).not.toContain("bruise_x2a");
     expect(opened.land.callus_beds).toBeUndefined();
-    // `ceiling_rights` is gated on the Inversion Furrow, so it goes with it —
+    // `ceiling_rights` is gated on the Bruise Bed, so it goes with it —
     // whereas an upgrade gated on an outside rung is untouched.
     expect(opened.upgrades).not.toContain("ceiling_rights");
     // The yard and the run's harvest are somebody's afternoon. Left alone.
@@ -890,6 +890,43 @@ describe("saving", () => {
     const farm = developedFarm("save");
     const restored = parseFarm(serializeFarm(farm, farm.checkpointAt));
     expect(restored).toEqual(farm);
+  });
+
+  /**
+   * The inside ladder was renamed when it stopped being eight surfaces of a
+   * tuber and became a descent. Nothing about the economy moved, so a save from
+   * before that is a good farm wearing the wrong keys — and a converged player
+   * losing their entire endgame to a fiction change is the one outcome that
+   * makes the rename not worth doing.
+   */
+  it("carries a pre-descent save across the inside ladder's rename", () => {
+    const farm = createFarm({ seed: "old", startedAt: ms(0) });
+    const stale = {
+      ...farm,
+      converged: true,
+      world: "inside",
+      producers: { plot: 40, furrow: 12, mantle: 7, skin: 3 },
+      broken: { furrow: 4, vein: 1 },
+      upgrades: ["plot_x2a", "furrow_x2a", "starch_x2b", "ur_potato", "ceiling_rights"],
+    };
+    const back = parseFarm(JSON.stringify({ version: 1, savedAt: 0, farm: stale }))!;
+
+    // Slot for slot, counts intact, and nothing left under an id the shop no
+    // longer sells.
+    expect(back.producers).toEqual({ plot: 40, bruise: 12, well: 7, heart: 3 });
+    expect(back.broken).toEqual({ bruise: 4, ring: 1 });
+    // Tier upgrades rename with their producer; the globals kept their ids.
+    expect(back.upgrades).toEqual([
+      "plot_x2a",
+      "bruise_x2a",
+      "quarry_x2b",
+      "ur_potato",
+      "ceiling_rights",
+    ]);
+    // Every id it came back with is one the content table still knows.
+    const known = new Set(SOLO_PRODUCERS.map((p) => p.id as string));
+    for (const id of Object.keys(back.producers)) expect(known).toContain(id);
+    for (const id of back.upgrades) expect(SOLO_UPGRADE_BY_ID[id]).toBeTruthy();
   });
 
   it("refuses junk rather than throwing", () => {
