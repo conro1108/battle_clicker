@@ -580,6 +580,12 @@ export function hoistRun(y: number, target: number, dist: number): { y: number; 
   return { y: y + Math.sign(d) * dist, arrived: false };
 }
 
+/**
+ * How far down the cage sprite its floor is — the row a rider stands on, and so
+ * the row that has to line up with a bench.
+ */
+const CAGE_FLOOR = 9;
+
 const HOIST_SPEED = 19;
 const HOIST_REST_S = 1.3;
 const HOIST_SEATS = 2;
@@ -1649,7 +1655,10 @@ export class InsideScene {
             break;
           }
           c.x = BORE_X + cage.lane + 1 + cage.riders.indexOf(c) * 4;
-          c.y = cage.y + 9;
+          // Standing on the cage floor, which is the level the cage is at — so
+          // a rider arriving at a bench is already at the height they'll walk
+          // off onto, rather than dropping nine pixels as they step out.
+          c.y = cage.y;
           const to = c.bound;
           if (to && Math.abs(cage.y - this.postY(bands, to)) <= 3 && t < cage.restUntil) {
             cage.riders = cage.riders.filter((r) => r !== c);
@@ -1689,12 +1698,17 @@ export class InsideScene {
    * **Two benches is the floor for a cage existing at all.** With one, there is
    * nowhere to be carried *to*, and a cage that can only ever return you to where
    * you're standing is the same nothing-to-nothing trip as running an empty shaft.
+   *
+   * **The benches are the whole of where a cage can be**, and nothing here is
+   * clamped to anything else. It used to be held off the sump by a dozen pixels,
+   * which sounds harmless and wasn't: the lower bench of the deepest open band
+   * sits a pixel off that band's bottom, so it was *below* the limit. A cage
+   * carrying anyone down there parked on the limit instead, never got within the
+   * three pixels a rider needs to step off, and sat at the bottom of the shaft
+   * with its passenger for the rest of the run. One fare each and the shaft was
+   * moored.
    */
   private stepHoist(bands: Band[], t: number): void {
-    const top = bands[0]!.bottom + 4;
-    const floor = bands[bands.length - 1]!.top - 12;
-    if (floor <= top) return;
-
     const posts = this.posts(bands);
     const want =
       posts.length < 2 ? 0 : hoistCount(this.boreRight() - BORE_X, this.crew.length);
@@ -1708,7 +1722,7 @@ export class InsideScene {
       // already on the rope.
       const i = this.hoists.length;
       this.hoists.push({
-        y: clamp(this.postY(bands, posts[i % posts.length]!), top, floor),
+        y: this.postY(bands, posts[i % posts.length]!),
         restUntil: 0,
         riders: [],
         errand: null,
@@ -1732,10 +1746,10 @@ export class InsideScene {
       if (to === null) {
         // Idle, so it sits at a level rather than halfway between two. A cage
         // stopped in the middle of the shaft reads as broken down.
-        h.y = hoistRun(h.y, clamp(this.nearestPost(posts, bands, h.y), top, floor), HOIST_SPEED * this.dt).y;
+        h.y = hoistRun(h.y, this.nearestPost(posts, bands, h.y), HOIST_SPEED * this.dt).y;
         continue;
       }
-      const step = hoistRun(h.y, clamp(this.postY(bands, to), top, floor), HOIST_SPEED * this.dt);
+      const step = hoistRun(h.y, this.postY(bands, to), HOIST_SPEED * this.dt);
       h.y = step.y;
       // Doors, at both ends of the trip: long enough for whoever called it to get
       // on, and for whoever's aboard to get off.
@@ -1785,7 +1799,11 @@ export class InsideScene {
     const top = bands[0]!.bottom;
     for (const h of this.hoists) {
       const x = BORE_X + 1 + h.lane;
-      const y = Math.round(h.y);
+      // `h.y` is the level it's stopped at, so the cage hangs *above* it and its
+      // floor lands on the bench — which is what makes stepping off a step
+      // across rather than a drop, and keeps a cage at the deepest bench out of
+      // the sump.
+      const y = Math.round(h.y) - CAGE_FLOOR;
       // The rope, all the way up to the head. It's what says the cage is hung
       // rather than hovering, and with several running it's also the only thing
       // telling you which box is on which line.
