@@ -252,11 +252,10 @@ const FOLD_SWAP_MS = Math.round(CONVERGE_MS * 0.3);
  * bought eight of them can feel that it's nearly something without being told
  * what.
  *
- * Past the fold it goes back to the first line, because by then it isn't
- * counting down to anything — it's just the farm agreeing with you.
+ * Only ever asked before the fold — see the effect that reads it. Past the fold
+ * there is nothing left to hint at.
  */
 function omenNudge(farm: solo.FarmState): string {
-  if (farm.converged) return "Keep going";
   const p = solo.convergenceProgress(farm);
   if (p >= 1) return "It's in reach";
   if (p >= 0.7) return "Nearly";
@@ -488,6 +487,10 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
   // bought, not when a potato is grown.
   const nudge = useRef("");
   nudge.current = omenNudge(farm);
+  // Same, and for the same reason: whether the horizon has closed is a fact
+  // about the farm, not a reason to re-run this.
+  const folded = useRef(farm.converged);
+  folded.current = farm.converged;
   // Seeded from the first render, so opening a save that already has a sky full
   // of them is not eleven purchases' worth of news.
   const hadSingularities = useRef(singularities);
@@ -496,6 +499,13 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
     hadSingularities.current = singularities;
     // Prestige takes them all away again, and that isn't an omen.
     if (singularities <= had) return;
+    // And past the fold it isn't an omen either. The whole point of the cut is
+    // that something is coming — it's a warning, worded a little closer each
+    // time, about a horizon you haven't reached yet. Once you've been inside the
+    // potato it has already arrived, and a Singularity bought from the farm
+    // upstairs is just the next rung on the ladder: darkening the screen to
+    // promise it again is the game teasing you with something you own.
+    if (folded.current) return;
     const full = had === 0;
     setOmen({ kind: full ? "full" : "flash", n: omenId.current++, text: nudge.current });
     // The purchase happens in the shop, and the point of the omen is the sky.
