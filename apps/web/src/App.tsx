@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+} from "react";
 import {
   P,
   clickYield,
@@ -209,14 +217,29 @@ const OMEN_FLASH_MS = 1900;
  * So this one isn't a veil over the farm. It's the trip: the dark, then the
  * tuber itself out there in it, then the fall into it and through the skin, and
  * then the flesh — and the farm handed back underneath a ceiling that is only
- * just starting to come down. `FOLD_HOLD_MS` in farmScene.ts is what keeps the
- * canvas from spending that arrival while this is over the top of it, and wants
- * to stay a beat short of this number.
+ * just starting to come down. `FOLD_SWAP_MS` is what keeps the canvas from
+ * spending that arrival while this is over the top of it.
  *
  * Timings live in the `converge-*` keyframes, all of them on this duration with
  * percentage offsets, so the beats can't drift out of step with each other.
  */
 const CONVERGE_MS = 9600;
+
+/**
+ * When, during the trip, the canvas underneath swaps to the inside farm.
+ *
+ * The purchase moves you inside on the frame it lands, and the trip that earns
+ * that takes nine seconds — so for the first of them the screen was showing the
+ * place the cut hadn't taken you to yet, right through the fade-up. The arrival
+ * before the journey, and the one reveal in the game that can only happen once.
+ *
+ * So the canvas holds the farm you're standing on, and swaps here. `converge-veil`
+ * is fully opaque from 8% of the duration to 92%, and this sits comfortably
+ * inside that: the sky is the last thing you see going into the dark, the flesh
+ * is the first thing you see coming out of it, and the cut in between is the
+ * only account of how you got from one to the other.
+ */
+const FOLD_SWAP_MS = Math.round(CONVERGE_MS * 0.3);
 
 /**
  * What the short one says, which is the same thing the long one said and then
@@ -491,8 +514,15 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
   // render so a folded save reopens as a folded farm rather than as the best
   // ten seconds of the run, spent on a page load.
   const [converging, setConverging] = useState(false);
+  // Which farm the canvas is drawing, while the trip is holding it back. Null
+  // once the swap has happened, and null forever after — from then on the world
+  // you're standing in is the world you can see.
+  const [heldWorld, setHeldWorld] = useState<solo.World | null>(null);
   const wasConverged = useRef(farm.converged);
-  useEffect(() => {
+  // A layout effect rather than an ordinary one: the purchase and the world it
+  // moves you to land in the same render, so anything that waits until after the
+  // paint has already let a frame of the inside farm through.
+  useLayoutEffect(() => {
     const was = wasConverged.current;
     wasConverged.current = farm.converged;
     if (!farm.converged || was) return;
@@ -500,8 +530,14 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
     // on screen for it.
     setSheet(null);
     setConverging(true);
+    // Stay out under the sky until the dark has taken the screen.
+    setHeldWorld("outside");
+    const swap = setTimeout(() => setHeldWorld(null), FOLD_SWAP_MS);
     const id = setTimeout(() => setConverging(false), CONVERGE_MS);
-    return () => clearTimeout(id);
+    return () => {
+      clearTimeout(id);
+      clearTimeout(swap);
+    };
   }, [farm.converged]);
 
   // And the small version of the same rule, for every purchase that puts
@@ -630,7 +666,13 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
 
       {error && <div className="error">{error}</div>}
 
-      <FarmScene ref={sceneRef} farm={farm} hoard={budget} onDig={onDig}>
+      <FarmScene
+        ref={sceneRef}
+        farm={farm}
+        hoard={budget}
+        world={heldWorld ?? farm.world}
+        onDig={onDig}
+      >
         {/* The whole scene digs, which is not something a farm looks like it
             does. One sentence, once, and then never again. */}
         {!taught && <p className="tap-hint">Tap the farm to dig</p>}

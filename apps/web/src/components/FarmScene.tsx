@@ -85,9 +85,20 @@ export const FarmScene = forwardRef<FarmSceneHandle, {
   hoard: Potatoes;
   /** Given where on the buffer you tapped, when the dig came from the scene. */
   onDig: (at?: { x: number; y: number }) => void;
+  /**
+   * Which farm to draw, when that isn't the one the sim says you're standing on.
+   *
+   * Exactly one caller and exactly one reason: the Convergence moves you inside
+   * the instant it's bought, and the trip that takes you there is nine seconds
+   * long. Without this the canvas is already inside the potato while the cut is
+   * still fading up over the sky — the arrival, before the journey. So the
+   * screen keeps the farm you're standing on until the dark has the screen, and
+   * the swap happens where nobody can see it.
+   */
+  world?: solo.World;
   /** Anything that belongs over the farm rather than beside it. */
   children?: ReactNode;
-}>(function FarmScene({ farm, hoard, onDig, children }, ref) {
+}>(function FarmScene({ farm, hoard, onDig, world = farm.world, children }, ref) {
   const view = useMemo<FarmView>(() => {
     const working: FarmView["working"] = {};
     const broken: FarmView["broken"] = {};
@@ -96,7 +107,7 @@ export const FarmScene = forwardRef<FarmSceneHandle, {
     // that's the whole arrangement after the fold — but it's producing somewhere
     // you can't see from here, and drawing an Bruise Bed over a wheat
     // field would say the opposite.
-    for (const prod of solo.producersIn(farm.world)) {
+    for (const prod of solo.producersIn(world)) {
       const owned = farm.producers[prod.id] ?? 0;
       const dead = solo.brokenCount(farm, prod.id);
       if (owned - dead > 0) working[prod.id] = owned - dead;
@@ -119,14 +130,14 @@ export const FarmScene = forwardRef<FarmSceneHandle, {
       looming: farm.converged ? 0 : solo.convergenceProgress(farm),
       generation: farm.generation,
     };
-  }, [farm, hoard]);
+  }, [farm, hoard, world]);
 
   return (
     <div className="stage">
       <SceneCanvas
         ref={ref}
         view={view}
-        world={farm.world}
+        world={world}
         onPointerDown={(e) => {
           e.preventDefault();
           // Into buffer pixels, so the potato comes up under your finger
