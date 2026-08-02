@@ -1029,6 +1029,75 @@ export const SECOND_POTATO: Art = {
   palette: { k: K, p: "#c98b4b", l: "#e2b077", d: "#7a4a24" },
 };
 
+/**
+ * One of the shaft crew.
+ *
+ * The outside farm has farmhands walking crop down to the yard, and losing them
+ * is most of why the inside read as an abandoned place with machinery still
+ * running in it. This is the farmhand's silhouette again — same build, same
+ * eleven pixels — but kitted for underground: a hard hat instead of a straw one,
+ * and a lamp on the front of it, which is the only reason they're visible at all
+ * against a core stratum that's nearly black.
+ *
+ * The lamp is the whole sprite, really. At this size a figure in the dark is a
+ * smudge; a figure with one bright pixel at head height is a person.
+ */
+export const SHAFT_CREW: Art = {
+  rows: [
+    "..ttt..",
+    ".tltttt",
+    "..fff..",
+    "..fef..",
+    "..fff..",
+    ".bbbbb.",
+    "bbbbbbb",
+    ".bbbbb.",
+    ".b...b.",
+    ".v...v.",
+    ".k...k.",
+  ],
+  palette: { k: K, t: "#d8892c", l: "#fff4c0", f: "#e8bb8e", e: K, b: "#6a5c7a", v: "#4d4148" },
+};
+
+/** The same figure with both arms up: on the ladder, or swinging at a face. */
+export const SHAFT_CREW_UP: Art = {
+  rows: [
+    "b.ttt.b",
+    "btltttb",
+    "b.fff.b",
+    "b.fef.b",
+    ".bfffb.",
+    ".bbbbb.",
+    ".bbbbb.",
+    ".bbbbb.",
+    ".b...b.",
+    ".v...v.",
+    ".k...k.",
+  ],
+  palette: { k: K, t: "#d8892c", l: "#fff4c0", f: "#e8bb8e", e: K, b: "#6a5c7a", v: "#4d4148" },
+};
+
+/**
+ * The hoist cage, empty. Crew are blitted into it rather than being part of the
+ * sprite, because how many are riding is the interesting part.
+ */
+export const HOIST_CAGE: Art = {
+  rows: [
+    "....m....",
+    "..kkmkk..",
+    "kkkkkkkkk",
+    "kdddddddk",
+    "kd.....dk",
+    "kd.....dk",
+    "kd.....dk",
+    "kd.....dk",
+    "kdddddddk",
+    "kkkkkkkkk",
+    "..k...k..",
+  ],
+  palette: { k: "#b8c0c8", m: "#5b4f58", d: "#3a2a30" },
+};
+
 // ---------------------------------------------------------------------------
 // Marks — what a producer looks like once you've bought its upgrades
 // ---------------------------------------------------------------------------
@@ -1633,23 +1702,22 @@ const CHORUS_FIGURE_4: Art = {
   },
 };
 
-/** It Sees the Whole Field: the eye has grown a second pupil, and a sprout. */
-const EYE_4: Art = {
+/** They Live Down Here Now: two lamps, a full kit, and they've stopped looking up. */
+const PIT_HAND_4: Art = {
   rows: [
-    "..s.ss.s.s",
-    ".sksksks.s",
-    "..sksks...",
-    ".kkkkkkkk.",
-    "khhhhhhhhk",
-    "khwwwwwwhk",
-    "kwwinniwwk",
-    "kwwinniwwk",
-    "khwwwwwwhk",
-    "khhhhhhhhk",
-    ".kkkkkkkk.",
-    "..k....k..",
+    "..ttt..",
+    ".tlttl.",
+    "..fff..",
+    "..fef..",
+    ".bfffb.",
+    "bbbbbbb",
+    "bbbbbbb",
+    ".bbbbb.",
+    ".b...b.",
+    ".v...v.",
+    ".k...k.",
   ],
-  palette: { k: K, h: "#c08a3c", w: "#fff0c8", i: "#e0c04a", n: "#2a1c10", s: "#a8f07a" },
+  palette: { k: K, t: "#e0c04a", l: "#fff4c0", f: "#e8bb8e", e: K, b: "#7a5ac0", v: "#4d4148" },
 };
 
 /** The Seam Goes Down: the cut face has become a shaft with a headframe. */
@@ -1800,11 +1868,15 @@ export const PRODUCER_MARKS = {
     repaint(CHORUS_FIGURE, { b: "#c0a86a", t: "#d8c894", a: "#f4ecd0" }),
     CHORUS_FIGURE_4,
   ],
-  eyes: [
-    EYE,
-    repaint(EYE, { i: "#3f8f86", w: "#f2e3c8" }),
-    repaint(EYE, { i: "#c94a2c", h: "#c08a3c", w: "#fff0c8" }),
-    EYE_4,
+  // The one tier drawn as a person, which is why its marks recolour the kit
+  // rather than changing the shape: a hand who gets a better lamp and a better
+  // jacket is still visibly the same hand, and at eleven pixels a redrawn
+  // silhouette just reads as a different rung of worker.
+  pithand: [
+    SHAFT_CREW,
+    repaint(SHAFT_CREW, { t: "#4f8f7a", b: "#4a5c7a", l: "#b6f2fb" }),
+    repaint(SHAFT_CREW, { t: "#c9a24a", b: "#7a5ac0", l: "#fff0b8", v: "#5b4f58" }),
+    PIT_HAND_4,
   ],
   quarry: [
     STARCH_FACE,
@@ -1833,72 +1905,3 @@ export const PRODUCER_MARKS = {
 } as const satisfies Record<string, readonly [Art, Art, Art, Art]>;
 
 export type MarkedProducerId = keyof typeof PRODUCER_MARKS;
-
-/**
- * One of the shaft crew.
- *
- * The outside farm has farmhands walking crop down to the yard, and losing them
- * is most of why the inside read as an abandoned place with machinery still
- * running in it. This is the farmhand's silhouette again — same build, same
- * eleven pixels — but kitted for underground: a hard hat instead of a straw one,
- * and a lamp on the front of it, which is the only reason they're visible at all
- * against a core stratum that's nearly black.
- *
- * The lamp is the whole sprite, really. At this size a figure in the dark is a
- * smudge; a figure with one bright pixel at head height is a person.
- */
-export const SHAFT_CREW: Art = {
-  rows: [
-    "..ttt..",
-    ".tltttt",
-    "..fff..",
-    "..fef..",
-    "..fff..",
-    ".bbbbb.",
-    "bbbbbbb",
-    ".bbbbb.",
-    ".b...b.",
-    ".v...v.",
-    ".k...k.",
-  ],
-  palette: { k: K, t: "#d8892c", l: "#fff4c0", f: "#e8bb8e", e: K, b: "#6a5c7a", v: "#4d4148" },
-};
-
-/** The same figure with both arms up: on the ladder, or swinging at a face. */
-export const SHAFT_CREW_UP: Art = {
-  rows: [
-    "b.ttt.b",
-    "btltttb",
-    "b.fff.b",
-    "b.fef.b",
-    ".bfffb.",
-    ".bbbbb.",
-    ".bbbbb.",
-    ".bbbbb.",
-    ".b...b.",
-    ".v...v.",
-    ".k...k.",
-  ],
-  palette: { k: K, t: "#d8892c", l: "#fff4c0", f: "#e8bb8e", e: K, b: "#6a5c7a", v: "#4d4148" },
-};
-
-/**
- * The hoist cage, empty. Crew are blitted into it rather than being part of the
- * sprite, because how many are riding is the interesting part.
- */
-export const HOIST_CAGE: Art = {
-  rows: [
-    "....m....",
-    "..kkmkk..",
-    "kkkkkkkkk",
-    "kdddddddk",
-    "kd.....dk",
-    "kd.....dk",
-    "kd.....dk",
-    "kd.....dk",
-    "kdddddddk",
-    "kkkkkkkkk",
-    "..k...k..",
-  ],
-  palette: { k: "#b8c0c8", m: "#5b4f58", d: "#3a2a30" },
-};

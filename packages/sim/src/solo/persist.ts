@@ -98,6 +98,11 @@ const RENAMED: Record<string, string> = {
   mantle: "well",
   vein: "ring",
   skin: "heart",
+  // Rung 2 stopped being the Sprouting Eye and became the Pit Hand, when the
+  // inside turned out to have no people in it until three quarters of the way
+  // up the ladder. Same slot, same numbers — so anyone holding eyes is holding
+  // hands, and their upgrades come with them.
+  eyes: "pithand",
 };
 
 function renameKeys<T>(from: Record<string, T> | undefined): Record<string, T> {

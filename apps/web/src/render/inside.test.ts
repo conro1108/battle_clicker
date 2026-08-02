@@ -7,6 +7,7 @@ import {
   bandsFor,
   boreWidth,
   flow,
+  hoistCount,
   openZones,
   shownCount,
   territory,
@@ -34,7 +35,7 @@ describe("the ladder's depth", () => {
   it("opens a stratum for everything above the deepest thing you own", () => {
     expect(openZones({})).toBe(0);
     expect(openZones({ bruise: 1 })).toBe(1);
-    expect(openZones({ bruise: 40, eyes: 12 })).toBe(1);
+    expect(openZones({ bruise: 40, pithand: 12 })).toBe(1);
     expect(openZones({ bruise: 40, quarry: 1 })).toBe(2);
     expect(openZones({ second: 1 })).toBe(ZONES.length);
   });
@@ -153,6 +154,29 @@ describe("the bore", () => {
     // Everything you own stands to the right of the shaft. A bore that ate the
     // buffer would leave the ledges too narrow to spread a tier along.
     for (const n of [1, 50, 5000, 1e6]) expect(boreWidth(n)).toBeLessThan(SCENE_W / 4);
+  });
+});
+
+describe("the cages", () => {
+  it("always runs at least one, and never more than the bore has lanes for", () => {
+    for (let bore = 5; bore <= 40; bore++) {
+      const n = hoistCount(bore);
+      expect(n).toBeGreaterThanOrEqual(1);
+      expect(n).toBeLessThanOrEqual(3);
+      // Nine pixels a cage, and they have to leave the falling crop somewhere
+      // to go — a lane that overhangs the far wall of the shaft is a cage drawn
+      // on top of the stratum next to it.
+      expect((n - 1) * 9 + 9).toBeLessThanOrEqual(bore + 8);
+    }
+  });
+
+  it("adds cages as the shaft widens, never takes them away", () => {
+    let last = 0;
+    for (let bore = 5; bore <= 40; bore++) {
+      expect(hoistCount(bore)).toBeGreaterThanOrEqual(last);
+      last = hoistCount(bore);
+    }
+    expect(hoistCount(boreWidth(1))).toBeLessThan(hoistCount(boreWidth(5000)));
   });
 });
 

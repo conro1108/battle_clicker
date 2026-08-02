@@ -37,7 +37,7 @@ export type SoloProducerId =
   | "orbital"
   | "singularity"
   | "bruise"
-  | "eyes"
+  | "pithand"
   | "quarry"
   | "well"
   | "ring"
@@ -294,11 +294,23 @@ export const SOLO_PRODUCERS: readonly SoloProducer[] = [
     calmPerUnit: 0.004,
   },
   {
-    id: "eyes",
-    name: "Sprouting Eye",
-    blurb: "It was always going to grow. Nobody said out of what.",
-    hurt: "blinded",
-    mend: "Coax open",
+    id: "pithand",
+    name: "Pit Hand",
+    // The inside's Farmhand, and deliberately at the same height on the ladder:
+    // outside, rung 2 is the first people you hire, and it's most of what makes
+    // that farm feel worked rather than automated. The inside had no people
+    // until the Chorus at rung 6 — three quarters of the way up a ladder that
+    // takes days — so for almost the whole descent the place was machinery
+    // running in an empty building. Cheap and early is the whole point.
+    //
+    // What this cost is the Sprouting Eye, which held this slot and is now
+    // scenery rather than a purchase: the eyes still sprout out of the lid and
+    // the hollow's walls in `insideScene`, they're just not a thing you buy. It
+    // was the weakest rung as a *farm object* — the only one that was the potato
+    // growing rather than you working — which makes it the right one to spend.
+    blurb: "Someone has to be down here with you. They bring their own lamp.",
+    hurt: "trapped",
+    mend: "Dig out",
     baseRate: 42_000_000_000,
     baseCost: P.of(2_800_000_000_000_000),
     growth: 1.19,
@@ -467,7 +479,7 @@ function tierUpgrades(): SoloUpgrade[] {
     orbital: ["Solar Sails", "Second Ring", "Lagrange Station"],
     singularity: ["Closed Timelike Furrow", "Retroactive Yield", "Event Horizon Lease"],
     bruise: ["Deeper Press", "It Swells Faster", "It Stops Minding"],
-    eyes: ["Wider Aperture", "Lidless", "It Sees the Whole Field"],
+    pithand: ["Second Shift", "Danger Money", "They Live Down Here Now"],
     quarry: ["Longwall Cut", "Deep Adit", "The Face Goes Down"],
     well: ["Deeper Bore", "Field Drainage", "It Never Runs Dry"],
     ring: ["Wider Bore", "Reverse Flow", "The Whole Circulation"],

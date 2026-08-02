@@ -490,3 +490,37 @@ skin translucent over the crop came out grey.** A pale film at 60% over a dark
 sump desaturates to nothing, and a bank of grey blobs was *less* legible than the
 plain domes had been. Opaque skin first, crop dimmed on top of it — the read is
 the same and the colour survives.
+
+### The people became a rung
+
+The crew were ambient: their number scaled off everything you owned, which made
+them the one thing on the canvas answerable to nothing, in a scene whose whole
+argument is that everything you own does something you can see.
+
+**Rung 2 is the Pit Hand now** — the inside's Farmhand, at deliberately the same
+height on the ladder. Outside, rung 2 is the first people you hire and it's most
+of what makes that farm feel worked rather than automated; inside there were no
+people until the Chorus at rung 6, three quarters of the way up a ladder that
+takes days. So for almost the entire descent the place was machinery running in
+an empty building. Buying the rung now puts people in the shaft, they wear
+whichever mark the tier is on, and what they produce comes out of the figure you
+can watch rather than a slot on a shelf.
+
+**That cost the Sprouting Eye**, which held rung 2. It's scenery now rather than
+a purchase — the eyes still sprout out of the lid and the hollow's walls. It was
+the weakest rung as a *farm object*, the only one that was the potato growing
+rather than you working, which is what made it the one to spend. Saves migrate:
+anyone holding eyes is holding hands, upgrades included.
+
+Cost, rate, growth and every gate are unchanged, so this is still a fiction
+change and the cadence guards are untouched.
+
+### Several cages
+
+One to three, off the bore's width, which is off everything you own — so the
+shaft widening as you buy is also the shaft gaining traffic, and both readings of
+"this place is busier now" are the same number. `boreWidth`'s far end was pushed
+from 30 to 34 specifically so a finished ladder reaches three; two never felt
+like a working shaft. Crew board whichever cage is standing at their level with a
+seat free, rather than waiting for a particular one — nobody at a pit head does
+that.

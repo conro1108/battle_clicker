@@ -88,7 +88,6 @@ import {
   HOIST_CAGE,
   POTATO_SPRITE,
   PRODUCER_MARKS,
-  SHAFT_CREW,
   SHAFT_CREW_UP,
 } from "./art.js";
 import {
@@ -112,13 +111,13 @@ export { SCENE_W };
 
 type InsideId = Extract<
   solo.SoloProducerId,
-  "bruise" | "eyes" | "quarry" | "well" | "ring" | "chorus" | "heart" | "second"
+  "bruise" | "pithand" | "quarry" | "well" | "ring" | "chorus" | "heart" | "second"
 >;
 
 /** Ladder order, shallowest first, which is also top-of-screen first. */
 export const ORDER: InsideId[] = [
   "bruise",
-  "eyes",
+  "pithand",
   "quarry",
   "well",
   "ring",
@@ -160,7 +159,7 @@ export interface Zone {
 export const ZONES: readonly Zone[] = [
   {
     id: "hollow",
-    tiers: ["bruise", "eyes"],
+    tiers: ["bruise", "pithand"],
     lit: "#e8cf9a",
     flesh: "#d0b078",
     deep: "#a8814a",
@@ -228,7 +227,7 @@ export function openZones(working: Partial<Record<string, number>>): number {
 /** What a hundred-owned tier throws light in. Same rule the outside farm uses. */
 const PRIME_GLOW: Record<InsideId, string> = {
   bruise: "#ffd8e0",
-  eyes: "#a8f07a",
+  pithand: "#a8f07a",
   quarry: "#fff4e0",
   well: "#ff9a3c",
   ring: "#e0a8dc",
@@ -350,7 +349,7 @@ export function bandsFor(sh: number, openF: number): Band[] {
  * every other count that has to survive running into the hundreds.
  */
 export function boreWidth(total: number): number {
-  return Math.round(territory(total, 11, 30));
+  return Math.round(territory(total, 11, 34));
 }
 
 /** Where the bore's left edge sits. Under the mound, which is the point. */
@@ -375,7 +374,7 @@ export function shownCount(owned: number, cap: number, spread = 2.4): number {
 /** How many of each tier ever appear on its ledge, however many you own. */
 const CAP: Record<InsideId, number> = {
   bruise: 5,
-  eyes: 6,
+  pithand: 6,
   quarry: 5,
   well: 4,
   ring: 5,
@@ -523,7 +522,25 @@ interface Hoist {
   /** Scene-clock time it starts moving again, if it's stopped at a level. */
   restUntil: number;
   riders: Crew[];
+  /** Which lane of the bore it runs in, as an offset from `BORE_X`. */
+  lane: number;
 }
+
+/**
+ * How many cages the shaft runs.
+ *
+ * Off the bore's width, which is off everything you own — so the shaft widening
+ * as you buy is also the shaft gaining traffic, and the two readings of "this
+ * place is busier now" are the same number. Capped at three: a fourth has
+ * nowhere to run that isn't on top of the falling crop.
+ */
+export function hoistCount(bore: number): number {
+  return clamp(Math.floor((bore - 1) / 10), 1, 3);
+}
+
+/** Lane pitch. A cage is nine wide, so they overlap slightly and that's fine —
+ * cages in a shaft pass each other close, and the rope tells you which is which. */
+const HOIST_LANE = 9;
 
 const HOIST_SPEED = 19;
 const HOIST_REST_S = 1.3;
@@ -636,7 +653,7 @@ export class InsideScene {
   private puffs: Puff[] = [];
   private crop: Crop[] = [];
   private crew: Crew[] = [];
-  private hoist: Hoist = { y: 40, dir: 1, restUntil: 0, riders: [] };
+  private hoists: Hoist[] = [];
   /**
    * When each drawn unit last turned something up, keyed `id:index`.
    *
@@ -706,7 +723,7 @@ export class InsideScene {
     this.puffs = [];
     this.crop = [];
     this.crew = [];
-    this.hoist = { y: 40, dir: 1, restUntil: 0, riders: [] };
+    this.hoists = [];
     this.worked.clear();
     this.shown = Math.max(0, this.view.hoard);
   }
@@ -1180,6 +1197,10 @@ export class InsideScene {
     const ctx = this.ctx;
     const zone = ZONES[band.zone]!;
     zone.tiers.forEach((id, ti) => {
+      // The Pit Hands aren't drawn here: they *are* the crew, walking the whole
+      // shaft. Blitting a static row of them on their own bench as well would
+      // put the same rung on the screen twice, once alive and once not.
+      if (id === "pithand") return;
       const slots = this.slots(id, band);
       if (slots.length === 0) return;
       const art = artCanvas(this.mark(id));
@@ -1354,6 +1375,14 @@ export class InsideScene {
       ZONES[band.zone]!.tiers.forEach((id, ti) => {
         const n = this.working(id);
         if (n <= 0 || !this.chance(flow(n))) return;
+        // A Pit Hand turns crop up wherever they happen to be standing, which is
+        // the point of making the people a rung: what they produce comes out of
+        // the figure you can watch, not out of a slot on a shelf.
+        if (id === "pithand") {
+          const who = this.crew[Math.floor(Math.random() * this.crew.length)];
+          if (who && who.state === "work") this.cut(who.x + 2, who.y - 3, id);
+          return;
+        }
         const slots = this.slots(id, band);
         const pick = Math.floor(Math.random() * slots.length);
         const from = slots[pick];
@@ -1429,13 +1458,17 @@ export class InsideScene {
 
   // --- The crew and the hoist ------------------------------------------------
 
-  /** How many bodies a farm this size puts underground. Log, like everything. */
+  /**
+   * How many bodies are underground: exactly the Pit Hands you've bought.
+   *
+   * This used to scale off *everything* you owned, which made the crew ambient
+   * decoration answerable to nothing — the one thing on the canvas that didn't
+   * keep the scene's own promise that everything you own does something you can
+   * see. Now the people are a rung, and buying it puts people in the shaft.
+   */
   private crewSize(bands: Band[]): number {
-    const posts = bands.filter((b) => b.zone >= 0).length * 2;
-    if (posts === 0) return 0;
-    let total = 0;
-    for (const id of ORDER) total += this.owned(id);
-    return Math.max(1, Math.min(MAX_CREW, posts, shownCount(total, MAX_CREW, 1.5)));
+    if (bands.filter((b) => b.zone >= 0).length === 0) return 0;
+    return Math.min(MAX_CREW, shownCount(this.owned("pithand"), MAX_CREW, 1.7));
   }
 
   /** Which benches exist to stand on, as `(zone, first)` pairs. */
@@ -1466,7 +1499,7 @@ export class InsideScene {
     const posts = this.posts(bands);
     if (posts.length === 0) {
       this.crew = [];
-      this.hoist.riders = [];
+      for (const h of this.hoists) h.riders = [];
       return;
     }
     const want = this.crewSize(bands);
@@ -1549,23 +1582,30 @@ export class InsideScene {
           break;
         }
         case "wait": {
+          // Whichever cage happens to be standing at this level with a seat in
+          // it. Waiting for *your* cage would mean tracking which one you meant,
+          // and nobody at a pit head does that.
           const at = this.postY(bands, c.post);
-          if (
-            this.hoist.riders.length < HOIST_SEATS &&
-            Math.abs(this.hoist.y - at) <= 3 &&
-            t < this.hoist.restUntil
-          ) {
+          const cage = this.hoists.find(
+            (h) => h.riders.length < HOIST_SEATS && Math.abs(h.y - at) <= 3 && t < h.restUntil,
+          );
+          if (cage) {
             c.state = "ride";
-            this.hoist.riders.push(c);
+            cage.riders.push(c);
           }
           break;
         }
         case "ride": {
-          c.x = BORE_X + 1 + this.hoist.riders.indexOf(c) * 4;
-          c.y = this.hoist.y + 9;
+          const cage = this.hoists.find((h) => h.riders.includes(c));
+          if (!cage) {
+            c.state = "walk";
+            break;
+          }
+          c.x = BORE_X + cage.lane + 1 + cage.riders.indexOf(c) * 4;
+          c.y = cage.y + 9;
           const to = c.bound;
-          if (to && Math.abs(this.hoist.y - this.postY(bands, to)) <= 3 && t < this.hoist.restUntil) {
-            this.hoist.riders = this.hoist.riders.filter((r) => r !== c);
+          if (to && Math.abs(cage.y - this.postY(bands, to)) <= 3 && t < cage.restUntil) {
+            cage.riders = cage.riders.filter((r) => r !== c);
             c.post = to;
             c.bound = null;
             c.state = "walk";
@@ -1595,26 +1635,43 @@ export class InsideScene {
     const top = bands[0]!.bottom + 4;
     const floor = bands[bands.length - 1]!.top - 12;
     if (floor <= top) return;
-    if (t < this.hoist.restUntil) return;
 
-    this.hoist.y += this.hoist.dir * HOIST_SPEED * this.dt;
-    if (this.hoist.y >= floor) {
-      this.hoist.y = floor;
-      this.hoist.dir = -1;
-      this.hoist.restUntil = t + HOIST_REST_S;
-    } else if (this.hoist.y <= top) {
-      this.hoist.y = top;
-      this.hoist.dir = 1;
-      this.hoist.restUntil = t + HOIST_REST_S;
+    const want = hoistCount(this.boreRight() - BORE_X);
+    while (this.hoists.length > want) this.hoists.pop();
+    while (this.hoists.length < want) {
+      // Started spread down the shaft and pointed opposite ways, so a new cage
+      // isn't shadowing one that's already running.
+      const i = this.hoists.length;
+      this.hoists.push({
+        y: top + ((floor - top) * i) / Math.max(1, want),
+        dir: i % 2 === 0 ? 1 : -1,
+        restUntil: 0,
+        riders: [],
+        lane: i * HOIST_LANE,
+      });
     }
-    // Stop at every bench on the way past, whether or not anyone's waiting. A
-    // cage that only stops when it's needed reads as teleporting.
-    for (const post of this.posts(bands)) {
-      const at = this.postY(bands, post);
-      if (Math.abs(this.hoist.y - at) <= 2) {
-        this.hoist.y = at;
-        this.hoist.restUntil = t + HOIST_REST_S;
-        break;
+
+    const stops = this.posts(bands).map((p) => this.postY(bands, p));
+    for (const h of this.hoists) {
+      if (t < h.restUntil) continue;
+      h.y += h.dir * HOIST_SPEED * this.dt;
+      if (h.y >= floor) {
+        h.y = floor;
+        h.dir = -1;
+        h.restUntil = t + HOIST_REST_S;
+      } else if (h.y <= top) {
+        h.y = top;
+        h.dir = 1;
+        h.restUntil = t + HOIST_REST_S;
+      }
+      // Stop at every bench on the way past, whether or not anyone's waiting. A
+      // cage that only stops when it's needed reads as teleporting.
+      for (const at of stops) {
+        if (Math.abs(h.y - at) <= 2) {
+          h.y = at;
+          h.restUntil = t + HOIST_REST_S;
+          break;
+        }
       }
     }
   }
@@ -1622,16 +1679,20 @@ export class InsideScene {
   private drawHoist(bands: Band[]): void {
     const ctx = this.ctx;
     const cage = artCanvas(HOIST_CAGE);
-    const x = BORE_X + 1;
     const top = bands[0]!.bottom;
-    // The rope, all the way up to the head. It's what says the cage is hung
-    // rather than hovering.
-    ctx.fillStyle = rgba("#b8c0c8", 0.75);
-    ctx.fillRect(x + 4, top, 1, Math.max(0, Math.round(this.hoist.y) - top));
-    // Lit from inside, so a steel box in a black shaft is something you can find
-    // without hunting for it — same reason the crew carry lamps.
-    this.glow(x + 4, Math.round(this.hoist.y) + 6, 13, "#ffe6a0", 0.16);
-    ctx.drawImage(cage.canvas, x, Math.round(this.hoist.y));
+    for (const h of this.hoists) {
+      const x = BORE_X + 1 + h.lane;
+      const y = Math.round(h.y);
+      // The rope, all the way up to the head. It's what says the cage is hung
+      // rather than hovering, and with several running it's also the only thing
+      // telling you which box is on which line.
+      ctx.fillStyle = rgba("#b8c0c8", 0.75);
+      ctx.fillRect(x + 4, top, 1, Math.max(0, y - top));
+      // Lit from inside, so a steel box in a black shaft is something you can
+      // find without hunting for it — same reason the crew carry lamps.
+      this.glow(x + 4, y + 6, 13, "#ffe6a0", 0.16);
+      ctx.drawImage(cage.canvas, x, y);
+    }
   }
 
   private drawCrew(): void {
@@ -1641,7 +1702,11 @@ export class InsideScene {
       // about. Two poses is the whole animation budget at eleven pixels, and it's
       // enough as long as which one you see means something.
       const up = c.state === "ride" || c.state === "work";
-      const art = artCanvas(up ? SHAFT_CREW_UP : SHAFT_CREW);
+      // Walking crew wear whichever mark the Pit Hand tier is on, so buying its
+      // upgrades visibly re-kits the people. The arms-up pose is the one shared
+      // sprite: four more of it for four marks is a lot of char grids for a pose
+      // you see a third of the time.
+      const art = artCanvas(up ? SHAFT_CREW_UP : this.mark("pithand"));
       const bob = c.state === "walk" ? Math.round(Math.sin(this.clock * 7 + c.phase) * 0.5) : 0;
       const x = Math.round(c.x);
       const y = Math.round(c.y) - art.h + bob;

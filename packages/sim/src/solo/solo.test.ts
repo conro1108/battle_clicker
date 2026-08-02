@@ -689,7 +689,7 @@ describe("the two worlds", () => {
     // And a farm with rungs in both worlds is making what both of them make.
     const withBoth: FarmState = {
       ...folded(base),
-      producers: { ...base.producers, eyes: 3 },
+      producers: { ...base.producers, pithand: 3 },
     };
     expect(currentRate(withBoth)).toBeGreaterThan(outside);
     expect(currentRate({ ...withBoth, world: "outside" })).toBe(currentRate(withBoth));
@@ -746,7 +746,7 @@ describe("the two worlds", () => {
     // gated on the fold, not on where your feet are.
     const rich: FarmState = { ...there, potatoes: 1e30 as never };
     expect(
-      applyFarmCommand(rich, { type: "buy_producer", producer: "eyes", qty: 1 }, rich.checkpointAt).ok,
+      applyFarmCommand(rich, { type: "buy_producer", producer: "pithand", qty: 1 }, rich.checkpointAt).ok,
     ).toBe(true);
     // And going nowhere is refused rather than silently costing a command.
     expect(applyFarmCommand(there, { type: "warp", to: "outside" }, there.checkpointAt).ok).toBe(false);
@@ -905,20 +905,21 @@ describe("saving", () => {
       ...farm,
       converged: true,
       world: "inside",
-      producers: { plot: 40, furrow: 12, mantle: 7, skin: 3 },
+      producers: { plot: 40, furrow: 12, eyes: 9, mantle: 7, skin: 3 },
       broken: { furrow: 4, vein: 1 },
-      upgrades: ["plot_x2a", "furrow_x2a", "starch_x2b", "ur_potato", "ceiling_rights"],
+      upgrades: ["plot_x2a", "furrow_x2a", "eyes_x2c", "starch_x2b", "ur_potato", "ceiling_rights"],
     };
     const back = parseFarm(JSON.stringify({ version: 1, savedAt: 0, farm: stale }))!;
 
     // Slot for slot, counts intact, and nothing left under an id the shop no
     // longer sells.
-    expect(back.producers).toEqual({ plot: 40, bruise: 12, well: 7, heart: 3 });
+    expect(back.producers).toEqual({ plot: 40, bruise: 12, pithand: 9, well: 7, heart: 3 });
     expect(back.broken).toEqual({ bruise: 4, ring: 1 });
     // Tier upgrades rename with their producer; the globals kept their ids.
     expect(back.upgrades).toEqual([
       "plot_x2a",
       "bruise_x2a",
+      "pithand_x2c",
       "quarry_x2b",
       "ur_potato",
       "ceiling_rights",
