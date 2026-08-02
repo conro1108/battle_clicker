@@ -8,7 +8,7 @@ import {
   boreWidth,
   flow,
   hoistCount,
-  hoistStep,
+  hoistRun,
   openZones,
   shownCount,
   territory,
@@ -158,10 +158,13 @@ describe("the bore", () => {
   });
 });
 
+/** A full shaft crew, so the lane arithmetic is what's under test and not this. */
+const MAX_CREW_FOR_TEST = 9;
+
 describe("the cages", () => {
-  it("always runs at least one, and never more than the bore has lanes for", () => {
+  it("never hangs more than the bore has lanes for", () => {
     for (let bore = 5; bore <= 40; bore++) {
-      const n = hoistCount(bore);
+      const n = hoistCount(bore, MAX_CREW_FOR_TEST);
       expect(n).toBeGreaterThanOrEqual(1);
       expect(n).toBeLessThanOrEqual(3);
       // Nine pixels a cage, and they have to leave the falling crop somewhere
@@ -172,57 +175,61 @@ describe("the cages", () => {
   });
 
   /**
-   * The regression that made this file worth extending: the cages did not move.
-   *
-   * The stop test asked whether a cage was *near* a bench rather than whether it
-   * had *crossed* one, so a cage that had stopped sat exactly on the bench,
-   * advanced a third of a pixel when its rest expired, was still inside the
-   * threshold, snapped back and rested again. All three moored themselves at the
-   * first bench they reached. Nothing caught it — not the typechecker, not the
-   * screenshots, because a still of three cages parked at three benches looks
-   * exactly like a still of three cages working.
-   *
-   * So: walk one the length of the shaft, honouring every stop it asks for the
-   * way the scene does, and require that it actually gets somewhere.
+   * The complaint this replaced a patrol for: with nobody underground, a cage
+   * ran the shaft anyway — up and down between nothing and nothing, which is
+   * exactly what the first moment after the Ur-Potato looks like.
    */
-  it("works the whole shaft instead of mooring itself at the first bench", () => {
-    const top = 10;
-    const floor = 120;
-    const stops = [28, 47, 66, 85, 104];
-    let y = top;
-    let dir: 1 | -1 = 1;
-    const seen = new Set<number>();
-    let ends = 0;
-    // A frame's travel at 60fps, which is the scale the bug lived at: big enough
-    // to move, far smaller than the threshold it used to get caught by.
-    for (let i = 0; i < 20_000; i++) {
-      const step = hoistStep(y, dir, 0.32, top, floor, stops);
-      y = step.y;
-      if (step.dir !== dir) ends++;
-      dir = step.dir;
-      if (step.stopped) seen.add(Math.round(y));
-    }
-    // Every bench serviced, and both ends of the shaft reached more than once —
-    // it's running the length of it, not shuffling around one level.
-    for (const at of stops) expect(seen).toContain(at);
-    expect(ends).toBeGreaterThanOrEqual(4);
+  it("doesn't hang a cage in a shaft with nobody in it", () => {
+    expect(hoistCount(boreWidth(5000), 0)).toBe(0);
+    // And doesn't hang three for a crew of two, either.
+    expect(hoistCount(boreWidth(5000), 2)).toBe(1);
+    expect(hoistCount(boreWidth(5000), 9)).toBe(3);
   });
 
-  it("comes to rest exactly on a bench, so crew can step off onto it", () => {
-    const step = hoistStep(46, 1, 3, 10, 120, [47]);
-    expect(step).toEqual({ y: 47, dir: 1, stopped: true });
-    // ...and having stopped there, it can leave again. This is the whole bug.
-    expect(hoistStep(47, 1, 0.32, 10, 120, [47]).y).toBeGreaterThan(47);
-    expect(hoistStep(47, 1, 0.32, 10, 120, [47]).stopped).toBe(false);
+  /**
+   * The regression that made this file worth extending: the cages did not move.
+   *
+   * The old patrol's stop test asked whether a cage was *near* a bench rather
+   * than whether it had *crossed* one, so a cage that had stopped sat exactly on
+   * the bench, advanced a third of a pixel, was still inside the threshold,
+   * snapped back and rested again. All three moored themselves at the first
+   * bench they reached, and nothing caught it — a still of three cages parked at
+   * three benches looks exactly like a still of three cages working.
+   *
+   * So: run one from the top of the shaft to the bottom a frame at a time, and
+   * require that it gets there.
+   */
+  it("gets where it's called, a frame at a time", () => {
+    let y = 10;
+    let frames = 0;
+    // A frame's travel at 60fps, which is the scale the bug lived at: big enough
+    // to move, far smaller than any threshold it could get caught by.
+    while (frames < 20_000) {
+      const step = hoistRun(y, 104, 0.32);
+      y = step.y;
+      frames++;
+      if (step.arrived) break;
+    }
+    expect(y).toBe(104);
+    expect(frames).toBeLessThan(20_000);
+  });
+
+  it("lands exactly on the bench, so crew step off onto it and not into the wall", () => {
+    expect(hoistRun(46, 47, 3)).toEqual({ y: 47, arrived: true });
+    expect(hoistRun(47, 47, 0.32)).toEqual({ y: 47, arrived: true });
+    // Called the other way, it goes the other way.
+    expect(hoistRun(60, 47, 0.32).y).toBeLessThan(60);
   });
 
   it("adds cages as the shaft widens, never takes them away", () => {
     let last = 0;
     for (let bore = 5; bore <= 40; bore++) {
-      expect(hoistCount(bore)).toBeGreaterThanOrEqual(last);
-      last = hoistCount(bore);
+      expect(hoistCount(bore, MAX_CREW_FOR_TEST)).toBeGreaterThanOrEqual(last);
+      last = hoistCount(bore, MAX_CREW_FOR_TEST);
     }
-    expect(hoistCount(boreWidth(1))).toBeLessThan(hoistCount(boreWidth(5000)));
+    expect(hoistCount(boreWidth(1), MAX_CREW_FOR_TEST)).toBeLessThan(
+      hoistCount(boreWidth(5000), MAX_CREW_FOR_TEST),
+    );
   });
 });
 

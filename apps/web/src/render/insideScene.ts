@@ -509,19 +509,28 @@ const CREW_SPEED = 13;
 const MAX_CREW = 9;
 
 /**
- * The hoist: one cage on a rope, running the shaft and stopping at every bench.
+ * The hoist: a cage on a rope, fetching and carrying people between benches.
  *
  * Crop goes *down* by gravity and always will — that's the scene's spine. So the
  * cage carries the only thing that has any reason to go up, which is people, and
  * the two motions don't compete: potatoes fall past a cage climbing, which is
  * exactly the traffic a working shaft has.
+ *
+ * **It only moves when it has a reason to.** It used to patrol: top to bottom,
+ * bottom to top, pausing at every bench forever, whether or not there was a
+ * single body underground to carry. Which read as exactly what it was — a thing
+ * oscillating because the loop said to — and immediately after the Ur-Potato,
+ * with no benches and no crew yet, it was a box travelling between nothing and
+ * nothing. Now it fetches whoever is standing at the shaft head, takes them where
+ * they're going, and parks at the nearest bench until somebody else calls it.
  */
 interface Hoist {
   y: number;
-  dir: 1 | -1;
-  /** Scene-clock time it starts moving again, if it's stopped at a level. */
+  /** Scene-clock time the doors close again, if it's stopped at a level. */
   restUntil: number;
   riders: Crew[];
+  /** Who it's on its way to collect, if anyone. */
+  errand: Crew | null;
   /** Which lane of the bore it runs in, as an offset from `BORE_X`. */
   lane: number;
 }
@@ -529,13 +538,20 @@ interface Hoist {
 /**
  * How many cages the shaft runs.
  *
- * Off the bore's width, which is off everything you own — so the shaft widening
- * as you buy is also the shaft gaining traffic, and the two readings of "this
- * place is busier now" are the same number. Capped at three: a fourth has
- * nowhere to run that isn't on top of the falling crop.
+ * Two readings, and it takes the smaller. The bore's width is off everything you
+ * own, so a widening shaft is a shaft with room for more rope — but a cage is
+ * there to carry people, and hanging three of them for a crew of two is three
+ * boxes with nothing between them to do. So the crew caps it: no bodies down
+ * here, no cages at all, which is the state the farm is in for the first moments
+ * after the fold.
+ *
+ * Capped at three regardless: a fourth has nowhere to run that isn't on top of
+ * the falling crop.
  */
-export function hoistCount(bore: number): number {
-  return clamp(Math.floor((bore - 1) / 10), 1, 3);
+export function hoistCount(bore: number, crew: number): number {
+  if (crew <= 0) return 0;
+  const lanes = clamp(Math.floor((bore - 1) / 10), 1, 3);
+  return Math.min(lanes, Math.ceil(crew / 3));
 }
 
 /** Lane pitch. A cage is nine wide, so they overlap slightly and that's fine —
@@ -543,40 +559,25 @@ export function hoistCount(bore: number): number {
 const HOIST_LANE = 9;
 
 /**
- * Move one cage `dist` pixels along the shaft, reversing at the ends and pulling
- * up at any bench it passes through.
+ * Run one cage `dist` pixels towards where it's been called to, and say whether
+ * it got there.
  *
- * Pulled out of the class and made pure entirely so it can be tested, because
- * the bug it had was the worst kind: **the cages didn't move at all**, and
- * nothing caught it. The stop test used to ask whether the cage was *near* a
- * bench rather than whether it had *crossed* one, so a cage that had stopped sat
- * exactly on the bench, advanced a third of a pixel when its rest expired, was
- * still inside the threshold, snapped back and rested again. Every cage moored
- * itself at the first bench it reached and stayed there.
+ * Pure so it can be tested, because the motion has had the worst kind of bug in
+ * it once already: **the cages didn't move at all**, and nothing caught it. The
+ * old patrol asked whether a cage was *near* a bench rather than whether it had
+ * *crossed* one, so a cage that had stopped sat exactly on the bench, advanced a
+ * third of a pixel, was still inside the threshold, snapped back and rested
+ * again. It survived review and a screenshot pass because a still of three cages
+ * parked at three benches looks exactly like a still of three cages working.
  *
- * It survived review and a screenshot pass because a still of three cages parked
- * at three different benches looks exactly like a still of three cages working.
- * `inside.test.ts` now walks one the length of the shaft instead.
+ * Landing exactly on the target is the whole contract here: crew step on and off
+ * at a bench's own height, and a cage that stops a pixel short of one puts them
+ * in the wall.
  */
-export function hoistStep(
-  y: number,
-  dir: 1 | -1,
-  dist: number,
-  top: number,
-  floor: number,
-  stops: readonly number[],
-): { y: number; dir: 1 | -1; stopped: boolean } {
-  const was = y;
-  let next = y + dir * dist;
-  if (next >= floor) return { y: floor, dir: -1, stopped: true };
-  if (next <= top) return { y: top, dir: 1, stopped: true };
-  for (const at of stops) {
-    if ((was < at && next >= at) || (was > at && next <= at)) {
-      next = at;
-      return { y: next, dir, stopped: true };
-    }
-  }
-  return { y: next, dir, stopped: false };
+export function hoistRun(y: number, target: number, dist: number): { y: number; arrived: boolean } {
+  const d = target - y;
+  if (Math.abs(d) <= dist) return { y: target, arrived: true };
+  return { y: y + Math.sign(d) * dist, arrived: false };
 }
 
 const HOIST_SPEED = 19;
@@ -1619,6 +1620,15 @@ export class InsideScene {
           break;
         }
         case "wait": {
+          // Nothing on the rope to wait for — the crew shrank out from under the
+          // cages, or the bench they were going to stopped existing. Give up on
+          // the trip rather than stand at the head of the shaft forever.
+          if (this.hoists.length === 0) {
+            c.bound = null;
+            c.state = "walk";
+            c.tx = this.wanderTo(c, bands);
+            break;
+          }
           // Whichever cage happens to be standing at this level with a seat in
           // it. Waiting for *your* cage would mean tracking which one you meant,
           // and nobody at a pit head does that.
@@ -1668,36 +1678,105 @@ export class InsideScene {
     return this.boreRight() + 4 + this.rng() * (SCENE_W - this.boreRight() - 14);
   }
 
+  /**
+   * The cages, running errands.
+   *
+   * A cage with a rider is taking them where they said; a cage without one goes
+   * to collect whoever is standing at the shaft head; a cage with neither parks
+   * at the nearest bench and waits to be called. Nothing here moves for the sake
+   * of moving, which is the difference between a working hoist and a metronome.
+   *
+   * **Two benches is the floor for a cage existing at all.** With one, there is
+   * nowhere to be carried *to*, and a cage that can only ever return you to where
+   * you're standing is the same nothing-to-nothing trip as running an empty shaft.
+   */
   private stepHoist(bands: Band[], t: number): void {
     const top = bands[0]!.bottom + 4;
     const floor = bands[bands.length - 1]!.top - 12;
     if (floor <= top) return;
 
-    const want = hoistCount(this.boreRight() - BORE_X);
-    while (this.hoists.length > want) this.hoists.pop();
+    const posts = this.posts(bands);
+    const want =
+      posts.length < 2 ? 0 : hoistCount(this.boreRight() - BORE_X, this.crew.length);
+    while (this.hoists.length > want) {
+      // Whoever was aboard a cage that's just been taken off the rope walks
+      // instead, rather than staying stuck to a hoist nothing is stepping any more.
+      for (const r of this.hoists.pop()!.riders) r.state = "walk";
+    }
     while (this.hoists.length < want) {
-      // Started spread down the shaft and pointed opposite ways, so a new cage
-      // isn't shadowing one that's already running.
+      // Parked at different benches, so a new cage isn't shadowing one that's
+      // already on the rope.
       const i = this.hoists.length;
       this.hoists.push({
-        y: top + ((floor - top) * i) / Math.max(1, want),
-        dir: i % 2 === 0 ? 1 : -1,
+        y: clamp(this.postY(bands, posts[i % posts.length]!), top, floor),
         restUntil: 0,
         riders: [],
+        errand: null,
         lane: i * HOIST_LANE,
       });
     }
 
-    const stops = this.posts(bands).map((p) => this.postY(bands, p));
     for (const h of this.hoists) {
+      // Someone aboard outranks someone waiting: you finish the trip you're on.
+      const rider = h.riders.find((r) => r.bound);
+      if (rider) h.errand = null;
+      else {
+        if (h.errand && !(h.errand.state === "wait" && this.crew.includes(h.errand))) {
+          h.errand = null;
+        }
+        h.errand ??= this.callFor(h, bands);
+      }
+
+      const to = rider?.bound ?? h.errand?.post ?? null;
       if (t < h.restUntil) continue;
-      // Stops at every bench it passes through, whether or not anyone's waiting.
-      // A cage that only stops when it's needed reads as teleporting.
-      const step = hoistStep(h.y, h.dir, HOIST_SPEED * this.dt, top, floor, stops);
+      if (to === null) {
+        // Idle, so it sits at a level rather than halfway between two. A cage
+        // stopped in the middle of the shaft reads as broken down.
+        h.y = hoistRun(h.y, clamp(this.nearestPost(posts, bands, h.y), top, floor), HOIST_SPEED * this.dt).y;
+        continue;
+      }
+      const step = hoistRun(h.y, clamp(this.postY(bands, to), top, floor), HOIST_SPEED * this.dt);
       h.y = step.y;
-      h.dir = step.dir;
-      if (step.stopped) h.restUntil = t + HOIST_REST_S;
+      // Doors, at both ends of the trip: long enough for whoever called it to get
+      // on, and for whoever's aboard to get off.
+      if (step.arrived) h.restUntil = t + HOIST_REST_S;
     }
+  }
+
+  /** The nearest waiting body this cage could go and get, if it has a seat. */
+  private callFor(h: Hoist, bands: Band[]): Crew | null {
+    if (h.riders.length >= HOIST_SEATS) return null;
+    let best: Crew | null = null;
+    let near = Infinity;
+    for (const c of this.crew) {
+      if (c.state !== "wait" || !c.bound) continue;
+      // One cage per caller. Without this all three set off for the same person
+      // and two of them arrive at a bench with nobody on it.
+      if (this.hoists.some((o) => o !== h && o.errand === c)) continue;
+      const d = Math.abs(this.postY(bands, c.post) - h.y);
+      if (d < near) {
+        near = d;
+        best = c;
+      }
+    }
+    return best;
+  }
+
+  private nearestPost(
+    posts: { zone: number; first: boolean }[],
+    bands: Band[],
+    y: number,
+  ): number {
+    let best = y;
+    let near = Infinity;
+    for (const p of posts) {
+      const at = this.postY(bands, p);
+      if (Math.abs(at - y) < near) {
+        near = Math.abs(at - y);
+        best = at;
+      }
+    }
+    return best;
   }
 
   private drawHoist(bands: Band[]): void {

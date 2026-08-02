@@ -504,6 +504,37 @@ function Homefarm({ onGo }: { onGo: (screen: Screen) => void }) {
     return () => clearTimeout(id);
   }, [farm.converged]);
 
+  // And the small version of the same rule, for every purchase that puts
+  // something in the picture that wasn't there before.
+  //
+  // The first of a kind is the only purchase that *reveals* rather than adds:
+  // outside, a new lot opens at the back of the land and the kit goes up in
+  // scaffolding; inside, a first machine on a new stratum breaks the floor open
+  // and drops the shaft another band. Both of those animate for a second or two
+  // and both of them are bought from a sheet that covers the entire farm, so
+  // until now the answer to the most interesting purchases in the game was a
+  // number changing on the row you tapped.
+  //
+  // Deliberately *only* the first of a kind. Every subsequent one raises a
+  // building too, and a shop that threw you out on each of the fifty plots you
+  // buy in a run would make the shop unusable to save a second and a half of
+  // scaffolding you've seen already.
+  const kinds = solo.SOLO_PRODUCERS.filter((p) => (farm.producers[p.id] ?? 0) > 0)
+    .map((p) => p.id)
+    .join(",");
+  // Seeded from the first render, so opening a save doesn't read its whole farm
+  // as having just arrived.
+  const hadKinds = useRef(kinds);
+  useEffect(() => {
+    const had = new Set(hadKinds.current.split(",").filter(Boolean));
+    const arrived = kinds.split(",").filter((id) => id && !had.has(id));
+    hadKinds.current = kinds;
+    // A hand-down takes them all away, and that isn't a reveal — but everything
+    // bought on the way back up is, which is the point of handing it down.
+    if (arrived.length === 0) return;
+    setSheet(null);
+  }, [kinds]);
+
   const perDig = solo.clickYield(farm);
   const rate = solo.currentRate(farm);
   // Only what you can actually do something about from here. The dot is a call
