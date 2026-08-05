@@ -33,6 +33,7 @@ function Row({
   affordable,
   onBuy,
   accent,
+  best,
 }: {
   name: string;
   blurb: string;
@@ -41,6 +42,8 @@ function Row({
   affordable: boolean;
   onBuy: () => void;
   accent?: string;
+  /** Most rate per potato on the board. A dot, and nothing more. */
+  best?: boolean;
 }) {
   return (
     <button
@@ -49,7 +52,12 @@ function Row({
       disabled={!affordable}
     >
       <span className="row-body">
-        <span className="row-name">{name}</span>
+        <span className="row-name">
+          {name}
+          {best && (
+            <span className="row-best" title="Best rate per potato" aria-label="best value" />
+          )}
+        </span>
         <span className="row-blurb">{blurb}</span>
       </span>
       <span className="row-right">
@@ -81,6 +89,33 @@ export function Shop({
   const targetPlayer = opponents.find((o) => o.id === targetId);
   const targetRate = targetPlayer ? cleanRate(targetPlayer) : rate(0);
 
+  const shelf = PRODUCERS.flatMap((prod, i) => {
+    const owned = me.producers[prod.id] ?? 0;
+    const n = qty === "max" ? Math.max(1, affordableCount(me, prod.id, budget)) : qty;
+    const cost = producerCost(prod.id, owned, n);
+    const each = prod.baseRate * producerMultiplier(me, prod.id);
+    const broken = Math.min(me.broken[prod.id] ?? 0, owned);
+    // The ladder reveals itself a rung at a time — but the first rung
+    // is always there, or an empty shop greets you at zero potatoes.
+    const prev = PRODUCERS[i - 1];
+    const visible =
+      i === 0 ||
+      owned > 0 ||
+      (prev !== undefined && (me.producers[prev.id] ?? 0) > 0) ||
+      P.gte(P.mul(budget, 3), producerCost(prod.id, 0, 1));
+    if (!visible) return [];
+    return [{ prod, owned, n, cost, each, broken }];
+  });
+
+  // One dot, on whichever rung buys the most rate per potato right now. Only
+  // among rows you can actually press — a badge on a price you can't meet is
+  // trivia, not a nudge — and only when there's more than one to choose from.
+  const buyable = shelf.filter((r) => P.gte(budget, r.cost) && r.each > 0);
+  const best =
+    buyable.length > 1
+      ? buyable.reduce((a, b) => (b.cost / (b.each * b.n) < a.cost / (a.each * a.n) ? b : a)).prod.id
+      : undefined;
+
   return (
     <section className="panel shop">
       <header className="panel-head tabs">
@@ -110,35 +145,20 @@ export function Shop({
           </div>
 
           <div className="rows">
-            {PRODUCERS.map((prod, i) => {
-              const owned = me.producers[prod.id] ?? 0;
-              const n = qty === "max" ? Math.max(1, affordableCount(me, prod.id, budget)) : qty;
-              const cost = producerCost(prod.id, owned, n);
-              const each = prod.baseRate * producerMultiplier(me, prod.id);
-              const broken = Math.min(me.broken[prod.id] ?? 0, owned);
-              // The ladder reveals itself a rung at a time — but the first rung
-              // is always there, or an empty shop greets you at zero potatoes.
-              const prev = PRODUCERS[i - 1];
-              const visible =
-                i === 0 ||
-                owned > 0 ||
-                (prev !== undefined && (me.producers[prev.id] ?? 0) > 0) ||
-                P.gte(P.mul(budget, 3), producerCost(prod.id, 0, 1));
-              if (!visible) return null;
-              return (
-                <Row
-                  key={prod.id}
-                  name={`${prod.name}${owned ? ` ×${owned}` : ""}${broken ? ` (${broken} ${prod.hurt})` : ""}`}
-                  blurb={`${prod.blurb} +${format(each * n)}/s`}
-                  cost={cost}
-                  meta={qty === "max" ? `buy ${n}` : undefined}
-                  affordable={P.gte(budget, cost)}
-                  onBuy={() =>
-                    dispatch({ type: "buy_producer", player: me.id, producer: prod.id, qty: n })
-                  }
-                />
-              );
-            })}
+            {shelf.map(({ prod, owned, n, cost, each, broken }) => (
+              <Row
+                key={prod.id}
+                name={`${prod.name}${owned ? ` ×${owned}` : ""}${broken ? ` (${broken} ${prod.hurt})` : ""}`}
+                blurb={`${prod.blurb} +${format(each * n)}/s`}
+                cost={cost}
+                meta={qty === "max" ? `buy ${n}` : undefined}
+                affordable={P.gte(budget, cost)}
+                best={prod.id === best}
+                onBuy={() =>
+                  dispatch({ type: "buy_producer", player: me.id, producer: prod.id, qty: n })
+                }
+              />
+            ))}
           </div>
 
           <div className="rows">

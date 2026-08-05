@@ -44,6 +44,7 @@ function Row({
   onBuy,
   accent,
   art,
+  best,
 }: {
   name: string;
   blurb: string;
@@ -55,6 +56,8 @@ function Row({
   accent?: string;
   /** The thing itself, as it currently stands on your farm. */
   art?: Art;
+  /** Most rate per potato on the board. A dot, and nothing more. */
+  best?: boolean;
 }) {
   return (
     <button
@@ -68,7 +71,12 @@ function Row({
         </span>
       )}
       <span className="row-body">
-        <span className="row-name">{name}</span>
+        <span className="row-name">
+          {name}
+          {best && (
+            <span className="row-best" title="Best rate per potato" aria-label="best value" />
+          )}
+        </span>
         <span className="row-blurb">{blurb}</span>
       </span>
       <span className="row-right">
@@ -198,6 +206,42 @@ export function GrowPanel({
     return solo.SOLO_PRODUCER_BY_ID[effect.producer].world === farm.world;
   });
 
+  const shelf = ladder.flatMap((prod, i) => {
+    const owned = farm.producers[prod.id] ?? 0;
+    const n = qty === "max" ? Math.max(1, solo.affordableCount(farm, prod.id, budget)) : qty;
+    const cost = solo.producerCost(farm, prod.id, n);
+    // What it would actually add to the farm as it stands, tired soil and
+    // all — the Taproot Well's rate moves with the dirt, so a clean-rate
+    // quote would be advertising a machine you can't currently buy.
+    const each = solo.producerRateEach(farm, prod.id);
+    const broken = solo.brokenCount(farm, prod.id);
+
+    // The ladder reveals itself a rung at a time, but the first rung is
+    // always there or an empty shop greets you at zero potatoes. Both
+    // ladders read the same way, which is why the bottom of the inside
+    // shop is priced to be affordable more or less on arrival: walking
+    // into the new world and finding one thing you can buy is the same
+    // welcome the first Potato Plot gives you.
+    const prev = ladder[i - 1];
+    const visible =
+      solo.isProducerAvailable(farm, prod.id) &&
+      (i === 0 ||
+        owned > 0 ||
+        (prev !== undefined && (farm.producers[prev.id] ?? 0) > 0) ||
+        P.gte(P.mul(budget, 3), prod.baseCost));
+    if (!visible) return [];
+    return [{ prod, owned, n, cost, each, broken }];
+  });
+
+  // One dot, on whichever rung buys the most rate per potato right now. Only
+  // among rows you can actually press — a badge on a price you can't meet is
+  // trivia, not a nudge — and only when there's more than one to choose from.
+  const buyable = shelf.filter((r) => P.gte(budget, r.cost) && r.each > 0);
+  const best =
+    buyable.length > 1
+      ? buyable.reduce((a, b) => (b.cost / (b.each * b.n) < a.cost / (a.each * a.n) ? b : a)).prod.id
+      : undefined;
+
   return (
     <>
       <div className="qty-toggle">
@@ -210,44 +254,19 @@ export function GrowPanel({
       </div>
 
       <div className="rows">
-        {ladder.map((prod, i) => {
-          const owned = farm.producers[prod.id] ?? 0;
-          const n = qty === "max" ? Math.max(1, solo.affordableCount(farm, prod.id, budget)) : qty;
-          const cost = solo.producerCost(farm, prod.id, n);
-          // What it would actually add to the farm as it stands, tired soil and
-          // all — the Taproot Well's rate moves with the dirt, so a clean-rate
-          // quote would be advertising a machine you can't currently buy.
-          const each = solo.producerRateEach(farm, prod.id);
-          const broken = solo.brokenCount(farm, prod.id);
-
-          // The ladder reveals itself a rung at a time, but the first rung is
-          // always there or an empty shop greets you at zero potatoes. Both
-          // ladders read the same way, which is why the bottom of the inside
-          // shop is priced to be affordable more or less on arrival: walking
-          // into the new world and finding one thing you can buy is the same
-          // welcome the first Potato Plot gives you.
-          const prev = ladder[i - 1];
-          const visible =
-            solo.isProducerAvailable(farm, prod.id) &&
-            (i === 0 ||
-              owned > 0 ||
-              (prev !== undefined && (farm.producers[prev.id] ?? 0) > 0) ||
-              P.gte(P.mul(budget, 3), prod.baseCost));
-          if (!visible) return null;
-
-          return (
-            <Row
-              key={prod.id}
-              name={`${prod.name}${owned ? ` ×${owned}` : ""}${broken ? ` (${broken} ${prod.hurt})` : ""}`}
-              blurb={`${prod.blurb} +${format(each * n)}/s`}
-              cost={format(cost)}
-              meta={qty === "max" ? `buy ${n}` : undefined}
-              affordable={P.gte(budget, cost)}
-              art={producerArt(farm, prod.id)}
-              onBuy={() => dispatch({ type: "buy_producer", producer: prod.id, qty: n })}
-            />
-          );
-        })}
+        {shelf.map(({ prod, owned, n, cost, each, broken }) => (
+          <Row
+            key={prod.id}
+            name={`${prod.name}${owned ? ` ×${owned}` : ""}${broken ? ` (${broken} ${prod.hurt})` : ""}`}
+            blurb={`${prod.blurb} +${format(each * n)}/s`}
+            cost={format(cost)}
+            meta={qty === "max" ? `buy ${n}` : undefined}
+            affordable={P.gte(budget, cost)}
+            best={prod.id === best}
+            art={producerArt(farm, prod.id)}
+            onBuy={() => dispatch({ type: "buy_producer", producer: prod.id, qty: n })}
+          />
+        ))}
       </div>
 
       <div className="rows">

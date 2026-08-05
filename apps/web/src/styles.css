@@ -1367,6 +1367,17 @@ input {
   color: var(--ink-soft);
   line-height: 1.3;
 }
+/* Best rate per potato. Deliberately unlabelled — a row that's worth a sentence
+   of explanation isn't the minimal version of this. */
+.row-best {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--leaf);
+  vertical-align: middle;
+}
 .row-right {
   display: flex;
   flex-direction: column;
